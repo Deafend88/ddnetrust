@@ -15,11 +15,13 @@ use super::vmath::{
     Vec2, closest_point_on_line, distance, dot, length, mix, normalize, round_to_int, trunc_i32,
     vec2,
 };
-use crate::protocol::generated::{ObjCharacterCore, ObjPlayerInput};
+use crate::protocol::generated::{self as g, ObjCharacterCore, ObjDDNetCharacter, ObjPlayerInput};
 
 pub const SERVER_TICK_SPEED: i32 = 50;
 pub const PHYSICAL_SIZE: f32 = 28.0;
 pub const NUM_WEAPONS: usize = 6;
+/// C++: `INPUT_STATE_MASK` (datasrc/network.py).
+const INPUT_STATE_MASK: i32 = 0x3f;
 
 pub const HOOK_RETRACTED: i32 = -1;
 pub const HOOK_IDLE: i32 = 0;
@@ -141,6 +143,48 @@ impl CharacterCore {
         self.hooked_player
     }
 
+    /// C++: `CCharacterCore::Reset` without world bookkeeping for the hook (as when
+    /// C++ resets a core before it has a world).
+    pub fn reset_fields(&mut self) {
+        self.pos = vec2(0.0, 0.0);
+        self.vel = vec2(0.0, 0.0);
+        self.new_hook = false;
+        self.hook_pos = vec2(0.0, 0.0);
+        self.hook_dir = vec2(0.0, 0.0);
+        self.hook_tele_base = vec2(0.0, 0.0);
+        self.hook_tick = 0;
+        self.hook_state = HOOK_IDLE;
+        self.attached_players.clear();
+        self.jumped = 0;
+        self.jumped_total = 0;
+        self.jumps = 2;
+        self.triggered_events = 0;
+        self.solo = false;
+        self.jetpack = false;
+        self.collision_disabled = false;
+        self.endless_hook = false;
+        self.endless_jump = false;
+        self.hammer_hit_disabled = false;
+        self.grenade_hit_disabled = false;
+        self.laser_hit_disabled = false;
+        self.shotgun_hit_disabled = false;
+        self.hook_hit_disabled = false;
+        self.super_ = false;
+        self.invincible = false;
+        self.has_telegun_gun = false;
+        self.has_telegun_grenade = false;
+        self.has_telegun_laser = false;
+        self.freeze_start = 0;
+        self.freeze_end = 0;
+        self.is_in_freeze = false;
+        self.deep_frozen = false;
+        self.live_frozen = false;
+        // never initialize both to 0
+        self.input.target_x = 0;
+        self.input.target_y = -1;
+        self.hooked_player = -1;
+    }
+
     /// C++: `CCharacterCore::Init` sets `m_Id = -1`; the world and teams are passed to
     /// each call instead of being stored.
     pub fn new() -> Self {
@@ -205,7 +249,7 @@ impl Default for WorldCore {
 
 /// C++: `CCharacterCore::SetHookedPlayer` (gamecore.cpp:717) for the core taken out of
 /// slot `me`.
-fn set_hooked_player(
+pub(crate) fn set_hooked_player(
     core: &mut CharacterCore,
     me: usize,
     chars: &mut [Option<CharacterCore>],
@@ -269,43 +313,8 @@ impl WorldCore {
     /// C++: `CCharacterCore::Reset`.
     pub fn reset(&mut self, slot: usize) {
         let mut c = self.take(slot);
-        c.pos = vec2(0.0, 0.0);
-        c.vel = vec2(0.0, 0.0);
-        c.new_hook = false;
-        c.hook_pos = vec2(0.0, 0.0);
-        c.hook_dir = vec2(0.0, 0.0);
-        c.hook_tele_base = vec2(0.0, 0.0);
-        c.hook_tick = 0;
-        c.hook_state = HOOK_IDLE;
         set_hooked_player(&mut c, slot, &mut self.characters, -1);
-        c.attached_players.clear();
-        c.jumped = 0;
-        c.jumped_total = 0;
-        c.jumps = 2;
-        c.triggered_events = 0;
-        c.solo = false;
-        c.jetpack = false;
-        c.collision_disabled = false;
-        c.endless_hook = false;
-        c.endless_jump = false;
-        c.hammer_hit_disabled = false;
-        c.grenade_hit_disabled = false;
-        c.laser_hit_disabled = false;
-        c.shotgun_hit_disabled = false;
-        c.hook_hit_disabled = false;
-        c.super_ = false;
-        c.invincible = false;
-        c.has_telegun_gun = false;
-        c.has_telegun_grenade = false;
-        c.has_telegun_laser = false;
-        c.freeze_start = 0;
-        c.freeze_end = 0;
-        c.is_in_freeze = false;
-        c.deep_frozen = false;
-        c.live_frozen = false;
-        // never initialize both to 0
-        c.input.target_x = 0;
-        c.input.target_y = -1;
+        c.reset_fields();
         self.characters[slot] = Some(c);
     }
 
@@ -751,16 +760,7 @@ impl WorldCore {
     /// C++: `CCharacterCore::Read`.
     pub fn read(&mut self, slot: usize, core: &ObjCharacterCore) {
         let mut c = self.take(slot);
-        c.pos = vec2(core.x as f32, core.y as f32);
-        c.vel = vec2(core.vel_x as f32 / 256.0, core.vel_y as f32 / 256.0);
-        c.hook_state = core.hook_state;
-        c.hook_tick = core.hook_tick;
-        c.hook_pos = vec2(core.hook_x as f32, core.hook_y as f32);
-        c.hook_dir = vec2(core.hook_dx as f32 / 256.0, core.hook_dy as f32 / 256.0);
-        set_hooked_player(&mut c, slot, &mut self.characters, core.hooked_player);
-        c.jumped = core.jumped;
-        c.direction = core.direction;
-        c.angle = core.angle;
+        read_core(&mut c, slot, &mut self.characters, core);
         self.characters[slot] = Some(c);
     }
 
@@ -772,4 +772,85 @@ impl WorldCore {
             .write();
         self.read(slot, &net);
     }
+}
+
+/// C++: `CCharacterCore::Read` for the core that belongs in slot `me` (taken out of
+/// `cores`, or not inserted yet).
+pub fn read_core(
+    c: &mut CharacterCore,
+    me: usize,
+    cores: &mut [Option<CharacterCore>],
+    core: &ObjCharacterCore,
+) {
+    c.pos = vec2(core.x as f32, core.y as f32);
+    c.vel = vec2(core.vel_x as f32 / 256.0, core.vel_y as f32 / 256.0);
+    c.hook_state = core.hook_state;
+    c.hook_tick = core.hook_tick;
+    c.hook_pos = vec2(core.hook_x as f32, core.hook_y as f32);
+    c.hook_dir = vec2(core.hook_dx as f32 / 256.0, core.hook_dy as f32 / 256.0);
+    set_hooked_player(c, me, cores, core.hooked_player);
+    c.jumped = core.jumped;
+    c.direction = core.direction;
+    c.angle = core.angle;
+}
+
+/// C++: `CCharacterCore::ReadDDNet` (gamecore.cpp:654).
+pub fn read_ddnet(c: &mut CharacterCore, ext: &ObjDDNetCharacter) {
+    let has = |flag: i32| ext.flags & flag != 0;
+    c.solo = has(g::CHARACTERFLAG_SOLO);
+    c.jetpack = has(g::CHARACTERFLAG_JETPACK);
+    c.collision_disabled = has(g::CHARACTERFLAG_COLLISION_DISABLED);
+    c.hammer_hit_disabled = has(g::CHARACTERFLAG_HAMMER_HIT_DISABLED);
+    c.shotgun_hit_disabled = has(g::CHARACTERFLAG_SHOTGUN_HIT_DISABLED);
+    c.grenade_hit_disabled = has(g::CHARACTERFLAG_GRENADE_HIT_DISABLED);
+    c.laser_hit_disabled = has(g::CHARACTERFLAG_LASER_HIT_DISABLED);
+    c.hook_hit_disabled = has(g::CHARACTERFLAG_HOOK_HIT_DISABLED);
+    c.super_ = has(g::CHARACTERFLAG_SUPER);
+    c.invincible = has(g::CHARACTERFLAG_INVINCIBLE);
+    c.endless_hook = has(g::CHARACTERFLAG_ENDLESS_HOOK);
+    c.endless_jump = has(g::CHARACTERFLAG_ENDLESS_JUMP);
+    c.freeze_end = ext.freeze_end;
+    c.deep_frozen = ext.freeze_end == -1;
+    c.live_frozen = has(g::CHARACTERFLAG_MOVEMENTS_DISABLED);
+    c.has_telegun_grenade = has(g::CHARACTERFLAG_TELEGUN_GRENADE);
+    c.has_telegun_gun = has(g::CHARACTERFLAG_TELEGUN_GUN);
+    c.has_telegun_laser = has(g::CHARACTERFLAG_TELEGUN_LASER);
+    let weapons = [
+        g::CHARACTERFLAG_WEAPON_HAMMER,
+        g::CHARACTERFLAG_WEAPON_GUN,
+        g::CHARACTERFLAG_WEAPON_SHOTGUN,
+        g::CHARACTERFLAG_WEAPON_GRENADE,
+        g::CHARACTERFLAG_WEAPON_LASER,
+        g::CHARACTERFLAG_WEAPON_NINJA,
+    ];
+    for (w, flag) in c.weapons.iter_mut().zip(weapons) {
+        w.got = ext.flags & flag != 0;
+    }
+    c.jumps = ext.jumps;
+    // display information is only accepted when it was sent (not -1)
+    if ext.jumped_total != -1 {
+        c.jumped_total = ext.jumped_total;
+    }
+    if ext.ninja_activation_tick != -1 {
+        c.ninja.activation_tick = ext.ninja_activation_tick;
+    }
+    if ext.freeze_start != -1 {
+        c.freeze_start = ext.freeze_start;
+        c.is_in_freeze = has(g::CHARACTERFLAG_IN_FREEZE);
+    }
+}
+
+/// C++: `CountInput` (gamecore.h:296): presses and releases between two input states.
+pub fn count_input(prev: i32, cur: i32) -> (i32, i32) {
+    let (mut presses, mut releases) = (0, 0);
+    let (mut i, cur) = (prev & INPUT_STATE_MASK, cur & INPUT_STATE_MASK);
+    while i != cur {
+        i = (i + 1) & INPUT_STATE_MASK;
+        if i & 1 != 0 {
+            presses += 1;
+        } else {
+            releases += 1;
+        }
+    }
+    (presses, releases)
 }

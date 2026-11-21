@@ -3360,6 +3360,17 @@ if(TOOLS)
       if(TOOL MATCHES "^config_")
         list(APPEND EXTRA_TOOL_SRC "src/tools/config_common.h")
       endif()
+      if(TOOL MATCHES "^rs_parity$")
+        # the client prediction world, which is not built without the client
+        foreach(S laser_data pickup_data projectile_data prediction/entity prediction/gameworld
+            prediction/entities/character prediction/entities/door prediction/entities/dragger
+            prediction/entities/laser prediction/entities/pickup prediction/entities/plasma
+            prediction/entities/projectile)
+          list(APPEND EXTRA_TOOL_SRC "src/game/client/${S}.cpp")
+        endforeach()
+        list(APPEND EXTRA_TOOL_SRC "${PROJECT_BINARY_DIR}/src/generated/client_data.cpp"
+          "${PROJECT_BINARY_DIR}/src/generated/client_data.h")
+      endif()
       if(TOOL MATCHES "^map_render$")
         list(APPEND TOOL_INCLUDE_DIRS ${PNG_INCLUDE_DIRS} ${FREETYPE_INCLUDE_DIRS} ${GLEW_INCLUDE_DIRS})
         list(APPEND TOOL_DEPS $<TARGET_OBJECTS:engine-gfx> ${GLEW_DEP})

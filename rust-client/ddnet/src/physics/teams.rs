@@ -45,6 +45,11 @@ impl TeamsCore {
         self.is_solo[id as usize] = value;
     }
 
+    /// C++: `CTeamsCore::GetSolo`.
+    pub fn is_solo(&self, id: i32) -> bool {
+        self.is_solo[id as usize]
+    }
+
     pub fn same_team(&self, a: i32, b: i32) -> bool {
         let (ta, tb) = (self.team(a), self.team(b));
         ta == self.team_super() || tb == self.team_super() || ta == tb

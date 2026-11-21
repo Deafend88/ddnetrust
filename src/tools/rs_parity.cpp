@@ -4,6 +4,7 @@
 // Usage: rs_parity map <map file> <output file> <scratch dir>
 //        rs_parity collision <map file> <output file> [hooktele] [verbose]
 //        rs_parity core <map file> <output file> [hooktele] [verbose]
+//        rs_parity world <map file> <output file> [hooktele] [verbose]
 //
 // "map" loads the map with CMap + CLayers and writes every item, every data blob and
 // the physics layers, then loads mutated copies of the file (truncated, bit flips,
@@ -16,6 +17,10 @@
 //
 // "core" ticks four interacting CCharacterCores with held random inputs and writes
 // their complete state every tick.
+//
+// "world" ticks four characters through the client prediction (CGameWorld with
+// CCharacter, as in CGameClient::OnPredict), spawned on DDNet tiles (freeze, switches,
+// speedups, tune zones, ...), and writes their state and the switch states every tick.
 
 #include <base/dbg.h>
 #include <base/fs.h>
@@ -28,9 +33,12 @@
 #include <base/vmath.h>
 
 #include <engine/map.h>
+#include <engine/shared/config.h>
 #include <engine/shared/uuid_manager.h>
 #include <engine/storage.h>
 
+#include <game/client/prediction/entities/character.h>
+#include <game/client/prediction/gameworld.h>
 #include <game/collision.h>
 #include <game/gamecore.h>
 #include <game/teamscore.h>
@@ -39,7 +47,9 @@
 
 #include <zlib.h>
 
+#include <algorithm>
 #include <cstdio>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -529,13 +539,331 @@ static int CoreMode(const char *pMapFile, const char *pOutFile, bool HookTele, b
 	return 0;
 }
 
+// Spawn spots are grouped by what is on them; 0 for no spot (solid or nothing special).
+static long long WorldSpotKind(const CCollision &Collision, int Index)
+{
+	const int Tile = Collision.GetTileIndex(Index);
+	if(Tile == TILE_SOLID || Tile == TILE_NOHOOK)
+		return 0;
+	vec2 Direction;
+	int Force = 0, MaxSpeed = 0, Type = 0;
+	if(Collision.IsSpeedup(Index))
+		Collision.GetSpeedup(Index, &Direction, &Force, &MaxSpeed, &Type);
+	return Tile | Collision.GetFrontTileIndex(Index) << 8 | Collision.GetSwitchType(Index) << 16 | (long long)Type << 24 |
+	       (long long)(Type != 0 && MaxSpeed == 0) << 32 | (long long)(Collision.IsTune(Index) != 0) << 33 |
+	       (long long)(Collision.IsTeleCheckpoint(Index) != 0) << 34;
+}
+
+// No bundled map has speedups of the new type (TILE_SPEED_BOOST), so the world mode
+// turns every second speedup tile into one. Also done by parity.rs.
+static void MakeNewSpeedups(IMap *pMap, CLayers *pLayers)
+{
+	if(!pLayers->SpeedupLayer())
+		return;
+	CSpeedupTile *pSpeedup = static_cast<CSpeedupTile *>(pMap->GetData(pLayers->SpeedupLayer()->m_Speedup));
+	const int Count = pLayers->GameLayer()->m_Width * pLayers->GameLayer()->m_Height;
+	for(int i = 1; pSpeedup && i < Count; i += 2)
+		pSpeedup[i].m_Type = TILE_SPEED_BOOST;
+}
+
+// Tuning of tune zone `Zone` (zone 0 keeps the defaults). Also in parity.rs.
+static void ZoneTuning(CTuningParams *pTuning, int Zone)
+{
+	if(Zone == 0)
+		return;
+	pTuning->m_Gravity = 0.5f + (Zone % 5) * 0.1f;
+	pTuning->m_GroundControlSpeed = 10.0f + Zone % 4;
+	pTuning->m_AirJumpImpulse = 12.0f - Zone % 3;
+	pTuning->m_JetpackStrength = 400.0f + Zone * 10;
+	pTuning->m_VelrampCurvature = 1.4f + (Zone % 3) * 0.3f;
+	pTuning->m_PlayerCollision = Zone % 4 != 1;
+	pTuning->m_PlayerHooking = Zone % 4 != 2;
+}
+
+static void WorldState(SQueries &Q, CCharacter *pChar)
+{
+	const CCharacterCore &Core = *pChar->Core();
+	CoreState(Q, Core);
+	Q.Int(Core.m_ActiveWeapon);
+	for(const auto &Weapon : Core.m_aWeapons)
+	{
+		Q.Int(Weapon.m_Got);
+		Q.Int(Weapon.m_Ammo);
+	}
+	Q.Vec(Core.m_Ninja.m_ActivationDir);
+	Q.Int(Core.m_Ninja.m_ActivationTick);
+	Q.Int(Core.m_Ninja.m_CurrentMoveTime);
+	Q.Int(Core.m_Ninja.m_OldVelAmount);
+	const bool aFlags[] = {Core.m_Solo, Core.m_Jetpack, Core.m_CollisionDisabled, Core.m_EndlessHook, Core.m_EndlessJump,
+		Core.m_HammerHitDisabled, Core.m_GrenadeHitDisabled, Core.m_LaserHitDisabled, Core.m_ShotgunHitDisabled,
+		Core.m_HookHitDisabled, Core.m_Super, Core.m_Invincible, Core.m_HasTelegunGun, Core.m_HasTelegunGrenade,
+		Core.m_HasTelegunLaser, Core.m_IsInFreeze, Core.m_DeepFrozen, Core.m_LiveFrozen};
+	for(bool Flag : aFlags)
+		Q.Int(Flag);
+	Q.Int(Core.m_FreezeStart);
+	Q.Int(Core.m_FreezeEnd);
+	for(int i = 0; i < CTuningParams::Num(); i++)
+		Q.Int(((const CTuneParam *)&Core.m_Tuning)[i].Get());
+	Q.Int(pChar->m_FreezeTime);
+	Q.Int(pChar->m_FrozenLastTick);
+	Q.Int(pChar->m_TeleCheckpoint);
+	Q.Int(pChar->m_TileIndex);
+	Q.Int(pChar->m_TileFIndex);
+	Q.Int(pChar->m_LastRefillJumps);
+	Q.Vec(pChar->m_PrevPos);
+	Q.Vec(pChar->m_PrevPrevPos);
+	Q.Vec(pChar->GetPos());
+	Q.Int(pChar->GetLastWeapon());
+	Q.Int(pChar->IsInterfering());
+	Q.Int(pChar->GetPureTuneZone());
+	Q.Int(pChar->GetOverriddenTuneZone());
+	Q.Int(pChar->Team());
+	Q.Int(pChar->TeamsCore()->GetSolo(pChar->GetCid()));
+}
+
+// "run <run> <spawn index> <number of kinds of spawn spots>" then per tick, per character in id
+// order, "<dir> <jump> <hook> <target x> <target y> <fire> <next> <prev> <wanted> <flags>"
+// and after all characters "| <pos x> <pos y> <crc of the state>" per character (hex float
+// bits) and "| <crc of the switch states>".
+static constexpr int WORLD_RUNS = 24;
+static constexpr int WORLD_TICKS = 100;
+static constexpr int WORLD_START_TICK = 10000;
+static int WorldMode(const char *pMapFile, const char *pOutFile, bool HookTele, bool Verbose)
+{
+	std::unique_ptr<IStorage> pStorage = CreateLocalStorage();
+	std::unique_ptr<IMap> pMap = CreateMap();
+	CLayers Layers;
+	FILE *f = fopen(pOutFile, "wb");
+	if(!pStorage || !f || !LoadMapAndLayers(pStorage.get(), pMapFile, pMap.get(), &Layers))
+		return -1;
+	if(HookTele)
+		MakeHookTeleporters(pMap.get(), &Layers);
+	MakeNewSpeedups(pMap.get(), &Layers);
+	CCollision Collision;
+	Collision.Init(&Layers);
+	const int Width = Collision.GetWidth(), Height = Collision.GetHeight();
+	std::map<long long, std::vector<int>> SpotKinds;
+	for(int i = 0; i < Width * Height; i++)
+		if(const long long Kind = WorldSpotKind(Collision, i))
+			SpotKinds[Kind].push_back(i);
+	// only kinds with something the prediction reacts to, if the map has any
+	const auto IsEffectTile = [](int Tile) {
+		const int aTiles[] = {TILE_FREEZE, TILE_UNFREEZE, TILE_DFREEZE, TILE_DUNFREEZE, TILE_LFREEZE, TILE_LUNFREEZE,
+			TILE_EHOOK_ENABLE, TILE_EHOOK_DISABLE, TILE_HIT_ENABLE, TILE_HIT_DISABLE, TILE_NPC_ENABLE, TILE_NPC_DISABLE,
+			TILE_NPH_ENABLE, TILE_NPH_DISABLE, TILE_UNLIMITED_JUMPS_ENABLE, TILE_UNLIMITED_JUMPS_DISABLE, TILE_WALLJUMP,
+			TILE_JETPACK_ENABLE, TILE_JETPACK_DISABLE, TILE_SOLO_ENABLE, TILE_SOLO_DISABLE, TILE_REFILL_JUMPS,
+			TILE_TELE_GUN_ENABLE, TILE_TELE_GUN_DISABLE, TILE_TELE_GRENADE_ENABLE, TILE_TELE_GRENADE_DISABLE,
+			TILE_TELE_LASER_ENABLE, TILE_TELE_LASER_DISABLE};
+		return std::find(std::begin(aTiles), std::end(aTiles), Tile) != std::end(aTiles);
+	};
+	std::vector<const std::vector<int> *> vpKinds;
+	for(const auto &[Kind, vSpots] : SpotKinds)
+		if(IsEffectTile(Kind & 0xff) || IsEffectTile((Kind >> 8) & 0xff) || (Kind >> 16) != 0)
+			vpKinds.push_back(&vSpots);
+	if(vpKinds.empty())
+		for(const auto &[Kind, vSpots] : SpotKinds)
+			vpKinds.push_back(&vSpots);
+
+	// the tool's g_Config is zeroed, set what the prediction reads to the defaults
+	g_Config.m_SvFreezeDelay = 3;
+	g_Config.m_ClAntiPingPlayers = 1;
+	g_Config.m_SvDeepfly = 1;
+	g_Config.m_SvOldTeleportHook = 0;
+
+	static CTuningParams s_aTuning[TuneZone::NUM];
+	for(int z = 0; z < TuneZone::NUM; z++)
+	{
+		s_aTuning[z] = CTuningParams();
+		ZoneTuning(&s_aTuning[z], z);
+	}
+
+	const int aIds[CORE_CHARS] = {3, 0, 6, 1}; // inserted in this order, so ticked 1, 6, 0, 3
+	for(int Run = 0; Run < WORLD_RUNS; Run++)
+	{
+		int Index = 0;
+		if(vpKinds.empty())
+		{
+			for(int Try = 0; Try < 100; Try++)
+			{
+				Index = Rand() % (Width * Height);
+				if(Collision.GetTileIndex(Index) == 0)
+					break;
+			}
+		}
+		else
+		{
+			// go through the kinds of spots, so rare tiles get their turn
+			const size_t Kinds = vpKinds.size();
+			const std::vector<int> &vSpots = *vpKinds[Kinds > WORLD_RUNS ? Run * Kinds / WORLD_RUNS : Run % Kinds];
+			Index = vSpots[Rand() % vSpots.size()];
+		}
+		fprintf(f, "run %d %d %d\n", Run, Index, (int)vpKinds.size());
+
+		CGameWorld World;
+		World.Init(&Collision, s_aTuning, nullptr);
+		World.m_Core.InitSwitchers(Collision.m_HighestSwitchNumber);
+		World.m_GameTick = WORLD_START_TICK;
+		auto &Config = World.m_WorldConfig;
+		const int Mode = Run % 4;
+		Config.m_IsDDRace = true;
+		Config.m_IsVanilla = false;
+		Config.m_IsFNG = false;
+		Config.m_InfiniteAmmo = true;
+		Config.m_PredictTiles = Mode != 3;
+		Config.m_PredictFreeze = Mode != 2;
+		Config.m_PredictWeapons = false;
+		Config.m_PredictDDRace = Mode != 3;
+		Config.m_UseTuneZones = Mode != 2;
+		Config.m_BugDDRaceInput = Mode == 3;
+		Config.m_NoWeakHookAndBounce = Mode % 2 == 1;
+		if(Mode == 1)
+			World.m_Teams.Team(aIds[2], 1);
+
+		for(int i = 0; i < CORE_CHARS; i++)
+		{
+			CNetObj_Character Obj = {};
+			Obj.m_X = (Index % Width) * 32 + 16 + i * 30 - 45;
+			Obj.m_Y = (Index / Width) * 32 + 16;
+			Obj.m_HookX = Obj.m_X;
+			Obj.m_HookY = Obj.m_Y;
+			Obj.m_HookedPlayer = -1;
+			Obj.m_Angle = i * 100;
+			Obj.m_Weapon = WEAPON_GUN;
+			Obj.m_AmmoCount = 10;
+			Obj.m_AttackTick = WORLD_START_TICK - 3;
+			CNetObj_DDNetCharacter Ext = {};
+			Ext.m_Flags = CHARACTERFLAG_WEAPON_HAMMER | CHARACTERFLAG_WEAPON_GUN;
+			Ext.m_Jumps = 2 + i % 2;
+			Ext.m_JumpedTotal = -1;
+			Ext.m_NinjaActivationTick = -1;
+			Ext.m_FreezeStart = -1;
+			Ext.m_StrongWeakId = i;
+			Ext.m_TuneZoneOverride = TuneZone::OVERRIDE_NONE;
+			if(Mode == 0 && i == 1)
+				Ext.m_FreezeEnd = WORLD_START_TICK + 60;
+			if(Mode == 0 && i == 2)
+				Ext.m_Flags |= CHARACTERFLAG_ENDLESS_HOOK | CHARACTERFLAG_ENDLESS_JUMP;
+			if(Mode == 1 && i == 3)
+				Ext.m_Flags |= CHARACTERFLAG_SUPER;
+			if(Mode == 2 && i == 0)
+				Ext.m_Flags |= CHARACTERFLAG_JETPACK;
+			if(Mode == 2 && i == 1)
+			{
+				Ext.m_Flags |= CHARACTERFLAG_WEAPON_NINJA;
+				Ext.m_NinjaActivationTick = WORLD_START_TICK - 700;
+				Obj.m_Weapon = WEAPON_NINJA;
+			}
+			if(Mode == 2 && i == 2)
+			{
+				Ext.m_Flags |= CHARACTERFLAG_COLLISION_DISABLED | CHARACTERFLAG_WEAPON_SHOTGUN;
+				Ext.m_TuneZoneOverride = 3;
+				Ext.m_TargetX = 100;
+				Ext.m_TargetY = -50;
+			}
+			if(Mode == 3 && i == 3)
+				Ext.m_Flags |= CHARACTERFLAG_SOLO;
+			if(Mode == 3 && i == 1)
+				Ext.m_FreezeEnd = -1;
+			CCharacter *pChar = new CCharacter(&World, aIds[i], &Obj, &Ext);
+			World.InsertEntity(pChar);
+			if(i == 0)
+				pChar->Read(&Obj, &Ext, true); // the local player
+		}
+
+		CNetObj_PlayerInput aInputs[MAX_CLIENTS] = {};
+		int aHold[CORE_CHARS][4] = {}; // ticks left for direction, hook, jump, fire
+		for(int Tick = 1; Tick <= WORLD_TICKS; Tick++)
+		{
+			for(int i = 0; i < CORE_CHARS; i++)
+			{
+				CNetObj_PlayerInput &In = aInputs[aIds[i]];
+				if(--aHold[i][0] <= 0)
+				{
+					In.m_Direction = (int)(Rand() % 3) - 1;
+					aHold[i][0] = 1 + Rand() % 40;
+				}
+				if(--aHold[i][1] <= 0)
+				{
+					In.m_Hook = Rand() % 2;
+					aHold[i][1] = 1 + Rand() % 60;
+					const float Angle = (Rand() % 360) * (pi / 180.0f);
+					const int Length = Rand() % 350;
+					In.m_TargetX = (int)(std::cos(Angle) * Length);
+					In.m_TargetY = (int)(std::sin(Angle) * Length);
+				}
+				if(--aHold[i][2] <= 0)
+				{
+					In.m_Jump = Rand() % 4 == 0;
+					aHold[i][2] = 1 + Rand() % 15;
+				}
+				if(--aHold[i][3] <= 0)
+				{
+					if((In.m_Fire & 1) != (int)(Rand() % 2))
+						In.m_Fire = (In.m_Fire + 1) & INPUT_STATE_MASK;
+					aHold[i][3] = 1 + Rand() % 20;
+				}
+				const int Extra = Rand() % 100;
+				In.m_NextWeapon += Extra == 0 ? 2 : 0;
+				In.m_PrevWeapon += Extra == 1 ? 2 : 0;
+				In.m_WantedWeapon = Extra < 6 ? Extra % 4 : 0;
+				In.m_PlayerFlags = Extra >= 95 ? PLAYERFLAG_SPEC_CAM : Extra >= 90 ? PLAYERFLAG_CHATTING : PLAYERFLAG_PLAYING;
+			}
+			for(int Id = 0; Id < MAX_CLIENTS; Id++)
+			{
+				if(CCharacter *pChar = World.GetCharacterById(Id))
+				{
+					const CNetObj_PlayerInput &In = aInputs[Id];
+					fprintf(f, "%d %d %d %d %d %d %d %d %d %d ", In.m_Direction, In.m_Jump, In.m_Hook, In.m_TargetX, In.m_TargetY,
+						In.m_Fire, In.m_NextWeapon, In.m_PrevWeapon, In.m_WantedWeapon, In.m_PlayerFlags);
+					pChar->OnDirectInput(&In);
+				}
+			}
+			World.m_GameTick = WORLD_START_TICK + Tick;
+			for(int Id = 0; Id < MAX_CLIENTS; Id++)
+				if(CCharacter *pChar = World.GetCharacterById(Id))
+					pChar->OnPredictedInput(&aInputs[Id]);
+			World.Tick();
+
+			fprintf(f, "|");
+			for(int Id = 0; Id < MAX_CLIENTS; Id++)
+			{
+				CCharacter *pChar = World.GetCharacterById(Id);
+				if(!pChar)
+					continue;
+				SQueries Q;
+				WorldState(Q, pChar);
+				fprintf(f, " %08x %08x %08x", FloatBits(pChar->GetPos().x), FloatBits(pChar->GetPos().y), Q.Crc());
+				if(Verbose)
+				{
+					fprintf(f, " [");
+					for(int v : Q.m_vValues)
+						fprintf(f, " %x", (unsigned)v);
+					fprintf(f, " ]");
+				}
+			}
+			SQueries Switches;
+			for(const auto &Switcher : World.Switchers())
+				for(int t = 0; t < NUM_DDRACE_TEAMS; t++)
+				{
+					Switches.Int(Switcher.m_aStatus[t]);
+					Switches.Int(Switcher.m_aEndTick[t]);
+					Switches.Int(Switcher.m_aType[t]);
+					Switches.Int(Switcher.m_aLastUpdateTick[t]);
+				}
+			fprintf(f, " | %08x\n", Switches.Crc());
+		}
+	}
+	fclose(f);
+	return 0;
+}
+
 int main(int argc, const char **argv)
 {
 	CCmdlineFix CmdlineFix(&argc, &argv);
 	log_set_global_logger_default();
 	if(argc == 5 && str_comp(argv[1], "map") == 0)
 		return MapMode(argv[2], argv[3], argv[4]);
-	if(argc >= 4 && (str_comp(argv[1], "collision") == 0 || str_comp(argv[1], "core") == 0))
+	if(argc >= 4 && (str_comp(argv[1], "collision") == 0 || str_comp(argv[1], "core") == 0 || str_comp(argv[1], "world") == 0))
 	{
 		bool HookTele = false, Verbose = false;
 		for(int i = 4; i < argc; i++)
@@ -543,10 +871,12 @@ int main(int argc, const char **argv)
 			HookTele |= str_comp(argv[i], "hooktele") == 0;
 			Verbose |= str_comp(argv[i], "verbose") == 0;
 		}
+		if(str_comp(argv[1], "world") == 0)
+			return WorldMode(argv[2], argv[3], HookTele, Verbose);
 		if(str_comp(argv[1], "core") == 0)
 			return CoreMode(argv[2], argv[3], HookTele, Verbose);
 		return CollisionMode(argv[2], argv[3], HookTele, Verbose);
 	}
-	log_error(TOOL_NAME, "Usage: %s map <map file> <output file> <scratch dir> | collision|core <map file> <output file> [hooktele] [verbose]", argc > 0 ? argv[0] : TOOL_NAME);
+	log_error(TOOL_NAME, "Usage: %s map <map file> <output file> <scratch dir> | collision|core|world <map file> <output file> [hooktele] [verbose]", argc > 0 ? argv[0] : TOOL_NAME);
 	return -1;
 }

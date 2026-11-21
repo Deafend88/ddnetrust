@@ -9,9 +9,14 @@
 use ddnet::map::{Layer, Map};
 use ddnet::physics::collision::{Collision, Layers, clamp_vel};
 use ddnet::physics::core::{CharacterCore, WorldCore};
+use ddnet::physics::teams::NUM_DDRACE_TEAMS;
 use ddnet::physics::teams::TeamsCore;
 use ddnet::physics::tuning::{Param, Tuning};
 use ddnet::physics::vmath::{PI, Vec2, direction, vec2};
+use ddnet::physics::world::{
+    Character, GameWorld, NUM_TUNE_ZONES, TUNE_ZONE_OVERRIDE_NONE, WorldConfig,
+};
+use ddnet::protocol::generated::{self as g, ObjCharacter, ObjDDNetCharacter, ObjPlayerInput};
 
 /// The maps of PLAN.md §5 (M4).
 const MAPS: [&str; 7] = [
@@ -340,19 +345,28 @@ fn collision_hook_teleporters() {
         check_collision(
             name,
             &map,
-            &hook_tele_collision(&map),
+            &Collision::from_layers(hook_tele_layers(&map)),
             &golden_file(name, "collision-hooktele"),
         );
     }
 }
 
 /// The "hooktele" variant of rs_parity: every tele-in tile becomes a hook tele-in.
-fn hook_tele_collision(map: &Map) -> Collision {
+fn hook_tele_layers(map: &Map) -> Layers {
     let mut layers = Layers::from_map(map);
     for t in layers.tele.iter_mut().flatten() {
         if [10, 26, 31, 63].contains(&t.type_) {
             t.type_ = 15; // TILE_TELEINHOOK
         }
+    }
+    layers
+}
+
+/// rs_parity's `MakeNewSpeedups` for the world mode: every second speedup tile becomes
+/// the new type.
+fn world_collision(mut layers: Layers) -> Collision {
+    for t in layers.speedup.iter_mut().flatten().skip(1).step_by(2) {
+        t.type_ = 29; // TILE_SPEED_BOOST
     }
     Collision::from_layers(layers)
 }
@@ -509,8 +523,274 @@ fn character_core_hook_teleporters() {
         let map = load(name);
         check_core(
             name,
-            &hook_tele_collision(&map),
+            &Collision::from_layers(hook_tele_layers(&map)),
             &golden_file(name, "core-hooktele"),
+        );
+    }
+}
+
+/// C++: `ZoneTuning` in rs_parity.cpp.
+fn zone_tuning(zone: usize) -> Tuning {
+    let mut t = Tuning::default();
+    let z = zone as i32;
+    if z > 0 {
+        t.set(Param::Gravity, 0.5 + (z % 5) as f32 * 0.1);
+        t.set(Param::GroundControlSpeed, 10.0 + (z % 4) as f32);
+        t.set(Param::AirJumpImpulse, 12.0 - (z % 3) as f32);
+        t.set(Param::JetpackStrength, 400.0 + (z * 10) as f32);
+        t.set(Param::VelrampCurvature, 1.4 + (z % 3) as f32 * 0.3);
+        t.set(Param::PlayerCollision, (z % 4 != 1) as i32 as f32);
+        t.set(Param::PlayerHooking, (z % 4 != 2) as i32 as f32);
+    }
+    t
+}
+
+/// Same layout as `WorldState` in rs_parity.cpp.
+fn world_state(ch: &Character, c: &CharacterCore, teams: &TeamsCore) -> Queries {
+    let mut q = core_state(c);
+    q.int(c.active_weapon);
+    for w in &c.weapons {
+        q.int(w.got);
+        q.int(w.ammo);
+    }
+    q.vec(c.ninja.activation_dir);
+    q.int(c.ninja.activation_tick);
+    q.int(c.ninja.current_move_time);
+    q.int(c.ninja.old_vel_amount);
+    for flag in [
+        c.solo,
+        c.jetpack,
+        c.collision_disabled,
+        c.endless_hook,
+        c.endless_jump,
+        c.hammer_hit_disabled,
+        c.grenade_hit_disabled,
+        c.laser_hit_disabled,
+        c.shotgun_hit_disabled,
+        c.hook_hit_disabled,
+        c.super_,
+        c.invincible,
+        c.has_telegun_gun,
+        c.has_telegun_grenade,
+        c.has_telegun_laser,
+        c.is_in_freeze,
+        c.deep_frozen,
+        c.live_frozen,
+    ] {
+        q.int(flag);
+    }
+    q.int(c.freeze_start);
+    q.int(c.freeze_end);
+    for v in c.tuning.0 {
+        q.int(v);
+    }
+    q.int(ch.freeze_time);
+    q.int(ch.frozen_last_tick);
+    q.int(ch.tele_checkpoint);
+    q.int(ch.tile_index);
+    q.int(ch.tile_f_index);
+    q.int(ch.last_refill_jumps);
+    q.vec(ch.prev_pos);
+    q.vec(ch.prev_prev_pos);
+    q.vec(ch.pos);
+    q.int(ch.last_weapon);
+    q.int(ch.interfering);
+    q.int(ch.tune_zone);
+    q.int(ch.overridden_tune_zone());
+    q.int(teams.team(ch.id));
+    q.int(teams.is_solo(ch.id));
+    q
+}
+
+/// Four characters in the client prediction world, against `rs_parity world`.
+fn check_world(name: &str, col: &Collision, text: &str) {
+    const IDS: [usize; 4] = [3, 0, 6, 1]; // insertion order
+    const SORTED: [usize; 4] = [0, 1, 3, 6];
+    const START_TICK: i32 = 10000;
+    let tunings: Vec<Tuning> = (0..NUM_TUNE_ZONES).map(zone_tuning).collect();
+    let mut lines = text.lines().peekable();
+    let mut ticks = 0;
+    while let Some(run_line) = lines.next() {
+        let r: Vec<i32> = run_line
+            .split(' ')
+            .skip(1)
+            .map(|v| v.parse().unwrap())
+            .collect();
+        let (run, index) = (r[0], r[1]);
+        let mode = run % 4;
+        let config = WorldConfig {
+            infinite_ammo: true,
+            predict_tiles: mode != 3,
+            predict_freeze: mode != 2,
+            predict_ddrace: mode != 3,
+            use_tune_zones: mode != 2,
+            bug_ddrace_input: mode == 3,
+            no_weak_hook_and_bounce: mode % 2 == 1,
+            freeze_delay: 3,
+            antiping_players: 1,
+        };
+        let mut world = GameWorld::new(col, config);
+        world.tunings = tunings.clone();
+        world.game_tick = START_TICK;
+        if mode == 1 {
+            world.teams.set_team(IDS[2] as i32, 1);
+        }
+        let w = col.width();
+        for (i, &id) in IDS.iter().enumerate() {
+            let n = i as i32;
+            let (x, y) = ((index % w) * 32 + 16 + n * 30 - 45, (index / w) * 32 + 16);
+            let mut obj = ObjCharacter {
+                x,
+                y,
+                hook_x: x,
+                hook_y: y,
+                hooked_player: -1,
+                angle: n * 100,
+                weapon: g::WEAPON_GUN,
+                ammo_count: 10,
+                attack_tick: START_TICK - 3,
+                ..Default::default()
+            };
+            let mut ext = ObjDDNetCharacter {
+                flags: g::CHARACTERFLAG_WEAPON_HAMMER | g::CHARACTERFLAG_WEAPON_GUN,
+                jumps: 2 + n % 2,
+                jumped_total: -1,
+                ninja_activation_tick: -1,
+                freeze_start: -1,
+                strong_weak_id: n,
+                tune_zone_override: TUNE_ZONE_OVERRIDE_NONE,
+                ..Default::default()
+            };
+            match (mode, i) {
+                (0, 1) => ext.freeze_end = START_TICK + 60,
+                (0, 2) => {
+                    ext.flags |= g::CHARACTERFLAG_ENDLESS_HOOK | g::CHARACTERFLAG_ENDLESS_JUMP
+                }
+                (1, 3) => ext.flags |= g::CHARACTERFLAG_SUPER,
+                (2, 0) => ext.flags |= g::CHARACTERFLAG_JETPACK,
+                (2, 1) => {
+                    ext.flags |= g::CHARACTERFLAG_WEAPON_NINJA;
+                    ext.ninja_activation_tick = START_TICK - 700;
+                    obj.weapon = g::WEAPON_NINJA;
+                }
+                (2, 2) => {
+                    ext.flags |=
+                        g::CHARACTERFLAG_COLLISION_DISABLED | g::CHARACTERFLAG_WEAPON_SHOTGUN;
+                    ext.tune_zone_override = 3;
+                    ext.target_x = 100;
+                    ext.target_y = -50;
+                }
+                (3, 3) => ext.flags |= g::CHARACTERFLAG_SOLO,
+                (3, 1) => ext.freeze_end = -1,
+                _ => {}
+            }
+            world.add_character(id, &obj, &ext);
+            if i == 0 {
+                world.read_character(id, &obj, &ext, true); // the local player
+            }
+        }
+
+        let mut tick = 0;
+        while lines.peek().is_some_and(|l| !l.starts_with("run ")) {
+            tick += 1;
+            let line = lines.next().unwrap();
+            let (inputs, rest) = line.split_once(" |").unwrap();
+            let (states, switches) = rest.rsplit_once(" | ").unwrap();
+            let v: Vec<i32> = inputs.split(' ').map(|v| v.parse().unwrap()).collect();
+            let input = |k: usize| {
+                let v = &v[k * 10..k * 10 + 10];
+                ObjPlayerInput {
+                    direction: v[0],
+                    jump: v[1],
+                    hook: v[2],
+                    target_x: v[3],
+                    target_y: v[4],
+                    fire: v[5],
+                    next_weapon: v[6],
+                    prev_weapon: v[7],
+                    wanted_weapon: v[8],
+                    player_flags: v[9],
+                }
+            };
+            for (k, &id) in SORTED.iter().enumerate() {
+                world.on_direct_input(id, &input(k));
+            }
+            world.game_tick = START_TICK + tick;
+            for (k, &id) in SORTED.iter().enumerate() {
+                world.on_predicted_input(id, &input(k));
+            }
+            world.tick();
+
+            let state = |id: usize| {
+                let (ch, c) = world.character(id).unwrap();
+                world_state(ch, c, &world.teams)
+            };
+            let got: Vec<String> = SORTED
+                .iter()
+                .map(|&id| {
+                    let pos = world.character(id).unwrap().0.pos;
+                    format!(
+                        "{:08x} {:08x} {:08x}",
+                        pos.x.to_bits(),
+                        pos.y.to_bits(),
+                        state(id).crc()
+                    )
+                })
+                .collect();
+            let mut sw = Queries::default();
+            for s in &world.core.switchers {
+                for t in 0..NUM_DDRACE_TEAMS {
+                    sw.int(s.status[t]);
+                    sw.int(s.end_tick[t]);
+                    sw.int(s.type_[t]);
+                    sw.int(s.last_update_tick[t]);
+                }
+            }
+            let got = format!("{} | {:08x}", got.join(" "), sw.crc());
+            let want = format!("{} | {switches}", states.trim());
+            if got != want {
+                let dump: Vec<String> = SORTED
+                    .iter()
+                    .map(|&id| {
+                        state(id)
+                            .0
+                            .iter()
+                            .map(|v| format!("{:x}", *v as u32))
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    })
+                    .collect();
+                panic!(
+                    "{name}, run {run}, tick {tick}:\n got  {got}\n want {want}\n states:\n {}",
+                    dump.join("\n ")
+                );
+            }
+            ticks += 1;
+        }
+    }
+    assert_eq!(ticks, 24 * 100, "{name}");
+}
+
+#[test]
+fn world() {
+    for name in MAPS {
+        let map = load(name);
+        check_world(
+            name,
+            &world_collision(Layers::from_map(&map)),
+            &golden_file(name, "world"),
+        );
+    }
+}
+
+#[test]
+fn world_hook_teleporters() {
+    for name in ["coverage", "LearnToPlay"] {
+        let map = load(name);
+        check_world(
+            name,
+            &world_collision(hook_tele_layers(&map)),
+            &golden_file(name, "world-hooktele"),
         );
     }
 }

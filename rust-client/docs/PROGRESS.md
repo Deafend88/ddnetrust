@@ -63,14 +63,29 @@ Maps: coverage, LearnToPlay, Gold Mine, Tutorial, Tsunami, ctf1, dm1 (read from
   ticks per map (default tuning; changed tuning + team split + solo), jumps 2/3/1/0:
   100% identical full core state on all 7 maps and both hook-teleporter variants
   (player hooks, attachments, ground/air jumps, retracts and hook teleports all hit).
+- 4.4 DDNet tile effects: `physics/world.rs` ports the client prediction CGameWorld
+  (characters only, insert-at-front tick order, NoWeakHookAndBounce, switch timers) and
+  CCharacter (DDRaceTick, tune zones, freeze/deep/live freeze, all HandleTiles tiles and
+  switch tiles, old and new speedups, stoppers, anti-skip, jetpack, ninja expiry, weapon
+  switching, antiping interference, Read with CNetObj_DDNetCharacter, ResetPrediction).
+  `rs_parity world` runs the real C++ prediction (CMake now compiles the prediction
+  sources into `rs_parity`): 4 characters, 24 runs x 100 ticks per map, spawned by turn
+  on every kind of effect tile/switch/speedup/tune/tele-checkpoint spot, 4 world-config
+  modes, local player, team split, super/solo/jetpack/ninja/deep-frozen/tune-override
+  characters, random direction/jump/hook/fire/weapon/chat/spec-cam inputs. Every second
+  speedup is turned into the new type (no bundled map has one). 100% identical full
+  character + core state and switch state on all 7 maps and both hook-teleporter
+  variants; 14 hand-made mutations of world.rs are all caught.
+  Limits: weapons are not predicted (`m_PredictWeapons` false: FireWeapon, ninja dash,
+  projectiles are not ported), and Read needs the DDNet extended object (vanilla path
+  not ported). The C++ client prediction never teleports through tele-in tiles.
 
 ## In progress
-- M4.4 DDNet tile effects (prediction CCharacter/CGameWorld) + world parity.
+- Nothing; M4 is done.
 
 ## Next
-- M5 prediction. Note for M4.4: the C++ client
-  prediction never teleports the player through tele-in tiles (the server does); it
-  predicts hook teleports and tele checkpoints only.
+- M5 prediction: feed snapshots into `GameWorld` (NetCharAdd/Read per tick, local
+  input history, CGameClient::OnPredict loop), checked against the local server.
 
 ## Not yet sent by the Rust client (a default C++ client sends these)
 - `Cl_ShowDistance`, `Cl_CameraInfo`: need the camera/window (M6).
@@ -109,6 +124,9 @@ Build the `rs_parity` target like `rs_golden`, then per map (repo root):
     build-rs/rs_parity.exe collision "data/maps/<name>.map" rust-client/tests/golden/maps/<name>.collision-hooktele.txt hooktele
 
 (hooktele only for coverage and LearnToPlay; add `verbose` to see every query value).
+`core` and `world` work like `collision` (`<name>.core.txt`, `<name>.world.txt`,
+`-hooktele` variants for coverage and LearnToPlay). All modes are deterministic: the
+data regenerates byte for byte.
 
 ## Regenerate protocol code
     python rust-client/scripts/gen_protocol.py   # needs rustfmt on PATH
