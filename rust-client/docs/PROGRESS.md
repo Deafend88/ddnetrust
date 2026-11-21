@@ -6,9 +6,11 @@
   branch `rust-client`.
 - M2 varint + packer: `protocol/varint.rs`, `protocol/packer.rs` (incl. UTF-8 and
   sanitize helpers from `base/str.cpp`); 7,300 golden vectors from `rs_golden` pass.
+- M2 Huffman: `protocol/huffman.rs`; 5,610 compress/decompress vectors pass, incl.
+  garbage input and the wrapped unsigned bit-counter quirk (hit 23 times).
 
 ## In progress
-- M2: Huffman, then packet/chunk headers.
+- M2: packet and chunk headers.
 
 ## Next
 - M3: headless client against a locally built `DDNet-Server`.

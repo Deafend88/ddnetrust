@@ -3,7 +3,7 @@
 //! Regenerate (from the repo root, after building the `rs_golden` CMake target):
 //!     build-rs/rs_golden.exe rust-client/tests/golden
 
-use ddnet::protocol::{packer, varint};
+use ddnet::protocol::{huffman, packer, varint};
 
 fn golden(name: &str) -> String {
     let path = format!("{}/../tests/golden/{name}", env!("CARGO_MANIFEST_DIR"));
@@ -100,5 +100,22 @@ fn packer() {
             }
             _ => panic!("bad line {line}"),
         }
+    }
+}
+
+#[test]
+fn huffman() {
+    let text = golden("huffman.txt");
+    let mut out = vec![0u8; 4096];
+    for line in text.lines() {
+        let f: Vec<&str> = line.split(' ').collect();
+        let out = &mut out[..f[1].parse::<usize>().unwrap()];
+        let got = match f[0] {
+            "c" => huffman::compress(&unhex(f[2]), out),
+            "d" => huffman::decompress(&unhex(f[2]), out),
+            _ => panic!("bad line {line}"),
+        };
+        let got = got.map_or("ERR".into(), |n| hex(&out[..n]));
+        assert_eq!(got, f[3], "{line}");
     }
 }

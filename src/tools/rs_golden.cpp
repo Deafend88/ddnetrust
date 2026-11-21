@@ -11,6 +11,7 @@
 #include <base/str.h>
 
 #include <engine/shared/compression.h>
+#include <engine/shared/huffman.h>
 #include <engine/shared/packer.h>
 
 #include <cstdio>
@@ -293,6 +294,80 @@ static void GenPacker(FILE *f)
 	}
 }
 
+// "c <outsize> <hexin> <hexout|ERR>" (Compress) and
+// "d <outsize> <hexin> <hexout|ERR>" (Decompress).
+static void GenHuffman(FILE *f)
+{
+	CHuffman Huffman;
+	Huffman.Init();
+	unsigned char aOut[4096];
+
+	auto Compress = [&](const Bytes &In, int OutSize) {
+		int n = Huffman.Compress(In.data(), (int)In.size(), aOut, OutSize);
+		fprintf(f, "c %d %s %s\n", OutSize, Hex(In).c_str(), n < 0 ? "ERR" : Hex(aOut, n).c_str());
+		return n < 0 ? Bytes() : Bytes(aOut, aOut + n);
+	};
+	auto Decompress = [&](const Bytes &In, int OutSize) {
+		int n = Huffman.Decompress(In.data(), (int)In.size(), aOut, OutSize);
+		fprintf(f, "d %d %s %s\n", OutSize, Hex(In).c_str(), n < 0 ? "ERR" : Hex(aOut, n).c_str());
+	};
+
+	std::vector<Bytes> vInputs = {{}};
+	for(int b = 0; b < 256; b++)
+		vInputs.push_back({(unsigned char)b});
+	Bytes All(256);
+	for(int b = 0; b < 256; b++)
+		All[b] = b;
+	vInputs.push_back(All);
+	for(int i = 0; i < 300; i++)
+		vInputs.push_back(RandSkewed(1 + Rand() % 1400));
+	for(int i = 0; i < 100; i++)
+		vInputs.push_back(RandBytes(1 + Rand() % 1400));
+
+	std::vector<Bytes> vCompressed;
+	for(const Bytes &In : vInputs)
+	{
+		Bytes c = Compress(In, 2048);
+		vCompressed.push_back(c);
+		// output buffer limits around the exact size
+		if(!c.empty() && Rand() % 4 == 0)
+		{
+			Compress(In, (int)c.size());
+			Compress(In, (int)c.size() - 1 > 0 ? (int)c.size() - 1 : 1);
+			Compress(In, 1 + Rand() % 3);
+		}
+	}
+
+	for(size_t i = 0; i < vCompressed.size(); i++)
+	{
+		const Bytes &c = vCompressed[i];
+		Decompress(c, 2048);
+		if(Rand() % 4 == 0)
+		{
+			Decompress(c, vInputs[i].empty() ? 1 : (int)vInputs[i].size());
+			if(vInputs[i].size() > 1)
+				Decompress(c, (int)vInputs[i].size() - 1);
+		}
+		if(c.size() > 1)
+		{
+			Bytes Cut(c.begin(), c.begin() + Rand() % c.size());
+			Decompress(Cut, 2048);
+			Bytes Flip = c;
+			Flip[Rand() % Flip.size()] ^= 1 << (Rand() % 8);
+			Decompress(Flip, 2048);
+		}
+	}
+
+	// garbage
+	for(int i = 0; i < 2000; i++)
+		Decompress(RandBytes(Rand() % 40), 1 + (Rand() % 2 ? 2047 : Rand() % 8));
+	for(int i = 0; i < 200; i++)
+	{
+		Bytes z(1 + Rand() % 8, 0);
+		Decompress(z, 1 + Rand() % 64);
+	}
+}
+
 int main(int argc, const char **argv)
 {
 	CCmdlineFix CmdlineFix(&argc, &argv);
@@ -312,6 +387,7 @@ int main(int argc, const char **argv)
 	} aGens[] = {
 		{"varint.txt", GenVarint},
 		{"packer.txt", GenPacker},
+		{"huffman.txt", GenHuffman},
 	};
 	for(const SGen &Gen : aGens)
 	{
