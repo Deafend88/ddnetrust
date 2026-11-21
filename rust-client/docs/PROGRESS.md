@@ -80,12 +80,32 @@ Maps: coverage, LearnToPlay, Gold Mine, Tutorial, Tsunami, ctf1, dm1 (read from
   projectiles are not ported), and Read needs the DDNet extended object (vanilla path
   not ported). The C++ client prediction never teleports through tele-in tiles.
 
-## In progress
-- Nothing; M4 is done.
+### M5 — prediction (in progress)
+- 5.1 Snapshots into the prediction world: `predict.rs` ports the prediction parts of
+  CGameClient::OnNewSnapshot (active characters, Evolve of dead-reckoned cores,
+  GameInfoEx prediction flags, switch states, solo), UpdatePrediction (strong/weak
+  order, advancing the server world with the sent inputs, NetObjBegin/NetCharAdd/
+  NetObjEnd incl. keep-hooked) and OnPredict (copy, drop inactive/other-team
+  characters, tick to PredGameTick with `Client::input_at` = CClient::GetInput), called
+  like CClient::Update (each snapshot switch, then repredict). Stats: the C++
+  "prediction error" debug check (re-predicting a tick changed the local core) and
+  every snapshot of the local character compared with its prediction for that tick.
+  `tests/server.rs prediction_matches_server`: scripted walk/jump/hook on `dm1` for
+  10 s: 250 snapshots compared, 0 mismatched, 0 prediction errors (167 repredictions).
+  `ddnet-headless` prints the counters.
 
-## Next
-- M5 prediction: feed snapshots into `GameWorld` (NetCharAdd/Read per tick, local
-  input history, CGameClient::OnPredict loop), checked against the local server.
+## In progress
+- M5 doors: `coverage` mispredicts (94/250 snapshots) because the tee spawns next to a
+  door (switch type 240 = ENTITY_DOOR) that the server closes; C++ gets door state from
+  snapshot entities (NetObjAdd -> CDoor -> door collision layer). Next: doors, then an
+  interference run (two clients bumping/hooking) to measure mispredictions/recovery.
+
+## Later
+- Weapon prediction (`m_PredictWeapons`/AntiPingWeapons: FireWeapon, ninja dash,
+  projectiles, lasers, pickups) is out of scope for now.
+- Not ported for prediction yet: `Sv_TeamsState` (teams), `Sv_TuneParams` (non-default
+  tuning), the dummy, antiping smoothing/pre-inputs, vanilla servers without
+  `DDNetCharacter`/GameInfoEx.
 
 ## Not yet sent by the Rust client (a default C++ client sends these)
 - `Cl_ShowDistance`, `Cl_CameraInfo`: need the camera/window (M6).

@@ -12,8 +12,11 @@
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 
+use ddnet::map::Map;
 use ddnet::net::client::{Client, PlayerInfo, State, VERSION_STRING};
 use ddnet::net::{self, conn::FREQ};
+use ddnet::physics::collision::Collision;
+use ddnet::predict::Predictor;
 use ddnet::protocol::generated::{self as g, GameMsg};
 
 fn main() {
@@ -47,6 +50,9 @@ fn main() {
     let mut client = Client::new(player, "", net::random_bytes);
     client.connect(net::now(start));
 
+    // the map's collision, and prediction from snapshots once the game is entered
+    let collision = std::cell::OnceCell::new();
+    let mut prediction: Option<Predictor> = None;
     let mut last_state = client.state();
     let mut entered_at = None;
     let mut next_report = 0;
@@ -60,6 +66,11 @@ fn main() {
             println!("state: {:?}", client.state());
             if client.state() == State::Online {
                 entered_at = Some(now);
+                let col = client
+                    .map()
+                    .and_then(|m| Map::load(m.data.clone()).ok())
+                    .map(|m| collision.get_or_init(|| Collision::new(&m)));
+                prediction = col.map(Predictor::new);
                 if let Some(map) = client.map() {
                     println!(
                         "map: {} crc={:08x} size={}",
@@ -83,21 +94,31 @@ fn main() {
                 _ => {}
             }
         }
+        if let Some(p) = &mut prediction {
+            p.update(&mut client);
+        }
         if let Some(entered) = entered_at {
             let elapsed = now - entered;
             if script {
-                scripted_input(&mut client.input, elapsed);
+                net::scripted_input(&mut client.input, elapsed);
             } else {
                 client.input.direction = (elapsed < walk * FREQ) as i32;
             }
             if elapsed >= next_report * FREQ {
                 if let Some(c) = local_character(&client) {
-                    println!(
+                    print!(
                         "tick {} pos ({}, {})",
                         client.game_tick().unwrap_or(0),
                         c.x,
                         c.y
                     );
+                    if let Some(s) = prediction.as_ref().map(|p| &p.stats) {
+                        print!(
+                            " | prediction: {} snapshots checked, {} mispredicted, {} prediction errors",
+                            s.compared, s.mismatched, s.prediction_errors
+                        );
+                    }
+                    println!();
                 }
                 next_report += 1;
             }
@@ -110,19 +131,6 @@ fn main() {
         }
         std::thread::sleep(Duration::from_millis(1));
     }
-}
-
-/// The `--script` loop, in tenths of a second: each 2 s half walks one way, jumps at
-/// 0.5 s and hooks up ahead from 1.0 to 1.6 s.
-fn scripted_input(input: &mut g::ObjPlayerInput, elapsed: i64) {
-    let phase = elapsed * 10 / FREQ % 40;
-    let dir = if phase < 20 { 1 } else { -1 };
-    let t = phase % 20;
-    input.direction = dir;
-    input.jump = (5..7).contains(&t) as i32;
-    input.hook = (10..16).contains(&t) as i32;
-    input.target_x = dir * 100;
-    input.target_y = -150;
 }
 
 fn local_character(client: &Client) -> Option<g::ObjCharacter> {

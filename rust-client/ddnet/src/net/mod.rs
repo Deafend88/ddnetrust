@@ -67,3 +67,17 @@ pub fn random_bytes() -> [u8; 16] {
     out[8..].copy_from_slice(&b.to_le_bytes());
     out
 }
+
+/// The `ddnet-headless --script` movement loop, `elapsed` counting from entering the
+/// game: each 2 s half walks one way, jumps at 0.5 s and hooks up ahead from 1.0 to
+/// 1.6 s.
+pub fn scripted_input(input: &mut crate::protocol::generated::ObjPlayerInput, elapsed: i64) {
+    let phase = elapsed * 10 / conn::FREQ % 40;
+    let dir = if phase < 20 { 1 } else { -1 };
+    let t = phase % 20;
+    input.direction = dir;
+    input.jump = (5..7).contains(&t) as i32;
+    input.hook = (10..16).contains(&t) as i32;
+    input.target_x = dir * 100;
+    input.target_y = -150;
+}

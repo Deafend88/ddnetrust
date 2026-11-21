@@ -93,14 +93,18 @@ chat: 'rust tee' entered and joined the game
 ...
 state: Online
 map: dm1 crc=f2159e6e size=5805
-tick 120 pos (1584, 305)
-tick 170 pos (1841, 289)
-tick 220 pos (1841, 243)
+tick 120 pos (1584, 305) | prediction: 0 snapshots checked, 0 mispredicted, 0 prediction errors
+tick 170 pos (1841, 289) | prediction: 25 snapshots checked, 0 mispredicted, 0 prediction errors
+tick 220 pos (1841, 243) | prediction: 50 snapshots checked, 0 mispredicted, 0 prediction errors
 ...
 disconnected cleanly
 ```
 
-One `tick ... pos` line per second; the position changes as the script moves.
+There is one `tick ... pos` line per second, and the position changes as the script
+moves. The prediction counters compare every server snapshot of your tee with what the
+client predicted for that tick. Alone on `dm1` they stay at 0 mispredicted and 0
+prediction errors; other players bumping or hooking you cause some, which is normal.
+Maps with doors (e.g. `coverage`) still mispredict, because doors are not predicted yet.
 
 At the same time the server window shows:
 

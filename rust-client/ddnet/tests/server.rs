@@ -11,8 +11,11 @@ use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
+use ddnet::map::Map;
 use ddnet::net::client::{Client, PlayerInfo, State, VERSION_STRING};
 use ddnet::net::{self, conn::FREQ};
+use ddnet::physics::collision::Collision;
+use ddnet::predict::Predictor;
 use ddnet::protocol::generated as g;
 
 struct Server {
@@ -36,7 +39,7 @@ fn server_binary() -> Option<PathBuf> {
     path.exists().then_some(path)
 }
 
-fn start_server(exe: &PathBuf) -> (Server, u16) {
+fn start_server(exe: &PathBuf, map: &str) -> (Server, u16) {
     let port = UdpSocket::bind("127.0.0.1:0")
         .unwrap()
         .local_addr()
@@ -56,7 +59,7 @@ fn start_server(exe: &PathBuf) -> (Server, u16) {
             "sv_register 0",
             "bindaddr 127.0.0.1",
             &format!("sv_port {port}"),
-            "sv_map coverage",
+            &format!("sv_map {map}"),
             "sv_tee_historian 1",
         ])
         .stdout(Stdio::from(log.try_clone().unwrap()))
@@ -81,7 +84,7 @@ fn local_server_session() {
         eprintln!("SKIPPED: no DDNet-Server (set DDNET_SERVER or build the game-server target)");
         return;
     };
-    let (server, port) = start_server(&exe);
+    let (server, port) = start_server(&exe, "coverage");
     let socket = net::connect_socket(format!("127.0.0.1:{port}").parse().unwrap()).unwrap();
     let start = Instant::now();
     let mut client = Client::new(PlayerInfo::default(), "", net::random_bytes);
@@ -152,4 +155,49 @@ fn local_server_session() {
     let dir = server.dir.clone();
     drop(server);
     let _ = fs::remove_dir_all(dir);
+}
+
+/// M5: prediction from snapshots against the server. Alone on the map with scripted
+/// walking, jumping and hooking, every snapshot of the local character must equal what
+/// was predicted for its tick, and re-predicting a tick must never change it.
+#[test]
+fn prediction_matches_server() {
+    let Some(exe) = server_binary() else {
+        eprintln!("SKIPPED: no DDNet-Server (set DDNET_SERVER or build the game-server target)");
+        return;
+    };
+    for map_name in ["dm1"] {
+        let (server, port) = start_server(&exe, map_name);
+        let socket = net::connect_socket(format!("127.0.0.1:{port}").parse().unwrap()).unwrap();
+        let start = Instant::now();
+        let mut client = Client::new(PlayerInfo::default(), "", net::random_bytes);
+        client.connect(net::now(start));
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while Instant::now() < deadline
+            && !(client.state() == State::Online && local_x(&client).is_some())
+        {
+            net::pump(&socket, &mut client, net::now(start)).unwrap();
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(client.state(), State::Online, "{map_name}");
+
+        let map = Map::load(client.map().unwrap().data.clone()).unwrap();
+        let col = Collision::new(&map);
+        let mut pred = Predictor::new(&col);
+        let entered = net::now(start);
+        while net::now(start) - entered < 10 * FREQ {
+            net::scripted_input(&mut client.input, net::now(start) - entered);
+            net::pump(&socket, &mut client, net::now(start)).unwrap();
+            pred.update(&mut client);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let s = &pred.stats;
+        eprintln!("{map_name}: {s:?}");
+        assert!(s.compared > 100, "{map_name}: {s:?}");
+        assert_eq!(s.mismatched, 0, "{map_name}: {s:?}");
+        assert_eq!(s.prediction_errors, 0, "{map_name}: {s:?}");
+        let dir = server.dir.clone();
+        drop(server);
+        let _ = fs::remove_dir_all(dir);
+    }
 }

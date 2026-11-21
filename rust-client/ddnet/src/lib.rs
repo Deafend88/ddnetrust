@@ -4,4 +4,5 @@
 pub mod map;
 pub mod net;
 pub mod physics;
+pub mod predict;
 pub mod protocol;

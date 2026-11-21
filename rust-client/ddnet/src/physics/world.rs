@@ -105,6 +105,10 @@ pub struct Character {
     pub last_weapon_switch_tick: i32,
     pub last_tune_zone_tick: i32,
     pub interfering: bool,
+    /// C++: `CEntity::m_SnapTicks`, world ticks since the last snapshot had it.
+    pub snap_ticks: i32,
+    pub strong_weak_id: i32,
+    marked_for_destroy: bool,
 }
 
 /// What a character reaches through C++ `GameWorld()` while its core is taken out of the
@@ -121,7 +125,7 @@ struct Ctx<'w> {
 }
 
 /// C++: `CNetObj_Character` starts with the `CNetObj_CharacterCore` fields.
-fn core_obj(c: &ObjCharacter) -> ObjCharacterCore {
+pub fn core_obj(c: &ObjCharacter) -> ObjCharacterCore {
     ObjCharacterCore {
         tick: c.tick,
         x: c.x,
@@ -882,6 +886,7 @@ impl Character {
         self.set_solo(c, w, has(g::CHARACTERFLAG_SOLO));
         self.set_super(c, w, has(g::CHARACTERFLAG_SUPER));
         self.tele_checkpoint = ext.tele_checkpoint;
+        self.strong_weak_id = ext.strong_weak_id;
         self.tune_zone_override = ext.tune_zone_override;
 
         let ninja = has(g::CHARACTERFLAG_WEAPON_NINJA);
@@ -1006,6 +1011,8 @@ pub struct GameWorld<'a> {
     chars: Vec<Option<Character>>,
     /// Character ids in entity list order: C++ inserts at the front.
     order: Vec<usize>,
+    /// C++: `m_LocalClientId`, set by `net_obj_begin`.
+    local_id: i32,
 }
 
 impl<'a> GameWorld<'a> {
@@ -1022,6 +1029,7 @@ impl<'a> GameWorld<'a> {
             config,
             chars: vec![None; MAX_CLIENTS],
             order: Vec::new(),
+            local_id: -1,
         }
     }
 
@@ -1113,6 +1121,104 @@ impl<'a> GameWorld<'a> {
         self.with_char(id, |ch, c, w| ch.read(c, w, obj, ext, is_local));
     }
 
+    /// C++: `CGameWorld::NetObjBegin`: every character is dropped by `net_obj_end` unless
+    /// the snapshot has it.
+    pub fn net_obj_begin(&mut self, teams: TeamsCore, local_id: i32) {
+        self.teams = teams;
+        self.local_id = local_id;
+        for ch in self.chars.iter_mut().flatten() {
+            ch.marked_for_destroy = true;
+        }
+    }
+
+    /// C++: `CGameWorld::NetCharAdd` (with the extended object, see `Character::read`).
+    pub fn net_char_add(
+        &mut self,
+        id: usize,
+        obj: &ObjCharacter,
+        ext: &ObjDDNetCharacter,
+        is_local: bool,
+    ) {
+        // C++: IsLocalTeam
+        if id >= MAX_CLIENTS
+            || (self.local_id >= 0 && !self.teams.can_collide(self.local_id, id as i32))
+        {
+            return;
+        }
+        if self.chars[id].is_some() {
+            self.read_character(id, obj, ext, is_local);
+            let ch = self.chars[id].as_mut().unwrap();
+            ch.snap_ticks = 0; // C++: CEntity::Keep
+            ch.marked_for_destroy = false;
+        } else {
+            self.add_character(id, obj, ext);
+        }
+    }
+
+    /// C++: `CGameWorld::NetObjEnd`.
+    pub fn net_obj_end(&mut self) {
+        // keep predicting hooked characters, based on hook position
+        for i in 0..MAX_CLIENTS {
+            let Some(ch) = &self.chars[i] else { continue };
+            if ch.marked_for_destroy {
+                continue;
+            }
+            let hooked = self.core.characters[i].as_ref().unwrap().hooked_player();
+            let hook_pos = self.core.characters[i].as_ref().unwrap().hook_pos;
+            let Some(h) = usize::try_from(hooked).ok().filter(|&h| h < MAX_CLIENTS) else {
+                continue;
+            };
+            if let (Some(hc), Some(c)) = (&mut self.chars[h], &mut self.core.characters[h])
+                && hc.marked_for_destroy
+            {
+                hc.pos = hook_pos;
+                c.pos = hook_pos;
+                c.vel = vec2(0.0, 0.0);
+                hc.saved_input = ObjPlayerInput {
+                    target_y: -1,
+                    ..Default::default()
+                };
+                hc.marked_for_destroy = false;
+            }
+        }
+        // RemoveEntities (doors come with snapshot entities, not ported)
+        for i in 0..MAX_CLIENTS {
+            if self.chars[i].as_ref().is_some_and(|c| c.marked_for_destroy) {
+                self.remove_character(i);
+            }
+        }
+    }
+
+    /// C++: `CEntity::Destroy` of a character.
+    pub fn remove_character(&mut self, id: usize) {
+        self.chars[id] = None;
+        self.core.characters[id] = None;
+        self.order.retain(|&i| i != id);
+    }
+
+    /// C++: `RemoveEntity` + `InsertEntity` for each id that has a character, so the last
+    /// one ticks first (strong hook order).
+    pub fn reinsert(&mut self, ids: impl IntoIterator<Item = usize>) {
+        for id in ids {
+            if self.chars.get(id).is_some_and(|c| c.is_some()) {
+                self.order.retain(|&i| i != id);
+                self.order.insert(0, id);
+            }
+        }
+    }
+
+    /// C++: `CCharacter::SetInput`.
+    pub fn set_input(&mut self, id: usize, input: &ObjPlayerInput) {
+        if let Some(ch) = self.chars.get_mut(id).and_then(|c| c.as_mut()) {
+            ch.latest_input = *input;
+            ch.input = *input;
+            if ch.input.target_x == 0 && ch.input.target_y == 0 {
+                ch.input.target_y = -1;
+                ch.latest_input.target_y = -1;
+            }
+        }
+    }
+
     /// C++: `CCharacter::OnDirectInput`.
     pub fn on_direct_input(&mut self, id: usize, input: &ObjPlayerInput) {
         self.with_char(id, |ch, c, w| ch.on_direct_input(c, w, input));
@@ -1186,6 +1292,7 @@ impl<'a> GameWorld<'a> {
             let pos = self.core.characters[id].as_ref().map(|c| c.pos);
             if let (Some(ch), Some(pos)) = (self.chars[id].as_mut(), pos) {
                 ch.pos = pos;
+                ch.snap_ticks += 1;
             }
         }
 

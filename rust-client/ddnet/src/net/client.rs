@@ -177,6 +177,7 @@ struct StoredSnapshot {
 #[derive(Clone, Copy)]
 struct SentInput {
     tick: i32,
+    data: ObjPlayerInput,
     predicted_time: i64,
     time: i64,
 }
@@ -239,6 +240,12 @@ pub struct Client {
     spectator_count: i32,
     /// Game messages received, oldest first; the caller drains it.
     pub messages: Vec<GameMsg>,
+    /// Snapshot switches as (previous tick, new tick), oldest first; the caller drains
+    /// it. C++ calls `CGameClient::OnNewSnapshot` for each.
+    pub snapshot_switches: Vec<(Option<i32>, i32)>,
+    /// C++: `Repredict` in `CClient::Update`: a new snapshot or prediction tick since the
+    /// caller last cleared it.
+    pub repredict: bool,
     random: fn() -> [u8; 16],
 }
 
@@ -280,6 +287,7 @@ impl Client {
             pred_tick: 0,
             inputs: [SentInput {
                 tick: -1,
+                data: ObjPlayerInput::default(),
                 predicted_time: 0,
                 time: 0,
             }; NUM_INPUTS],
@@ -293,6 +301,8 @@ impl Client {
             show_others: -1, // C++: SHOW_OTHERS_NOT_SET
             spectator_count: -1,
             messages: Vec::new(),
+            snapshot_switches: Vec::new(),
+            repredict: false,
             random,
         }
     }
@@ -324,6 +334,20 @@ impl Client {
         self.cur_tick
             .and_then(|t| self.stored(t))
             .map_or(&[], |s| &s.items[..])
+    }
+
+    /// Validated items of the stored snapshot of `tick`.
+    pub fn snapshot_at(&self, tick: i32) -> Option<&[Item]> {
+        self.stored(tick).map(|s| &s.items[..])
+    }
+
+    /// C++: `CClient::GetInput`: the latest sent input for a tick at or before `tick`.
+    pub fn input_at(&self, tick: i32) -> Option<ObjPlayerInput> {
+        self.inputs
+            .iter()
+            .filter(|i| i.tick != -1 && i.tick <= tick)
+            .max_by_key(|i| i.tick)
+            .map(|i| i.data)
     }
 
     fn stored(&self, tick: i32) -> Option<&StoredSnapshot> {
@@ -789,6 +813,7 @@ impl Client {
             }
             if new_pred_tick > self.pred_tick {
                 self.pred_tick = new_pred_tick;
+                self.repredict = true;
                 self.send_input(now);
             }
         }
@@ -804,7 +829,7 @@ impl Client {
     }
 
     /// C++: `CClient::MaxLatencyTicks`.
-    fn max_latency_ticks(&self) -> i32 {
+    pub fn max_latency_ticks(&self) -> i32 {
         (TICK_SPEED + self.prediction_margin_ms() * TICK_SPEED / 1000) as i32
     }
 
@@ -846,6 +871,7 @@ impl Client {
         }
         self.inputs[self.current_input] = SentInput {
             tick: self.pred_tick,
+            data: input,
             predicted_time: self.predicted_time.get(now),
             time: now,
         };
@@ -856,6 +882,10 @@ impl Client {
     /// C++: the messages `CGameClient::OnNewSnapshot` sends (gameclient.cpp:2255).
     /// `Cl_ShowDistance` and `Cl_CameraInfo` need a camera and come with rendering.
     fn on_new_snapshot(&mut self, now: i64) {
+        if let Some(cur) = self.cur_tick {
+            self.snapshot_switches.push((self.prev_tick, cur));
+            self.repredict = true;
+        }
         self.local_id = self.snapshot().iter().find_map(|it| {
             (it.type_id == g::NETOBJTYPE_PLAYERINFO)
                 .then(|| g::ObjPlayerInfo::from_ints(&it.data))
