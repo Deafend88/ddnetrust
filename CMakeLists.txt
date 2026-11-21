@@ -3334,6 +3334,7 @@ if(TOOLS)
     map_resave.cpp
     map_test.cpp
     packetgen.cpp
+    rs_golden.cpp
     stun.cpp
     twping.cpp
     unicode_confusables.cpp

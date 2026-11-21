@@ -1,0 +1,3 @@
+[workspace]
+members = ["ddnet"]
+resolver = "3"
