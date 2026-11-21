@@ -946,15 +946,9 @@ fn random_uuid(random: fn() -> [u8; 16]) -> [u8; 16] {
 
 /// zlib CRC-32, as C++ `CDataFileReader::Crc` computes over the map file.
 fn crc32(data: &[u8]) -> u32 {
-    // ponytail: bitwise, ~1 ms per MiB; use crc32fast once flate2 is a dependency (M4)
-    let mut crc = !0u32;
-    for &b in data {
-        crc ^= b as u32;
-        for _ in 0..8 {
-            crc = (crc >> 1) ^ (0xEDB8_8320 & (crc & 1).wrapping_neg());
-        }
-    }
-    !crc
+    let mut crc = flate2::Crc::new();
+    crc.update(data);
+    crc.sum()
 }
 
 /// C++: `str_valid_filename` (str.cpp:196).

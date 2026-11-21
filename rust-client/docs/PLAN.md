@@ -102,8 +102,8 @@ the need. Checked rung 2: the existing Rust in this repo (`src/base/*.rs`,
 | `game/client/gameclient.cpp` (`OnConnected`, `SendInfo`, ISDDNETLEGACY, `OnSnapInput`, `OnNewSnapshot`, `OnPredict`, `UpdatePrediction`) | `net/client.rs` (M3), `physics/world.rs` glue (M5) | only the network-visible and prediction parts |
 | `datasrc/network.py`, `datasrc/datatypes.py`, `datasrc/compile.py` | `scripts/gen_protocol.py` → `generated.rs` | enums/flags, NetObj structs as `[i32; N]` layouts, msg pack/unpack, `SecureUnpackObj` range checks, static sizes, ex UUIDs |
 | `engine/shared/datafile.{h,cpp}` | `map/datafile.rs` | header v3/v4, swaplen fix-up, item types, item offsets, zlib data; little-endian only (we read with `from_le_bytes`, so no swap path) |
-| `engine/shared/map.cpp` (tile layer loading/validation) | `map/datafile.rs` / `layers.rs` | tilemap data size checks, legacy tele/speedup/switch/tune handling |
-| `game/layers.{h,cpp}`, `game/mapitems.h` | `map/layers.rs` | first layer with each flag wins exactly as in C++ (`if/else if` chain); `CTile`, `CTeleTile`, `CSpeedupTile`, `CSwitchTile`, `CTuneTile` layouts |
+| `engine/shared/map.cpp` (tile layer loading/validation) | `map/mod.rs` | tilemap data size checks, legacy tele/speedup/switch/tune handling |
+| `game/layers.{h,cpp}`, `game/mapitems.h` | `map/mod.rs` | the last layer with each flag wins, as in C++ (it assigns on every match); `CTile`, `CTeleTile`, `CSpeedupTile`, `CSwitchTile`, `CTuneTile` layouts |
 | `base/vmath.h`, `base/math.h` | `physics/vmath.rs` | own `Vec2` (no glam: its normalize differs in op order); `normalize` = `l = 1/len; (x*l, y*l)`; `round_to_int`, `round_truncate`, `mix`, `closest_point_on_line` |
 | `game/tuning.h`, `CTuneParam` (gamecore.h) | `physics/tuning.rs` | values stored as `int` hundredths; read back as `/100.0f` — must be reproduced, it changes physics |
 | `game/collision.{h,cpp}` | `physics/collision.rs` | `MoveBox`, `TestBox`, `IsOnGround`, `IntersectLine*`, move restrictions, tele/speedup/switch/tune lookups, `std::map` → `BTreeMap` |

@@ -40,12 +40,20 @@
   character, prediction runs ahead of the server, server logs entry, `version=20030`
   and a normal leave (no timeout); its teehistorian holds "DDNet-rs 0.1.0".
 
+### M4 — map + physics parity (in progress)
+Maps: coverage, LearnToPlay, Gold Mine, Tutorial, Tsunami, ctf1, dm1 (read from
+`data/maps/`). `tests/parity.rs` holds everything; data from `src/tools/rs_parity.cpp`.
+- 4.1 Map loading: `map/datafile.rs` (CDataFileReader incl. Validate, zlib via `flate2`)
+  and `map/mod.rs` (CMap::Load: version/group/layer checks, tilemap upgrades,
+  EnsureTileLayerProperties, lazy tile-data validation/tileskip unpacking; CLayers
+  physics layer selection). All items, data blobs and the six physics layers match
+  C++ on all 7 maps, plus 1,050 mutated map files (same accept/reject, same layers).
+
 ## In progress
-- Nothing.
+- M4.2 collision: `physics/collision.rs` + tick-driven collision parity.
 
 ## Next
-- M4: map loading (datafile + DDNet game layers) and physics port with the C++ parity
-  harness (`rs_parity` tool, maps from `data/maps/`).
+- M4.3 character core (gamecore.cpp), M4.4 DDNet tile effects (prediction CCharacter).
 
 ## Not yet sent by the Rust client (a default C++ client sends these)
 - `Cl_ShowDistance`, `Cl_CameraInfo`: need the camera/window (M6).
@@ -72,6 +80,13 @@ scratch directory whose `storage.cfg` contains just `add_path $CURRENTDIR` and
 `add_path $DATADIR`, so it never touches the real `%APPDATA%/DDNet`, and with
 `sv_register 0`, `bindaddr 127.0.0.1`. `tests/server.rs` does exactly that. Never
 connect to public servers until the user says so.
+
+## Regenerate parity data
+Build the `rs_parity` target like `rs_golden`, then per map (repo root):
+
+    build-rss_parity.exe map "data\maps\<name>.map" rust-client	ests\golden\maps\<name>.txt <scratch dir>
+
+(spaces in `<name>` become `_` in the output file name).
 
 ## Regenerate protocol code
     python rust-client/scripts/gen_protocol.py   # needs rustfmt on PATH

@@ -1,0 +1,469 @@
+file 3805 47ef35d6
+item 0 0 - 0 4 99f8b879
+item 1 1 - 0 24 df7d66d9
+item 2 2 - 0 24 c844ab94
+item 3 2 - 1 24 46cbac77
+item 4 4 - 0 60 c16450f5
+item 5 4 - 1 60 027b9512
+item 6 5 - 0 40 67acb88a
+item 7 5 - 1 92 a92196a9
+item 8 5 - 2 92 3f6ea6d3
+item 9 5 - 3 92 d3d27569
+item 10 5 - 4 92 cfad5829
+item 11 5 - 5 92 3605b088
+item 12 5 - 6 92 fb25a319
+item 13 5 - 7 92 30814aa0
+item 14 5 - 8 92 f6d1e094
+item 15 6 - 0 0 00000000
+item 16 -1 3e1b2716-178c-3978-9bd9-b11ae0410dd8 0 24 b9f070c7
+item 17 -1 3e1b2716-178c-3978-9bd9-b11ae0410dd8 1 24 8fb7b1ca
+item 18 65535 - 65534 16 81eb2319
+data 0 50 ea5148df
+data 1 19 2509b280
+data 2 11 f70b81ee
+data 3 152 d7103314
+data 4 10000 a94c334a
+data 5 10000 4d3bca2e
+data 6 10000 14fff033
+data 7 10000 4d3bca2e
+data 8 5000 d1b490b1
+data 9 10000 4d3bca2e
+data 10 15000 7547db12
+data 11 10000 4d3bca2e
+data 12 10000 089b9e74
+data 13 10000 3bbdfbe5
+data 14 10000 70291bad
+data 15 10000 4d3bca2e
+data 16 5000 f0993cc3
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut x 2683 173 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 ERR
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut x 190 240 fail
+mut w 3124 115 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 ERR
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut t 2 0 fail
+mut x 3149 83 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 ERR
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut w 24 -1 fail
+mut t 19 0 fail
+mut w 3496 -2007481116 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut t 377 0 fail
+mut t 19 0 fail
+mut x 3026 243 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 ERR
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut x 912 62 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut w 640 -41 fail
+mut x 1961 38 fail
+mut x 0 218 fail
+mut t 2525 0 fail
+mut t 22 0 fail
+mut w 140 828989558 fail
+mut t 83 0 fail
+mut w 284 10 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut x 86 204 fail
+mut x 350 128 fail
+mut w 28 -1 fail
+mut x 864 138 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 184 ERR
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut t 599 0 fail
+mut x 2967 189 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 ERR
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut w 2300 -1 fail
+mut w 872 -1710400463 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut w 836 -18 fail
+mut w 20 -1 fail
+mut t 2075 0 fail
+mut t 38 0 fail
+mut t 541 0 fail
+mut t 3451 0 fail
+mut w 1948 -30 fail
+mut w 1872 -1 fail
+mut x 808 60 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut t 10 0 fail
+mut w 3144 60 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 ERR
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut w 2980 1982355413 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 ERR
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut t 2422 0 fail
+mut x 27 166 fail
+mut x 3608 241 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut t 0 0 fail
+mut w 12 145 fail
+mut w 0 -1838459420 fail
+mut w 544 -1 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut t 592 0 fail
+mut w 2224 135 fail
+mut t 27 0 fail
+mut t 141 0 fail
+mut t 1782 0 fail
+mut x 473 49 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut x 178 170 fail
+mut w 3492 -1 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut w 648 -1 fail
+mut t 1512 0 fail
+mut t 51 0 fail
+mut t 30 0 fail
+mut w 3672 65 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut w 948 47 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup -
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut t 536 0 fail
+mut w 24 74 fail
+mut t 3095 0 fail
+mut t 31 0 fail
+mut t 631 0 fail
+mut t 2048 0 fail
+mut x 2772 252 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut t 597 0 fail
+mut x 2260 187 fail
+mut t 1985 0 fail
+mut w 1396 -1 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut t 863 0 fail
+mut x 360 164 fail
+mut w 20 -1 fail
+mut t 21 0 fail
+mut x 29 133 fail
+mut x 903 185 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut x 981 35 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut w 2932 427198433 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut w 312 -1 fail
+mut w 8 3 fail
+mut x 1884 55 fail
+mut w 444 -41 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut w 3508 -1 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut t 14 0 fail
+mut t 2463 0 fail
+mut w 940 72 fail
+mut t 352 0 fail
+mut w 16 114 fail
+mut w 624 88 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut x 2488 103 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 ERR
+layer tune 50 50 5000 f0993cc3
+mut t 6 0 fail
+mut x 4 37 fail
+mut x 5 204 fail
+mut x 876 226 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut w 3656 93 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut x 247 166 fail
+mut w 880 -25 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut w 32 -1 fail
+mut w 756 47 fail
+mut w 12 -446166221 fail
+mut x 18 204 fail
+mut x 583 112 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut t 3150 0 fail
+mut t 640 0 fail
+mut t 2028 0 fail
+mut t 2129 0 fail
+mut x 3462 125 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut w 364 -24 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut x 21 135 fail
+mut w 28 1855332342 fail
+mut w 72 1994225635 fail
+mut w 28 -1 fail
+mut x 402 233 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut x 9 149 fail
+mut x 637 234 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut t 15 0 fail
+mut t 325 0 fail
+mut x 609 133 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut x 2899 79 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 ERR
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut t 2 0 fail
+mut w 8 53985369 fail
+mut w 32 -1 fail
+mut w 3012 -1002387619 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 ERR
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut t 2503 0 fail
+mut t 1672 0 fail
+mut t 874 0 fail
+mut x 33 226 fail
+mut t 18 0 fail
+mut w 3220 -1 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut w 860 -1 fail
+mut x 1 237 fail
+mut x 3744 10 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut x 2533 203 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 ERR
+layer tune 50 50 5000 f0993cc3
+mut w 4 -1 fail
+mut w 1760 -1 fail
+mut w 932 -1 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut w 28 -1 fail
+mut x 4 53 fail
+mut x 491 250 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 10000 089b9e74
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut t 3738 0 fail
+mut t 5 0 fail
+mut w 3020 -1 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 ERR
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut x 3107 220 ok
+layer game 50 50 10000 a94c334a
+layer tele 50 50 5000 d1b490b1
+layer speedup 50 50 15000 7547db12
+layer front 50 50 ERR
+layer switch 50 50 10000 14fff033
+layer tune 50 50 5000 f0993cc3
+mut t 2883 0 fail
+mut t 15 0 fail
+mut t 398 0 fail
+mut t 32 0 fail
+mut w 1276 -1 fail

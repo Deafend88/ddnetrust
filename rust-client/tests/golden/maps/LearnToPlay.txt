@@ -1,0 +1,821 @@
+file 512488 7e428ca3
+item 0 0 - 0 4 99f8b879
+item 1 1 - 0 24 df7d66d9
+item 2 2 - 0 24 e9f2bb6c
+item 3 2 - 1 24 4148284b
+item 4 2 - 2 24 c1962f6b
+item 5 2 - 3 24 72c38b32
+item 6 2 - 4 24 fec4b90f
+item 7 2 - 5 24 7cf89c46
+item 8 2 - 6 24 82d03ba0
+item 9 2 - 7 24 8e3c1de1
+item 10 2 - 8 24 60bd20ff
+item 11 2 - 9 24 ddf4d4e5
+item 12 2 - 10 24 37777da4
+item 13 2 - 11 24 c3d52240
+item 14 2 - 12 24 365c7a36
+item 15 2 - 13 24 3102e76c
+item 16 2 - 14 24 09466fc3
+item 17 2 - 15 24 fb80aeb4
+item 18 2 - 16 24 b72de558
+item 19 2 - 17 24 74f8ec6b
+item 20 2 - 18 24 f8b40154
+item 21 2 - 19 24 d7c52b18
+item 22 2 - 20 24 6846f1a1
+item 23 2 - 21 24 0f08a900
+item 24 2 - 22 24 636e680c
+item 25 2 - 23 24 4225ea7a
+item 26 2 - 24 24 5fb8977e
+item 27 2 - 25 24 052579f7
+item 28 2 - 26 24 4a33df5d
+item 29 2 - 27 24 f66a7e9d
+item 30 2 - 28 24 e6fedd31
+item 31 2 - 29 24 26cf32ca
+item 32 2 - 30 24 91d3a1c8
+item 33 2 - 31 24 79ff6e3e
+item 34 2 - 32 24 4bc53a33
+item 35 3 - 0 52 f477ca4e
+item 36 3 - 1 52 955e96bb
+item 37 3 - 2 52 69ae07f7
+item 38 3 - 3 52 72605217
+item 39 3 - 4 52 674ff1bd
+item 40 3 - 5 52 09fa1953
+item 41 4 - 0 60 30f4ff9e
+item 42 4 - 1 60 8155fd9f
+item 43 4 - 2 60 882a18af
+item 44 4 - 3 60 a3415998
+item 45 4 - 4 60 3af50b6c
+item 46 5 - 0 40 373323da
+item 47 5 - 1 40 c65233f9
+item 48 5 - 2 40 ed721a2c
+item 49 5 - 3 92 d03a3797
+item 50 5 - 4 92 5b619eb2
+item 51 5 - 5 92 c24e706b
+item 52 5 - 6 40 85140ff7
+item 53 5 - 7 40 955cdbc7
+item 54 5 - 8 40 9beb35fc
+item 55 5 - 9 40 5b6b5fe7
+item 56 5 - 10 40 e9be9090
+item 57 5 - 11 40 786a11fa
+item 58 5 - 12 40 0ab852ee
+item 59 5 - 13 40 66952bf1
+item 60 5 - 14 40 27b7fe2b
+item 61 5 - 15 40 e5f216a5
+item 62 5 - 16 40 b7a2a31a
+item 63 5 - 17 40 06f4d4db
+item 64 5 - 18 40 1a498a3d
+item 65 5 - 19 40 c3d2a458
+item 66 5 - 20 40 5727d9d2
+item 67 5 - 21 40 ef3bec4a
+item 68 5 - 22 40 c035f58f
+item 69 5 - 23 40 cd07730d
+item 70 5 - 24 92 afbd640d
+item 71 5 - 25 40 9e414ac5
+item 72 5 - 26 92 144a6651
+item 73 5 - 27 92 ebbe10ee
+item 74 5 - 28 40 92e23134
+item 75 5 - 29 40 6987cc6e
+item 76 5 - 30 40 3feaf94a
+item 77 5 - 31 40 a97068e3
+item 78 5 - 32 92 03eaa061
+item 79 5 - 33 92 0bf0da64
+item 80 5 - 34 92 7a352eeb
+item 81 5 - 35 92 9fdd4440
+item 82 5 - 36 92 93d13baa
+item 83 5 - 37 92 d884e83f
+item 84 5 - 38 92 ade642c8
+item 85 5 - 39 92 b59fa5c4
+item 86 5 - 40 92 cb0818de
+item 87 5 - 41 92 b6b82186
+item 88 5 - 42 92 1ca1aea2
+item 89 5 - 43 92 0a622d5c
+item 90 5 - 44 92 48509156
+item 91 5 - 45 92 98237d3c
+item 92 5 - 46 92 80ea8749
+item 93 5 - 47 92 79e0c03b
+item 94 5 - 48 92 162b3466
+item 95 5 - 49 92 58c2fd58
+item 96 5 - 50 92 b18e9fb9
+item 97 5 - 51 92 61b9ea60
+item 98 5 - 52 92 fb6c9ee7
+item 99 5 - 53 40 abac9383
+item 100 5 - 54 40 a6323cc4
+item 101 6 - 0 576 155d4c1d
+item 102 -1 3e1b2716-178c-3978-9bd9-b11ae0410dd8 0 24 c3a9add1
+item 103 -1 3e1b2716-178c-3978-9bd9-b11ae0410dd8 1 24 6dc13c40
+item 104 -1 3e1b2716-178c-3978-9bd9-b11ae0410dd8 2 24 440988b2
+item 105 -1 3e1b2716-178c-3978-9bd9-b11ae0410dd8 3 24 c268718a
+item 106 -1 3e1b2716-178c-3978-9bd9-b11ae0410dd8 4 24 45c854e9
+item 107 -1 3e1b2716-178c-3978-9bd9-b11ae0410dd8 5 24 b831ac9c
+item 108 -1 3e1b2716-178c-3978-9bd9-b11ae0410dd8 6 24 733e064b
+item 109 -1 3e1b2716-178c-3978-9bd9-b11ae0410dd8 7 24 5af6b2b9
+item 110 -1 3e1b2716-178c-3978-9bd9-b11ae0410dd8 8 24 f49e2328
+item 111 -1 3e1b2716-178c-3978-9bd9-b11ae0410dd8 9 24 7a744412
+item 112 -1 3e1b2716-178c-3978-9bd9-b11ae0410dd8 10 24 d41cd583
+item 113 -1 3e1b2716-178c-3978-9bd9-b11ae0410dd8 11 24 fdd46171
+item 114 -1 3e1b2716-178c-3978-9bd9-b11ae0410dd8 12 24 53bcf0e0
+item 115 -1 3e1b2716-178c-3978-9bd9-b11ae0410dd8 13 24 ae450895
+item 116 -1 3e1b2716-178c-3978-9bd9-b11ae0410dd8 14 24 002d9904
+item 117 -1 3e1b2716-178c-3978-9bd9-b11ae0410dd8 15 24 29e52df6
+item 118 -1 3e1b2716-178c-3978-9bd9-b11ae0410dd8 16 24 878dbc67
+item 119 -1 3e1b2716-178c-3978-9bd9-b11ae0410dd8 17 24 ef40e5c3
+item 120 -1 3e1b2716-178c-3978-9bd9-b11ae0410dd8 18 24 41287452
+item 121 -1 3e1b2716-178c-3978-9bd9-b11ae0410dd8 19 24 68e0c0a0
+item 122 -1 3e1b2716-178c-3978-9bd9-b11ae0410dd8 20 24 c6885131
+item 123 -1 3e1b2716-178c-3978-9bd9-b11ae0410dd8 21 24 3b71a944
+item 124 65535 - 65534 16 81eb2319
+data 0 14 f97a2c13
+data 1 5 a6e8663b
+data 2 190736 957b77c7
+data 3 22 38eaea1b
+data 4 328536 232ae1b7
+data 5 17 bc81fada
+data 6 372600 6aa79fab
+data 7 25 fbb072ce
+data 8 278988 3ea68a88
+data 9 22 0882fed8
+data 10 173736 e6f2cd7e
+data 11 19 7f6ebfa3
+data 12 96216 5be8e9de
+data 13 25 9b409d0e
+data 14 171112 8b29bad7
+data 15 29 b534d271
+data 16 232100 ff6f0aec
+data 17 27 e2e35eba
+data 18 244944 38ae62cd
+data 19 40 4a8bb2e5
+data 20 346608 9fb956b5
+data 21 21 3ca3aa0b
+data 22 334776 a425bcdc
+data 23 19 c537ffb8
+data 24 511464 d6ad7603
+data 25 18 ff014439
+data 26 528768 db7d3322
+data 27 18 2464f716
+data 28 327240 2d917e59
+data 29 23 36028ebd
+data 30 315076 a2db29af
+data 31 20 4a4fe1c9
+data 32 393008 e4b24418
+data 33 21 dd808e09
+data 34 344080 54808bff
+data 35 5 6b83bb09
+data 36 583620 22bdaa03
+data 37 19 55c6b161
+data 38 766640 f26ca10e
+data 39 14 cee2ea15
+data 40 4194304 55d07e13
+data 41 19 b6b8b716
+data 42 4194304 8affa16f
+data 43 10 23c43634
+data 44 4194304 c4a05565
+data 45 11 349bad92
+data 46 4194304 5dccdef1
+data 47 16 811e32d5
+data 48 2488640 36dbcae7
+data 49 6 f1b0926e
+data 50 262144 6378a33c
+data 51 13 ead87629
+data 52 1003968 b733b59b
+data 53 5 b8b95cc6
+data 54 458532 aeb5825d
+data 55 21 fb9a6f19
+data 56 262144 67c7ec15
+data 57 5 805c8e1e
+data 58 5 c811e0aa
+data 59 65536 bdc051bc
+data 60 9 af943e41
+data 61 4194304 b6834e27
+data 62 13 d3c792cf
+data 63 4194304 74479cda
+data 64 11 126b708a
+data 65 4194304 479528d2
+data 66 152 b17da189
+data 67 1064 edafb902
+data 68 152 13cbb595
+data 69 497600 e4920288
+data 70 497600 7751dc25
+data 71 497600 47f1bb35
+data 72 304 96a89979
+data 73 1520 ab19c935
+data 74 304 c7e9baed
+data 75 152 00fff80c
+data 76 152 bac41aac
+data 77 152 74ea52d7
+data 78 152 fd7b92b1
+data 79 152 3989ed86
+data 80 152 dfcc6b41
+data 81 152 3d9adb98
+data 82 152 437a5a25
+data 83 152 9d8f81b9
+data 84 152 c997db50
+data 85 152 e39f0a89
+data 86 152 0650ab29
+data 87 152 9df1b75f
+data 88 152 af0f97ed
+data 89 7296 1edd6d2d
+data 90 497600 b4f8a450
+data 91 152 bc002daa
+data 92 1520168 59fea4e1
+data 93 497600 66bf12c6
+data 94 4408 bd3c3030
+data 95 1216 8174cbe4
+data 96 456 a6615ffb
+data 97 3800 8c7bb455
+data 98 497600 12d83af9
+data 99 497600 558cd533
+data 100 497600 c251a4ab
+data 101 497600 558cd533
+data 102 746400 82ac21c2
+data 103 497600 558cd533
+data 104 248800 6fd8968d
+data 105 497600 558cd533
+data 106 497600 e447f387
+data 107 497600 4d854ebc
+data 108 497600 99787aa5
+data 109 497600 bc374140
+data 110 497600 6ea9d63b
+data 111 497600 fad624f8
+data 112 497600 0e699535
+data 113 497600 919805d6
+data 114 497600 f1bb6dcf
+data 115 497600 e7148548
+data 116 497600 a8af6cf6
+data 117 497600 217cd087
+data 118 497600 17c93596
+data 119 497600 e9fc1f7e
+data 120 497600 a0024a5d
+data 121 497600 870d317f
+data 122 497600 2e2cb3c8
+data 123 2280 13a0cf1c
+data 124 152 1414ea06
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut x 134460 173 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut x 90504 240 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut w 97920 115 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut t 2 0 fail
+mut x 370008 83 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut w 24 -1 fail
+mut t 19 0 fail
+mut w 505984 -2007481116 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut t 120363 0 fail
+mut t 19 0 fail
+mut x 411991 243 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut x 92407 62 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut w 124256 -41 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut x 441954 38 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut x 0 218 fail
+mut t 368782 0 fail
+mut t 22 0 fail
+mut w 25780 828989558 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut t 36183 0 fail
+mut w 51260 10 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut x 120922 204 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut x 104781 128 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut w 28 -1 fail
+mut x 16881 138 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut t 93294 0 fail
+mut x 370784 189 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut w 341232 -1 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut w 544 -1710400463 fail
+mut w 46128 -18 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut w 20 -1 fail
+mut t 262926 0 fail
+mut t 74666 0 fail
+mut t 51664 0 fail
+mut t 428482 0 fail
+mut w 242140 -30 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut w 309672 -1 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut x 68074 60 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut t 10 0 fail
+mut w 329144 60 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut w 377952 1982355413 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut t 299531 0 fail
+mut x 27 166 fail
+mut x 423972 241 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut t 0 0 fail
+mut w 12 145 fail
+mut w 0 -1838459420 fail
+mut w 82240 -1 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut t 55632 0 fail
+mut w 472304 135 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut t 27 0 fail
+mut t 90973 0 fail
+mut t 160121 0 fail
+mut x 70405 49 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut x 10621 170 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut w 135964 -1 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut w 7384 -1 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut t 108661 0 fail
+mut t 47285 0 fail
+mut t 30 0 fail
+mut w 282732 65 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut w 4400 47 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut t 93894 0 fail
+mut w 24 74 fail
+mut t 417407 0 fail
+mut t 31 0 fail
+mut t 126700 0 fail
+mut t 379723 0 fail
+mut x 268730 252 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut t 395366 0 fail
+mut x 205706 187 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut t 369484 0 fail
+mut w 204844 -1 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut t 91130 0 fail
+mut x 61016 164 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut w 20 -1 fail
+mut t 21 0 fail
+mut x 29 133 fail
+mut x 34935 185 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut x 206907 35 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut w 385516 427198433 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut w 48488 -1 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut w 8 3 fail
+mut x 189031 55 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut w 5168 -41 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut w 402356 -1 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut t 14 0 fail
+mut t 410357 0 fail
+mut w 29132 72 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut t 123424 0 fail
+mut w 16 114 fail
+mut w 4520 88 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut x 318707 103 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut t 6 0 fail
+mut x 4 37 fail
+mut x 5 204 fail
+mut x 45972 226 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut w 307392 93 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut x 45502 166 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut w 30224 -25 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut w 32 -1 fail
+mut w 44252 47 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut w 12 -446166221 fail
+mut x 18 204 fail
+mut x 124453 112 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut t 498651 0 fail
+mut t 115267 0 fail
+mut t 235756 0 fail
+mut t 363119 0 fail
+mut x 273769 125 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut w 45040 -24 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut x 21 135 fail
+mut w 28 1855332342 fail
+mut w 52368 1994225635 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut w 28 -1 fail
+mut x 93470 233 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut x 9 149 fail
+mut x 63454 234 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut t 15 0 fail
+mut t 97352 0 fail
+mut x 99060 133 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut x 395344 79 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut t 2 0 fail
+mut w 8 53985369 fail
+mut w 32 -1 fail
+mut w 400236 -1002387619 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut t 442691 0 fail
+mut t 411968 0 fail
+mut t 88082 0 fail
+mut x 33 226 fail
+mut t 18 0 fail
+mut w 292356 -1 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut w 23860 -1 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut x 1 237 fail
+mut x 470460 10 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut x 451440 203 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut w 4 -1 fail
+mut w 196496 -1 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut w 11876 -1 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut w 28 -1 fail
+mut x 4 53 fail
+mut x 55727 250 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut t 456552 0 fail
+mut t 5 0 fail
+mut w 367356 -1 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut x 304683 220 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
+mut t 383287 0 fail
+mut t 15 0 fail
+mut t 90973 0 fail
+mut t 32 0 fail
+mut w 173668 -1 ok
+layer game 622 200 497600 12d83af9
+layer tele 622 200 248800 6fd8968d
+layer speedup 622 200 746400 82ac21c2
+layer front 622 200 497600 c251a4ab
+layer switch 622 200 497600 e447f387
+layer tune -
