@@ -1,7 +1,10 @@
 //! Headless DDNet client: connects, downloads the map, enters the game, optionally
-//! walks right, then disconnects cleanly.
+//! walks right or runs a movement script, then disconnects cleanly.
 //!
-//! Usage: ddnet-headless <server ip:port> [--name NAME] [--seconds N] [--walk SECONDS]
+//! Usage: ddnet-headless <server ip:port> [--name NAME] [--seconds N] [--walk SECONDS] [--script]
+//!
+//! `--script` repeats a 4 second loop: walk right with a jump and a hook up-right, then
+//! the same to the left.
 //!
 //! Only loopback servers are accepted for now: testing against public servers has
 //! not been approved yet.
@@ -17,7 +20,7 @@ fn main() {
     let mut args = std::env::args().skip(1);
     let Some(server) = args.next().and_then(|a| a.parse::<SocketAddr>().ok()) else {
         eprintln!(
-            "usage: ddnet-headless <server ip:port> [--name NAME] [--seconds N] [--walk SECONDS]"
+            "usage: ddnet-headless <server ip:port> [--name NAME] [--seconds N] [--walk SECONDS] [--script]"
         );
         std::process::exit(2);
     };
@@ -26,13 +29,14 @@ fn main() {
         std::process::exit(2);
     }
     let mut player = PlayerInfo::default();
-    let (mut seconds, mut walk) = (10i64, 0i64);
+    let (mut seconds, mut walk, mut script) = (10i64, 0i64, false);
     while let Some(flag) = args.next() {
-        let value = args.next().unwrap_or_default();
+        let mut value = || args.next().unwrap_or_default();
         match flag.as_str() {
-            "--name" => player.name = value,
-            "--seconds" => seconds = value.parse().expect("--seconds N"),
-            "--walk" => walk = value.parse().expect("--walk SECONDS"),
+            "--name" => player.name = value(),
+            "--seconds" => seconds = value().parse().expect("--seconds N"),
+            "--walk" => walk = value().parse().expect("--walk SECONDS"),
+            "--script" => script = true,
             _ => panic!("unknown flag {flag}"),
         }
     }
@@ -81,7 +85,11 @@ fn main() {
         }
         if let Some(entered) = entered_at {
             let elapsed = now - entered;
-            client.input.direction = (elapsed < walk * FREQ) as i32;
+            if script {
+                scripted_input(&mut client.input, elapsed);
+            } else {
+                client.input.direction = (elapsed < walk * FREQ) as i32;
+            }
             if elapsed >= next_report * FREQ {
                 if let Some(c) = local_character(&client) {
                     println!(
@@ -102,6 +110,19 @@ fn main() {
         }
         std::thread::sleep(Duration::from_millis(1));
     }
+}
+
+/// The `--script` loop, in tenths of a second: each 2 s half walks one way, jumps at
+/// 0.5 s and hooks up ahead from 1.0 to 1.6 s.
+fn scripted_input(input: &mut g::ObjPlayerInput, elapsed: i64) {
+    let phase = elapsed * 10 / FREQ % 40;
+    let dir = if phase < 20 { 1 } else { -1 };
+    let t = phase % 20;
+    input.direction = dir;
+    input.jump = (5..7).contains(&t) as i32;
+    input.hook = (10..16).contains(&t) as i32;
+    input.target_x = dir * 100;
+    input.target_y = -150;
 }
 
 fn local_character(client: &Client) -> Option<g::ObjCharacter> {

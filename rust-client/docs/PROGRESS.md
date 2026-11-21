@@ -96,6 +96,10 @@ Maps: coverage, LearnToPlay, Gold Mine, Tutorial, Tsunami, ctf1, dm1 (read from
   (PLAN §5 M3). Needs a C++ client build (`CLIENT=ON`, SDL); the pieces are covered by
   golden vectors and the server accepts our session.
 
+## Manual testing
+See `docs/TESTING.md`: tests, local server, `ddnet-headless --script` and watching it
+with the normal DDNet client.
+
 ## How to regenerate golden vectors
 From a shell with the Visual Studio 18 x64 environment (`vcvars64.bat`), repo root:
 
