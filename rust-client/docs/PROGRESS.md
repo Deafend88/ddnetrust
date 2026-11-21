@@ -18,9 +18,14 @@
   messages in `protocol_ex_msgs.h`) into `protocol/generated.rs`; `protocol/netobj.rs`
   ports `SecureUnpackObj`. Verified against C++: all 87 registered UUIDs, object sizes,
   1,520 object clamp/fail cases, 2,240 message accept/reject cases.
+- M3 snapshots: `protocol/snapshot.rs` (CSnapshot layout, UnpackDelta, CRC, external
+  item types, UnpackAndValidateSnapshot) + `varint::decompress`. 60 snapshots, 978 delta
+  decodes (incl. every error code path hit by mutated/garbage deltas) and 60 validations
+  match C++ byte for byte. A remote-triggerable C++ assert is returned as -302 instead
+  (`docs/DECISIONS.md`).
 
 ## In progress
-- M3: snapshot port, connection state machine, client flow, local-server integration test.
+- M3: connection state machine, client flow, local-server integration test.
 
 ## Next
 - M3: headless client against a locally built `DDNet-Server`: protocol code generation

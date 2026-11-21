@@ -3,7 +3,7 @@
 //! Regenerate (from the repo root, after building the `rs_golden` CMake target):
 //!     build-rs/rs_golden.exe rust-client/tests/golden
 
-use ddnet::protocol::{generated as g, huffman, netobj, packer, packet, varint};
+use ddnet::protocol::{generated as g, huffman, netobj, packer, packet, snapshot, varint};
 use std::collections::HashMap;
 
 fn golden(name: &str) -> String {
@@ -261,4 +261,99 @@ fn protocol() {
         n += 1;
     }
     assert!(n > 40, "only {n} uuids checked");
+}
+
+#[test]
+fn snapshot() {
+    let mut static_sizes = [0usize; snapshot::MAX_NETOBJSIZES];
+    for spec in g::OBJ_SPECS
+        .iter()
+        .filter(|s| s.type_id < g::NUM_NETOBJTYPES)
+    {
+        static_sizes[spec.type_id as usize] = spec.fields.len() * 4;
+    }
+    let ints_hex = |s: &snapshot::Snapshot| {
+        hex(&s
+            .as_ints()
+            .iter()
+            .flat_map(|v| v.to_le_bytes())
+            .collect::<Vec<_>>())
+    };
+
+    let text = golden("snapshot.txt");
+    let mut snap_hex: HashMap<String, usize> = HashMap::new(); // C++ bytes -> n
+    let mut snaps: HashMap<usize, snapshot::Snapshot> = HashMap::new();
+    let (mut decoded, mut alts) = (0, 0);
+    for line in text.lines() {
+        let f: Vec<&str> = line.split(' ').collect();
+        match f[0] {
+            "snap" => {
+                snap_hex.insert(f[2].into(), f[1].parse().unwrap());
+            }
+            "delta" => {
+                let from = match f[1] {
+                    "-1" => snapshot::Snapshot::default(),
+                    n => snaps[&n.parse::<usize>().unwrap()].clone(),
+                };
+                let delta = if f[2] == "-" {
+                    Some(vec![0, 0, 0]) // C++ `EmptyDelta()`
+                } else {
+                    varint::decompress(&unhex(f[2]), snapshot::MAX_DELTA_INTS)
+                };
+                let got = match delta {
+                    None => "ERR decompress".to_string(),
+                    Some(delta) => match snapshot::unpack_delta(&from, &delta, &static_sizes) {
+                        Err(code) => format!("ERR {code}"),
+                        Ok(s) => {
+                            let h = ints_hex(&s);
+                            if let Some(&n) = snap_hex.get(&h) {
+                                snaps.insert(n, s.clone());
+                            }
+                            format!("{h} {} 1", s.crc())
+                        }
+                    },
+                };
+                assert_eq!(got, f[3..].join(" "), "{line}");
+                decoded += 1;
+            }
+            "alt" => {
+                let n: usize = f[1].parse().unwrap();
+                let items: Vec<String> = snapshot::unpack_and_validate(&snaps[&n])
+                    .iter()
+                    .map(|it| {
+                        let spec = g::OBJ_SPECS
+                            .iter()
+                            .find(|s| s.type_id == it.type_id)
+                            .unwrap();
+                        let data: Vec<u8> = it.data.iter().flat_map(|v| v.to_le_bytes()).collect();
+                        format!("{}:{}:{}", spec.name, it.id, hex(&data))
+                    })
+                    .collect();
+                let got = if items.is_empty() {
+                    "-".into()
+                } else {
+                    items.join(";")
+                };
+                assert_eq!(got, f[2], "{line}");
+                alts += 1;
+            }
+            _ => panic!("bad line {line}"),
+        }
+    }
+    assert_eq!((snaps.len(), decoded, alts), (60, 978, 60));
+}
+
+#[test]
+fn snapshot_oversized_item_is_an_error() {
+    // one update: type 100 (no static size), id 0, 20,000 ints (80 KB > 64 KiB snapshot);
+    // the C++ client hits a dbg_assert here (DECISIONS.md)
+    let n = 20_000;
+    let mut delta = vec![0, 1, 0, 100, 0, n];
+    delta.resize(6 + n as usize, 7);
+    let got = snapshot::unpack_delta(
+        &snapshot::Snapshot::default(),
+        &delta,
+        &[0; snapshot::MAX_NETOBJSIZES],
+    );
+    assert_eq!(got, Err(-302));
 }

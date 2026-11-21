@@ -16,6 +16,7 @@
 #include <engine/shared/huffman.h>
 #include <engine/shared/network.h>
 #include <engine/shared/packer.h>
+#include <engine/shared/snapshot.h>
 #include <engine/shared/uuid_manager.h>
 
 #include <generated/protocol.h>
@@ -624,6 +625,216 @@ static void GenProtocol(FILE *f)
 	}
 }
 
+// Snapshots, built with CSnapshotBuilder; deltas made with CSnapshotDelta::CreateDelta and
+// CVariableInt::Compress like the server, then decoded like CClient::ProcessServerPacket:
+//   "snap <n> <hex>"                          snapshot n (full CSnapshot bytes)
+//   "delta <from|-1> <hexin> <ERR code|hex> <crc> <valid>"   UnpackDelta result
+//   "alt <n> <items>"                         CClient::UnpackAndValidateSnapshot of snapshot n:
+//                                             ';'-separated "<type name>:<id>:<hex>" (EX items omitted)
+static void GenSnapshot(FILE *f)
+{
+	CNetObjHandler Handler;
+	CSnapshotDelta Delta;
+	for(int i = 0; i < NUM_NETOBJTYPES; i++)
+		Delta.SetStaticsize(i, Handler.GetObjSize(i));
+
+	const int aExTypes[] = {NETOBJTYPE_DDNETCHARACTER, NETOBJTYPE_DDNETPLAYER, NETOBJTYPE_GAMEINFOEX, NETOBJTYPE_SWITCHSTATE};
+	auto RandomValue = []() -> int {
+		switch(Rand() % 4)
+		{
+		case 0: return Rand() % 10;
+		case 1: return (int)(Rand() % 2000) - 1000;
+		case 2: return (int)(Rand() ^ (Rand() << 16));
+		default: return 0;
+		}
+	};
+	struct SItem
+	{
+		int m_Type, m_Id;
+		std::vector<int> m_vData;
+	};
+	auto Build = [&](const std::vector<SItem> &vItems, CSnapshotBuffer *pBuf) {
+		CSnapshotBuilder b;
+		b.Init();
+		for(const SItem &It : vItems)
+			b.NewItem(It.m_Type, It.m_Id, It.m_vData.data(), (int)It.m_vData.size() * sizeof(int));
+		return b.Finish(pBuf);
+	};
+	auto RandomItem = [&]() {
+		SItem It;
+		int k = Rand() % 10;
+		if(k < 6)
+		{
+			It.m_Type = 1 + Rand() % (NUM_NETOBJTYPES - 1);
+			It.m_vData.resize(Handler.GetObjSize(It.m_Type) / sizeof(int));
+		}
+		else if(k < 8)
+		{
+			It.m_Type = aExTypes[Rand() % 4];
+			It.m_vData.resize(Handler.GetUnpackedObjSize(It.m_Type) / sizeof(int) + Rand() % 3 - 1);
+		}
+		else
+		{
+			It.m_Type = NUM_NETOBJTYPES + Rand() % 60; // unknown or no static size
+			It.m_vData.resize(Rand() % 6);
+		}
+		It.m_Id = Rand() % 24;
+		for(int &v : It.m_vData)
+			v = RandomValue();
+		return It;
+	};
+
+	std::vector<std::vector<SItem>> vSnaps;
+	std::vector<SItem> vCur;
+	for(int n = 0; n < 60; n++)
+	{
+		// mutate: delete some, change some, add some (keeping keys unique)
+		std::vector<SItem> vNext;
+		for(const SItem &It : vCur)
+		{
+			if(Rand() % 8 == 0)
+				continue;
+			SItem Changed = It;
+			if(Rand() % 3 == 0)
+				for(int &v : Changed.m_vData)
+					if(Rand() % 3 == 0)
+						v = RandomValue();
+			vNext.push_back(Changed);
+		}
+		int NumAdd = n == 0 ? 20 : Rand() % 6;
+		for(int i = 0; i < NumAdd; i++)
+		{
+			SItem It = RandomItem();
+			bool Dup = false;
+			for(const SItem &o : vNext)
+				Dup |= o.m_Type == It.m_Type && o.m_Id == It.m_Id;
+			if(!Dup)
+				vNext.push_back(It);
+		}
+		if(n % 7 == 6 && vNext.size() > 1)
+			std::swap(vNext[0], vNext[vNext.size() - 1]); // reorder
+		vSnaps.push_back(vNext);
+		vCur = vNext;
+	}
+
+	std::vector<CSnapshotBuffer> vBufs(vSnaps.size());
+	std::vector<int> vSizes;
+	for(size_t n = 0; n < vSnaps.size(); n++)
+	{
+		vSizes.push_back(Build(vSnaps[n], &vBufs[n]));
+		fprintf(f, "snap %d %s\n", (int)n, Hex(vBufs[n].m_aData, vSizes[n]).c_str());
+	}
+
+	auto Decode = [&](int From, const Bytes &Compressed) {
+		const CSnapshot *pFrom = From < 0 ? CSnapshot::EmptySnapshot() : vBufs[From].AsSnapshot();
+		static CSnapshotDeltaBuffer s_DeltaBuf;
+		const void *pDeltaData = Delta.EmptyDelta();
+		int DeltaSize = sizeof(int) * 3;
+		if(!Compressed.empty())
+		{
+			DeltaSize = CVariableInt::Decompress(Compressed.data(), (int)Compressed.size(), s_DeltaBuf.m_aData, sizeof(s_DeltaBuf.m_aData));
+			if(DeltaSize < 0)
+			{
+				fprintf(f, "delta %d %s ERR decompress\n", From, Hex(Compressed).c_str());
+				return;
+			}
+			pDeltaData = s_DeltaBuf.m_aData;
+		}
+		static CSnapshotBuffer s_Out;
+		int Size = Delta.UnpackDelta(pFrom, &s_Out, pDeltaData, DeltaSize);
+		if(Size < 0)
+			fprintf(f, "delta %d %s ERR %d\n", From, Hex(Compressed).c_str(), Size);
+		else
+			fprintf(f, "delta %d %s %s %u %d\n", From, Hex(Compressed).c_str(), Hex(s_Out.m_aData, Size).c_str(),
+				s_Out.AsSnapshot()->Crc(), s_Out.AsSnapshot()->IsValid(Size));
+	};
+
+	std::vector<Bytes> vValid;
+	for(int n = 0; n < (int)vSnaps.size(); n++)
+	{
+		for(int From : {n - 1, -1, n - 3})
+		{
+			if(From < -1)
+				continue;
+			const CSnapshot *pFrom = From < 0 ? CSnapshot::EmptySnapshot() : vBufs[From].AsSnapshot();
+			static CSnapshotDeltaBuffer s_Delta;
+			int DeltaSize = Delta.CreateDelta(pFrom, vBufs[n].AsSnapshot(), &s_Delta);
+			Bytes Compressed;
+			if(DeltaSize > 0)
+			{
+				Compressed.resize(2 * CSnapshot::MAX_SIZE);
+				int n2 = CVariableInt::Compress(s_Delta.m_aData, DeltaSize, Compressed.data(), (int)Compressed.size());
+				Compressed.resize(n2);
+			}
+			Decode(From, Compressed);
+			if(!Compressed.empty())
+				vValid.push_back(Compressed);
+		}
+	}
+
+	// malformed deltas: mutated valid ones and random varint streams
+	for(int i = 0; i < 800; i++)
+	{
+		Bytes In;
+		if(i % 2 == 0 && !vValid.empty())
+		{
+			In = vValid[Rand() % vValid.size()];
+			int NumFlips = 1 + Rand() % 3;
+			for(int k = 0; k < NumFlips; k++)
+				In[Rand() % In.size()] ^= 1 << (Rand() % 8);
+			if(Rand() % 4 == 0)
+				In.resize(Rand() % In.size() + 1);
+		}
+		else
+		{
+			CPacker p;
+			p.Reset();
+			int NumInts = 1 + Rand() % 30;
+			for(int k = 0; k < NumInts; k++)
+				p.AddInt(k < 3 ? (int)(Rand() % 4) - 1 : Rand() % 3 == 0 ? RandomValue() : (int)(Rand() % 40));
+			In.assign(p.Data(), p.Data() + p.Size());
+		}
+		Decode(Rand() % 2 ? -1 : (int)(Rand() % vSnaps.size()), In);
+	}
+
+	// CClient::UnpackAndValidateSnapshot
+	for(size_t n = 0; n < vSnaps.size(); n++)
+	{
+		const CSnapshot *pFrom = vBufs[n].AsSnapshot();
+		CSnapshotBuilder Builder;
+		Builder.Init();
+		for(int Index = 0; Index < pFrom->NumItems(); Index++)
+		{
+			const CSnapshotItem *pFromItem = pFrom->GetItem(Index);
+			const int ItemType = pFrom->GetItemType(Index);
+			if(ItemType <= 0)
+				continue;
+			CUnpacker Unpacker;
+			Unpacker.Reset(pFromItem->Data(), pFrom->GetItemSize(Index));
+			void *pSecuredData = Handler.SecureUnpackObj(ItemType, &Unpacker);
+			if(!pSecuredData)
+				continue;
+			Builder.NewItem(ItemType, pFromItem->Id(), pSecuredData, Handler.GetUnpackedObjSize(ItemType));
+		}
+		static CSnapshotBuffer s_Alt;
+		int AltSize = Builder.Finish(&s_Alt);
+		const CSnapshot *pAlt = s_Alt.AsSnapshot();
+		dbg_assert(AltSize > 0, "alt snapshot failed");
+		std::string Items;
+		for(int Index = 0; Index < pAlt->NumItems(); Index++)
+		{
+			const int Type = pAlt->GetItemType(Index);
+			if(Type == 0)
+				continue;
+			char aBuf[64];
+			str_format(aBuf, sizeof(aBuf), "%s%s:%d:", Items.empty() ? "" : ";", Handler.GetObjName(Type), pAlt->GetItem(Index)->Id());
+			Items += aBuf;
+			Items += Hex((const unsigned char *)pAlt->GetItem(Index)->Data(), pAlt->GetItemSize(Index));
+		}
+		fprintf(f, "alt %d %s\n", (int)n, Items.empty() ? "-" : Items.c_str());
+	}
+}
+
 int main(int argc, const char **argv)
 {
 	CCmdlineFix CmdlineFix(&argc, &argv);
@@ -647,6 +858,7 @@ int main(int argc, const char **argv)
 		{"chunk_header.txt", GenChunkHeader},
 		{"packet.txt", GenPacket},
 		{"protocol.txt", GenProtocol},
+		{"snapshot.txt", GenSnapshot},
 	};
 	for(const SGen &Gen : aGens)
 	{

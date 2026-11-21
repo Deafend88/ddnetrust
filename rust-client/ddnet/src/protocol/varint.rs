@@ -53,3 +53,20 @@ pub fn unpack(src: &[u8]) -> Option<(i32, usize)> {
     value ^= -sign; // if sign: value = !value
     Some((value, idx + 1))
 }
+
+/// Unpacks varints until `src` is exhausted. C++: `CVariableInt::Decompress`
+/// (compression.cpp:37); `None` if `src` ends inside an int or more than `max_ints`
+/// ints would be produced.
+pub fn decompress(src: &[u8], max_ints: usize) -> Option<Vec<i32>> {
+    let mut out = Vec::new();
+    let mut pos = 0;
+    while pos < src.len() {
+        if out.len() >= max_ints {
+            return None;
+        }
+        let (value, n) = unpack(&src[pos..])?;
+        out.push(value);
+        pos += n;
+    }
+    Some(out)
+}

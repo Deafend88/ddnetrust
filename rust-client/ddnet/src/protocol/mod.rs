@@ -5,4 +5,5 @@ pub mod huffman;
 pub mod netobj;
 pub mod packer;
 pub mod packet;
+pub mod snapshot;
 pub mod varint;
