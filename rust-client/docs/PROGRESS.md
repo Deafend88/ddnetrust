@@ -84,7 +84,7 @@ connect to public servers until the user says so.
 ## Regenerate parity data
 Build the `rs_parity` target like `rs_golden`, then per map (repo root):
 
-    build-rss_parity.exe map "data\maps\<name>.map" rust-client	ests\golden\maps\<name>.txt <scratch dir>
+    build-rs/rs_parity.exe map "data/maps/<name>.map" rust-client/tests/golden/maps/<name>.txt <scratch dir>
 
 (spaces in `<name>` become `_` in the output file name).
 
