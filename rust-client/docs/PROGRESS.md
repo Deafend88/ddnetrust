@@ -93,12 +93,19 @@ Maps: coverage, LearnToPlay, Gold Mine, Tutorial, Tsunami, ctf1, dm1 (read from
   `tests/server.rs prediction_matches_server`: scripted walk/jump/hook on `dm1` for
   10 s: 250 snapshots compared, 0 mismatched, 0 prediction errors (167 repredictions).
   `ddnet-headless` prints the counters.
+- 5.2 Interference: `prediction_recovers_from_interference` (dm1): a second client walks
+  to ours and hooks it for 8 s (closest 28-30 px, hook attached), then leaves. Over 3
+  runs: 1 of 200 snapshots mispredicted while interfering (0-1 prediction errors), 1
+  more right after it leaves (its removal), then 0 of the next ~149: prediction recovers
+  at the next snapshot, by re-reading the server world like C++. Not compared against a
+  live C++ client (none is built here; CLIENT=OFF).
 
 ## In progress
 - M5 doors: `coverage` mispredicts (94/250 snapshots) because the tee spawns next to a
   door (switch type 240 = ENTITY_DOOR) that the server closes; C++ gets door state from
-  snapshot entities (NetObjAdd -> CDoor -> door collision layer). Next: doors, then an
-  interference run (two clients bumping/hooking) to measure mispredictions/recovery.
+  snapshot entities (NetObjAdd -> CDoor -> door collision layer). Next: doors (NetObjAdd
+  for door lasers -> door collision shared by both worlds, ResetDoorCollision), then
+  re-enable `coverage` in `prediction_matches_server`.
 
 ## Later
 - Weapon prediction (`m_PredictWeapons`/AntiPingWeapons: FireWeapon, ninja dash,

@@ -201,3 +201,102 @@ fn prediction_matches_server() {
         let _ = fs::remove_dir_all(dir);
     }
 }
+
+fn character(client: &Client, id: i32) -> Option<g::ObjCharacter> {
+    let item = client
+        .snapshot()
+        .iter()
+        .find(|it| it.type_id == g::NETOBJTYPE_CHARACTER && it.id == id)?;
+    Some(g::ObjCharacter::from_ints(&item.data))
+}
+
+/// M5: mispredictions when another player interferes, and recovery afterwards. A
+/// second client walks to the first one and hooks it for 8 s, then leaves; the first
+/// client's prediction cannot know the other's inputs, so some ticks mispredict, and
+/// once it is alone again every snapshot must match again.
+#[test]
+fn prediction_recovers_from_interference() {
+    let Some(exe) = server_binary() else {
+        eprintln!("SKIPPED: no DDNet-Server (set DDNET_SERVER or build the game-server target)");
+        return;
+    };
+    let (server, port) = start_server(&exe, "dm1");
+    let addr = format!("127.0.0.1:{port}").parse().unwrap();
+    let start = Instant::now();
+    let (sa, sb) = (
+        net::connect_socket(addr).unwrap(),
+        net::connect_socket(addr).unwrap(),
+    );
+    let mut a = Client::new(PlayerInfo::default(), "", net::random_bytes);
+    let mut b = Client::new(
+        PlayerInfo {
+            name: "other".into(),
+            ..PlayerInfo::default()
+        },
+        "",
+        net::random_bytes,
+    );
+    a.connect(net::now(start));
+    b.connect(net::now(start));
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while Instant::now() < deadline && !(local_x(&a).is_some() && local_x(&b).is_some()) {
+        net::pump(&sa, &mut a, net::now(start)).unwrap();
+        net::pump(&sb, &mut b, net::now(start)).unwrap();
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let map = Map::load(a.map().unwrap().data.clone()).unwrap();
+    let col = Collision::new(&map);
+    let mut pred = Predictor::new(&col);
+    let entered = net::now(start);
+    let mut during = None;
+    let (mut closest, mut hooked) = (i32::MAX, false);
+    while net::now(start) - entered < 14 * FREQ {
+        let now = net::now(start);
+        net::scripted_input(&mut a.input, now - entered);
+        if now - entered < 8 * FREQ {
+            // walk towards the first client and hook at it
+            if let (Some(ca), Some(cb)) = (
+                character(&b, a.local_id().unwrap()),
+                character(&b, b.local_id().unwrap()),
+            ) {
+                b.input.direction = (ca.x - cb.x).signum();
+                b.input.target_x = ca.x - cb.x;
+                b.input.target_y = ca.y - cb.y;
+                b.input.hook = ((now - entered) / (FREQ / 2) % 2) as i32;
+                b.input.jump = (ca.y < cb.y - 32) as i32;
+            }
+            if let (Some(ca), Some(cb)) = (
+                character(&a, a.local_id().unwrap()),
+                character(&a, b.local_id().unwrap()),
+            ) {
+                let d = (((ca.x - cb.x).pow(2) + (ca.y - cb.y).pow(2)) as f64).sqrt() as i32;
+                closest = closest.min(d);
+                hooked |= cb.hooked_player == a.local_id().unwrap();
+            }
+            net::pump(&sb, &mut b, now).unwrap();
+        } else if during.is_none() {
+            b.disconnect(None, now);
+            net::pump(&sb, &mut b, now).unwrap();
+            during = Some(pred.stats.clone());
+        }
+        net::pump(&sa, &mut a, now).unwrap();
+        pred.update(&mut a);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let (during, end) = (during.unwrap(), pred.stats.clone());
+    eprintln!("closest {closest} px, hooked {hooked}");
+    eprintln!("with the other player (8 s): {during:?}");
+    eprintln!(
+        "alone again (6 s): compared {}, mismatched {}, prediction errors {}",
+        end.compared - during.compared,
+        end.mismatched - during.mismatched,
+        end.prediction_errors - during.prediction_errors
+    );
+    // the first snapshots after the other player left still carry its last effects
+    assert!(end.compared - during.compared > 100, "{end:?}");
+    assert!(
+        end.mismatched - during.mismatched <= 2,
+        "no recovery: {during:?} -> {end:?}"
+    );
+    drop(server);
+}
