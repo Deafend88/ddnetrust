@@ -3,4 +3,5 @@
 
 pub mod map;
 pub mod net;
+pub mod physics;
 pub mod protocol;

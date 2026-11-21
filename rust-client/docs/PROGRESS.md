@@ -48,12 +48,22 @@ Maps: coverage, LearnToPlay, Gold Mine, Tutorial, Tsunami, ctf1, dm1 (read from
   EnsureTileLayerProperties, lazy tile-data validation/tileskip unpacking; CLayers
   physics layer selection). All items, data blobs and the six physics layers match
   C++ on all 7 maps, plus 1,050 mutated map files (same accept/reject, same layers).
+- 4.2 Collision: `physics/vmath.rs` (vec2 ops in C++ order, x86 float->int casts) and
+  `physics/collision.rs` (every CCollision function the core/prediction calls).
+  `rs_parity collision`: 24 boxes x 300 ticks per map driven through MoveBox with random
+  steering/jumps/kicks and elasticities, querying move restrictions (stoppers, doors),
+  tile/front/tele/speedup/switch/tune lookups, map indices, hook rays and tele-outs
+  every tick: 50,400 ticks, 100% identical (positions, velocities, query CRC). No bundled
+  map has hook teleporters, so both sides also run coverage/LearnToPlay with all tele-in
+  tiles turned into hook tele-ins (242 hook-tele hits): identical too.
 
 ## In progress
-- M4.2 collision: `physics/collision.rs` + tick-driven collision parity.
+- M4.3 character core (gamecore.cpp) + tick parity.
 
 ## Next
-- M4.3 character core (gamecore.cpp), M4.4 DDNet tile effects (prediction CCharacter).
+- M4.4 DDNet tile effects (prediction CCharacter/CGameWorld). Note: the C++ client
+  prediction never teleports the player through tele-in tiles (the server does); it
+  predicts hook teleports and tele checkpoints only.
 
 ## Not yet sent by the Rust client (a default C++ client sends these)
 - `Cl_ShowDistance`, `Cl_CameraInfo`: need the camera/window (M6).
@@ -86,7 +96,12 @@ Build the `rs_parity` target like `rs_golden`, then per map (repo root):
 
     build-rs/rs_parity.exe map "data/maps/<name>.map" rust-client/tests/golden/maps/<name>.txt <scratch dir>
 
-(spaces in `<name>` become `_` in the output file name).
+(spaces in `<name>` become `_` in the output file name), and
+
+    build-rs/rs_parity.exe collision "data/maps/<name>.map" rust-client/tests/golden/maps/<name>.collision.txt
+    build-rs/rs_parity.exe collision "data/maps/<name>.map" rust-client/tests/golden/maps/<name>.collision-hooktele.txt hooktele
+
+(hooktele only for coverage and LearnToPlay; add `verbose` to see every query value).
 
 ## Regenerate protocol code
     python rust-client/scripts/gen_protocol.py   # needs rustfmt on PATH
