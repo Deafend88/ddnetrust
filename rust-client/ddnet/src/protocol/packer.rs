@@ -362,7 +362,7 @@ pub(crate) fn sanitize_cc(s: &mut [u8]) {
 }
 
 /// C++: `str_utf8_isspace` (str.cpp:1115).
-fn utf8_isspace(code: i32) -> bool {
+pub(crate) fn utf8_isspace(code: i32) -> bool {
     code <= 0x0020
         || code == 0x0085
         || code == 0x00A0

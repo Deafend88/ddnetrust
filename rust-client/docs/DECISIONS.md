@@ -39,3 +39,20 @@ into a second `CSnapshot` and returns -4 if that builder runs out of space. Rust
 a `Vec<Item>`. The builder can only overflow if validation grows the items past 64 KiB
 (defaults filled in for short items); real snapshots are far below that, so the -4 path
 is not reproduced.
+
+## 2026-11-21 — `what-is` UUID queries are not answered
+
+C++: `UnpackMessageId` (protocol_ex.cpp:21) answers `what-is@ddnet.tw` with `it-is` or
+`i-dont-know`. No code in this repository sends `what-is` (grep: only the 0.7
+translation layer mentions it), so the Rust client drops it. Add the answer if a
+server is ever seen sending it.
+
+## 2026-11-21 — In-band map download, verified by CRC, capped at the announced size
+
+C++ downloads over HTTPS when the server sends `map-details` with a SHA-256 and then
+verifies only the SHA-256; otherwise it downloads in-band and verifies the CRC32.
+HTTP download is deferred (PLAN §8), so the Rust client always downloads in-band and
+verifies the CRC32, i.e. it behaves like a C++ client talking to a server that sends
+no `map-details`. C++ keeps appending `MAP_DATA` chunks to the file without a limit;
+Rust disconnects when the data would exceed the size announced in `MAP_CHANGE`, so
+a server cannot make it use unbounded memory.
