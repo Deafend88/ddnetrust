@@ -25,7 +25,8 @@
   (`docs/DECISIONS.md`).
 
 ## In progress
-- M3: connection state machine, client flow, local-server integration test.
+- M3: client flow (handshake, map download, snapshots, input, disconnect), headless
+  binary, local-server integration test.
 
 ## Next
 - M3: headless client against a locally built `DDNet-Server`: protocol code generation
@@ -53,4 +54,5 @@ says so.
     python rust-client/scripts/gen_protocol.py   # needs rustfmt on PATH
 
 ## Known issues / blockers
-- None.
+- Resend buffer is a byte budget, not C++'s ring buffer (differs only with ~32 KiB
+  unacked data; `ponytail:` comment in `net/conn.rs`).

@@ -835,6 +835,192 @@ static void GenSnapshot(FILE *f)
 	}
 }
 
+// CNetConnection driven through random scenarios (client side, no timers):
+//   "scenario <n>" then op lines, each followed by every datagram the connection sent:
+//   "connect" / "feed <hexin> <ret>" / "queue <flags> <hex> <ret>" / "flush <ret>" /
+//   "disconnect <hexreason>", "sent <hex>", "chunk <flags> <seq> <hex>" (from
+//   CPacketChunkUnpacker), and after each op "state <state> <ack> <hexerror>".
+// At most one resend request per scenario keeps C++'s per-second resend limit
+// independent of wall-clock time.
+static void GenConn(FILE *f)
+{
+	CNetBase::Init();
+	net_init();
+	NETSOCKET ClientSock = nullptr, ServerSock = nullptr;
+	NETADDR ClientAddr, ServerAddr;
+	for(int Port = 47900; Port < 48000 && !ServerSock; Port += 2)
+	{
+		char aAddr[64];
+		str_format(aAddr, sizeof(aAddr), "127.0.0.1:%d", Port);
+		net_addr_from_str(&ServerAddr, aAddr);
+		str_format(aAddr, sizeof(aAddr), "127.0.0.1:%d", Port + 1);
+		net_addr_from_str(&ClientAddr, aAddr);
+		ClientSock = net_udp_create(ClientAddr);
+		ServerSock = ClientSock ? net_udp_create(ServerAddr) : nullptr;
+	}
+	dbg_assert(ClientSock && ServerSock, "could not open sockets");
+
+	auto DrainSent = [&]() {
+		while(net_socket_read_wait(ServerSock, std::chrono::milliseconds(20)) > 0)
+		{
+			NETADDR From;
+			unsigned char *pData;
+			int Size = net_udp_recv(ServerSock, &From, &pData);
+			if(Size < 0)
+				break;
+			fprintf(f, "sent %s\n", Hex(pData, Size).c_str());
+		}
+	};
+
+	for(int Scenario = 0; Scenario < 150; Scenario++)
+	{
+		fprintf(f, "scenario %d\n", Scenario);
+		CNetConnection Conn;
+		Conn.Init(ClientSock, false);
+		CPacketChunkUnpacker Unpacker;
+		auto State = [&]() {
+			const char *pErr = Conn.ErrorString();
+			fprintf(f, "state %d %d %s\n", (int)Conn.State(), Conn.AckSequence(), Hex((const unsigned char *)pErr, str_length(pErr)).c_str());
+		};
+
+		fprintf(f, "connect\n");
+		Conn.Connect(&ServerAddr, 1);
+		DrainSent();
+		State();
+
+		// server -> client packets, encoded like CNetBase::SendPacket without compression
+		const int ServerToken = Rand() % 4 == 0 ? NET_SECURITY_TOKEN_UNSUPPORTED : (int)(Rand() ^ (Rand() << 16));
+		int ServerSeq = 0;
+		auto Feed = [&](Bytes Packet) {
+			CNetPacketConstruct p;
+			bool Sixup = false;
+			SECURITY_TOKEN Token, ResponseToken;
+			Bytes Buf = Packet;
+			int Ret = CNetBase::UnpackPacket(Buf.data(), (int)Buf.size(), &p, Sixup, true, &Token, &ResponseToken);
+			int FeedRet = Ret == 0 && Conn.State() != CNetConnection::EState::OFFLINE && Conn.State() != CNetConnection::EState::ERROR ?
+					      Conn.Feed(&p, &ServerAddr, Token, ResponseToken) :
+					      -1;
+			fprintf(f, "feed %s %d\n", Hex(Packet).c_str(), FeedRet);
+			if(FeedRet == 1 && !(p.m_Flags & NET_PACKETFLAG_CONTROL) && p.m_DataSize > 0 && p.m_NumChunks > 0)
+			{
+				Unpacker.FeedPacket(ServerAddr, p, &Conn, 0);
+				CNetChunk Chunk;
+				while(Unpacker.UnpackNextChunk(&Chunk))
+					fprintf(f, "chunk %d %s\n", Chunk.m_Flags, Hex((const unsigned char *)Chunk.m_pData, Chunk.m_DataSize).c_str());
+			}
+			DrainSent();
+			State();
+		};
+		auto Encode = [&](int Flags, int Ack, int NumChunks, const Bytes &Data, bool BadToken) {
+			Bytes Out = {(unsigned char)(((Flags << 2) & 0xfc) | ((Ack >> 8) & 0x3)), (unsigned char)(Ack & 0xff), (unsigned char)NumChunks};
+			Out.insert(Out.end(), Data.begin(), Data.end());
+			if(ServerToken != NET_SECURITY_TOKEN_UNSUPPORTED)
+			{
+				unsigned char aTok[4];
+				WriteSecurityToken(aTok, BadToken ? ServerToken ^ 1 : ServerToken);
+				Out.insert(Out.end(), aTok, aTok + 4);
+			}
+			return Out;
+		};
+
+		// CONNECTACCEPT, with or without the TKEN magic
+		{
+			Bytes Data = {NET_CTRLMSG_CONNECTACCEPT};
+			if(ServerToken != NET_SECURITY_TOKEN_UNSUPPORTED)
+			{
+				Data.insert(Data.end(), SECURITY_TOKEN_MAGIC, SECURITY_TOKEN_MAGIC + 4);
+				unsigned char aTok[4];
+				WriteSecurityToken(aTok, ServerToken);
+				Data.insert(Data.end(), aTok, aTok + 4);
+			}
+			Bytes Out = {(unsigned char)(NET_PACKETFLAG_CONTROL << 2), 0, 0};
+			Out.insert(Out.end(), Data.begin(), Data.end());
+			Feed(Out);
+		}
+
+		bool ResendUsed = false;
+		int NumOps = 5 + Rand() % 30;
+		for(int Op = 0; Op < NumOps && Conn.State() == CNetConnection::EState::ONLINE; Op++)
+		{
+			int Kind = Rand() % 10;
+			if(Kind < 3)
+			{
+				int Flags = Rand() % 3 ? NET_CHUNKFLAG_VITAL : 0;
+				Bytes Data = RandSkewed(Rand() % 3 == 0 ? Rand() % 400 : Rand() % 30);
+				int Ret = Conn.QueueChunk(Flags, (int)Data.size(), Data.data());
+				fprintf(f, "queue %d %s %d\n", Flags, Hex(Data).c_str(), Ret);
+				DrainSent();
+				State();
+			}
+			else if(Kind < 5)
+			{
+				int Ret = Conn.Flush();
+				fprintf(f, "flush %d\n", Ret);
+				DrainSent();
+				State();
+			}
+			else if(Kind < 9)
+			{
+				// data packet with 1..4 chunks: in order, duplicate, future or non-vital
+				Bytes Data;
+				int NumChunks = 1 + Rand() % 4;
+				for(int c = 0; c < NumChunks; c++)
+				{
+					CNetChunkHeader h;
+					int r = Rand() % 10;
+					h.m_Flags = r < 2 ? 0 : NET_CHUNKFLAG_VITAL;
+					if(h.m_Flags)
+					{
+						if(r < 7)
+							h.m_Sequence = ServerSeq = (ServerSeq + 1) % NET_MAX_SEQUENCE;
+						else if(r < 9)
+							h.m_Sequence = ServerSeq; // duplicate
+						else
+							h.m_Sequence = (ServerSeq + 2 + Rand() % 5) % NET_MAX_SEQUENCE; // future
+					}
+					Bytes Payload = RandSkewed(Rand() % 20);
+					h.m_Size = (int)Payload.size();
+					unsigned char aHdr[3];
+					unsigned char *pEnd = h.Pack(aHdr);
+					Data.insert(Data.end(), aHdr, pEnd);
+					Data.insert(Data.end(), Payload.begin(), Payload.end());
+				}
+				int Flags = 0;
+				if(!ResendUsed && Rand() % 8 == 0)
+				{
+					Flags |= NET_PACKETFLAG_RESEND;
+					ResendUsed = true;
+				}
+				int Ack = Rand() % 6 == 0 ? (int)(Rand() % NET_MAX_SEQUENCE) : Conn.SeqSequence() - (int)(Rand() % 2);
+				if(Ack < 0)
+					Ack += NET_MAX_SEQUENCE;
+				Feed(Encode(Flags, Ack, NumChunks, Data, Rand() % 12 == 0));
+			}
+			else
+			{
+				Bytes Ctrl = {NET_CTRLMSG_KEEPALIVE};
+				if(Rand() % 4 == 0)
+				{
+					Ctrl = {NET_CTRLMSG_CLOSE};
+					Bytes Reason = RandSkewed(Rand() % 12);
+					Ctrl.insert(Ctrl.end(), Reason.begin(), Reason.end());
+					if(Rand() % 2)
+						Ctrl.push_back(0);
+				}
+				Feed(Encode(NET_PACKETFLAG_CONTROL, Conn.SeqSequence(), 0, Ctrl, false));
+			}
+		}
+
+		const char *pReason = Rand() % 2 ? "bye" : nullptr;
+		fprintf(f, "disconnect %s\n", pReason ? Hex((const unsigned char *)pReason, 3).c_str() : "N");
+		Conn.Disconnect(pReason);
+		DrainSent();
+		State();
+	}
+	net_udp_close(ClientSock);
+	net_udp_close(ServerSock);
+}
+
 int main(int argc, const char **argv)
 {
 	CCmdlineFix CmdlineFix(&argc, &argv);
@@ -859,6 +1045,7 @@ int main(int argc, const char **argv)
 		{"packet.txt", GenPacket},
 		{"protocol.txt", GenProtocol},
 		{"snapshot.txt", GenSnapshot},
+		{"conn.txt", GenConn},
 	};
 	for(const SGen &Gen : aGens)
 	{

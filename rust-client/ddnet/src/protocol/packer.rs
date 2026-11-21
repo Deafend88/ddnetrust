@@ -396,3 +396,20 @@ pub(crate) fn utf8_skip_whitespaces(s: &[u8]) -> usize {
     }
     pos
 }
+
+/// C++: `str_utf8_fix_truncation` (str.cpp:1055), run by every `str_copy`: drops the
+/// last code point if it does not decode (e.g. cut off mid-sequence).
+pub(crate) fn utf8_fix_truncation(s: &mut Vec<u8>) {
+    // C++ `str_utf8_rewind`: back up to the start of the last code point
+    let mut last = s.len();
+    while last > 0 {
+        last -= 1;
+        if s[last] & 0xC0 != 0x80 {
+            break;
+        }
+    }
+    let mut pos = last;
+    if !s.is_empty() && utf8_decode(s, &mut pos) == -1 {
+        s.truncate(last);
+    }
+}

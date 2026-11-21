@@ -3,6 +3,7 @@
 //! Regenerate (from the repo root, after building the `rs_golden` CMake target):
 //!     build-rs/rs_golden.exe rust-client/tests/golden
 
+use ddnet::net::conn;
 use ddnet::protocol::{generated as g, huffman, netobj, packer, packet, snapshot, varint};
 use std::collections::HashMap;
 
@@ -356,4 +357,105 @@ fn snapshot_oversized_item_is_an_error() {
         &[0; snapshot::MAX_NETOBJSIZES],
     );
     assert_eq!(got, Err(-302));
+}
+
+#[test]
+fn connection() {
+    // C++ AnswerResendRequest compares against the last resend time (initially 0), so any
+    // large fixed time behaves like the real clock in the generator (one resend each).
+    let now = 1000 * conn::FREQ;
+    let text = golden("conn.txt");
+    let expected: Vec<&str> = text.lines().collect();
+    let mut actual: Vec<String> = Vec::new();
+    let mut c = conn::Connection::default();
+    let flush_out = |c: &mut conn::Connection, actual: &mut Vec<String>| {
+        for d in c.outbox.drain(..) {
+            actual.push(format!("sent {}", hex(&d)));
+        }
+        actual.push(format!(
+            "state {} {} {}",
+            c.state() as i32,
+            c.ack(),
+            hex(c.error().as_bytes())
+        ));
+    };
+    for line in &expected {
+        let f: Vec<&str> = line.split(' ').collect();
+        match f[0] {
+            "scenario" => {
+                c = conn::Connection::default();
+                actual.push(line.to_string());
+            }
+            "connect" => {
+                c.connect(now);
+                actual.push(line.to_string());
+                flush_out(&mut c, &mut actual);
+            }
+            "feed" => {
+                let packet = packet::decode(&unhex(f[1]));
+                let online = matches!(c.state(), conn::State::Connect | conn::State::Online);
+                let (ret, chunks) = match packet {
+                    Some(mut p) if online => {
+                        let ok = c.feed(&mut p, now);
+                        let mut chunks = Vec::new();
+                        if ok
+                            && p.flags & packet::PACKETFLAG_CONTROL == 0
+                            && !p.data.is_empty()
+                            && p.num_chunks > 0
+                        {
+                            let mut u = conn::ChunkUnpacker::new(p);
+                            while let Some(chunk) = c.next_chunk(&mut u) {
+                                chunks.push(format!("chunk {} {}", chunk.flags, hex(&chunk.data)));
+                            }
+                        }
+                        (ok as i32, chunks)
+                    }
+                    _ => (-1, Vec::new()),
+                };
+                actual.push(format!("feed {} {ret}", f[1]));
+                actual.extend(chunks);
+                flush_out(&mut c, &mut actual);
+            }
+            "queue" => {
+                let ret = c.queue_chunk(f[1].parse().unwrap(), &unhex(f[2]), now);
+                actual.push(format!("queue {} {} {ret}", f[1], f[2]));
+                flush_out(&mut c, &mut actual);
+            }
+            "flush" => {
+                let ret = c.flush(now);
+                actual.push(format!("flush {ret}"));
+                flush_out(&mut c, &mut actual);
+            }
+            "disconnect" => {
+                let reason = (f[1] != "N").then(|| String::from_utf8(unhex(f[1])).unwrap());
+                c.disconnect(reason.as_deref(), now);
+                actual.push(line.to_string());
+                flush_out(&mut c, &mut actual);
+            }
+            _ => {} // "sent", "chunk", "state" are produced by the ops above
+        }
+    }
+    for (i, (a, e)) in actual.iter().zip(&expected).enumerate() {
+        assert_eq!(a, e, "line {}", i + 1);
+    }
+    assert_eq!(actual.len(), expected.len());
+}
+
+#[test]
+fn connection_empty_control_after_token_does_not_panic() {
+    let mut c = conn::Connection::default();
+    c.connect(0);
+    let mut accept = packet::Packet {
+        flags: packet::PACKETFLAG_CONTROL,
+        data: [&[2u8][..], b"TKEN", &7i32.to_be_bytes()].concat(),
+        ..Default::default()
+    };
+    assert!(c.feed(&mut accept, 0));
+    // control packet whose only payload is the token: C++ reads a stale control byte
+    let mut p = packet::Packet {
+        flags: packet::PACKETFLAG_CONTROL,
+        data: 7i32.to_be_bytes().to_vec(),
+        ..Default::default()
+    };
+    c.feed(&mut p, 0);
 }
