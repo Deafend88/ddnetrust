@@ -8,6 +8,9 @@
 
 use ddnet::map::{Layer, Map};
 use ddnet::physics::collision::{Collision, Layers, clamp_vel};
+use ddnet::physics::core::{CharacterCore, WorldCore};
+use ddnet::physics::teams::TeamsCore;
+use ddnet::physics::tuning::{Param, Tuning};
 use ddnet::physics::vmath::{PI, Vec2, direction, vec2};
 
 /// The maps of PLAN.md §5 (M4).
@@ -334,17 +337,180 @@ fn collision() {
 fn collision_hook_teleporters() {
     for name in ["coverage", "LearnToPlay"] {
         let map = load(name);
-        let mut layers = Layers::from_map(&map);
-        for t in layers.tele.iter_mut().flatten() {
-            if [10, 26, 31, 63].contains(&t.type_) {
-                t.type_ = 15; // TILE_TELEINHOOK
-            }
-        }
         check_collision(
             name,
             &map,
-            &Collision::from_layers(layers),
+            &hook_tele_collision(&map),
             &golden_file(name, "collision-hooktele"),
+        );
+    }
+}
+
+/// The "hooktele" variant of rs_parity: every tele-in tile becomes a hook tele-in.
+fn hook_tele_collision(map: &Map) -> Collision {
+    let mut layers = Layers::from_map(map);
+    for t in layers.tele.iter_mut().flatten() {
+        if [10, 26, 31, 63].contains(&t.type_) {
+            t.type_ = 15; // TILE_TELEINHOOK
+        }
+    }
+    Collision::from_layers(layers)
+}
+
+/// The state rs_parity's `CoreState` writes, in its order.
+fn core_state(c: &CharacterCore) -> Queries {
+    let mut q = Queries::default();
+    for v in &c.write().to_ints()[1..] {
+        q.int(*v); // without m_Tick
+    }
+    for v in [c.pos, c.vel, c.hook_pos, c.hook_dir, c.hook_tele_base] {
+        q.vec(v);
+    }
+    for v in [
+        c.hook_tick,
+        c.hook_state,
+        c.hooked_player(),
+        c.jumped,
+        c.jumped_total,
+        c.jumps,
+        c.direction,
+        c.angle,
+        c.triggered_events,
+        c.colliding,
+    ] {
+        q.int(v);
+    }
+    q.int(c.left_wall);
+    q.int(c.new_hook);
+    q.int(c.reset);
+    q.int(c.attached_players.len() as i32);
+    for &id in &c.attached_players {
+        q.int(id);
+    }
+    q
+}
+
+/// Four interacting character cores, against `rs_parity core`.
+fn check_core(name: &str, col: &Collision, text: &str) {
+    const CHARS: usize = 4;
+    let mut lines = text.lines().peekable();
+    let mut ticks = 0;
+    while let Some(run_line) = lines.next() {
+        let r: Vec<i32> = run_line
+            .split(' ')
+            .skip(1)
+            .map(|v| v.parse().unwrap())
+            .collect();
+        let (run, index) = (r[0], r[1]);
+        let mut world = WorldCore::default();
+        world.init_switchers(col.highest_switch_number);
+        let mut teams = TeamsCore::default();
+        let mut tuning = Tuning::default();
+        if run == 1 {
+            for (p, v) in [
+                (Param::Gravity, 0.3),
+                (Param::HookLength, 500.0),
+                (Param::HookFireSpeed, 120.0),
+                (Param::HookDragAccel, 5.0),
+                (Param::HookDragSpeed, 20.0),
+                (Param::GroundControlSpeed, 13.0),
+                (Param::AirFriction, 0.9),
+                (Param::VelrampStart, 300.0),
+                (Param::HookDuration, 2.5),
+                (Param::GroundElasticityX, 0.5),
+                (Param::GroundElasticityY, 0.3),
+            ] {
+                tuning.set(p, v);
+            }
+            teams.set_team(2, 1);
+            teams.set_solo(3, true);
+        }
+        let w = col.width();
+        for (i, jumps) in [2, 3, 1, 0].into_iter().enumerate() {
+            world.characters[i] = Some(CharacterCore::new());
+            world.reset(i);
+            let c = world.characters[i].as_mut().unwrap();
+            c.id = i as i32;
+            c.tuning = tuning;
+            c.jumps = jumps;
+            c.pos = vec2(
+                (index % w) as f32 * 32.0 + 16.0 + (i as i32 * 30) as f32 - 45.0,
+                (index / w) as f32 * 32.0 + 16.0,
+            );
+        }
+
+        while lines.peek().is_some_and(|l| !l.starts_with("run ")) {
+            let line = lines.next().unwrap();
+            let (inputs, states) = line.split_once(" |").unwrap();
+            let inputs: Vec<i32> = inputs.split(' ').map(|v| v.parse().unwrap()).collect();
+            for i in 0..CHARS {
+                let input = &mut world.characters[i].as_mut().unwrap().input;
+                *input = Default::default();
+                input.direction = inputs[i * 5];
+                input.jump = inputs[i * 5 + 1];
+                input.hook = inputs[i * 5 + 2];
+                input.target_x = inputs[i * 5 + 3];
+                input.target_y = inputs[i * 5 + 4];
+            }
+            for i in 0..CHARS {
+                world.tick(i, col, &teams, true, true);
+            }
+            for i in 0..CHARS {
+                world.move_(i, col, &teams);
+                world.quantize(i);
+            }
+            let state = |i: usize| core_state(world.characters[i].as_ref().unwrap());
+            let got: Vec<String> = (0..CHARS)
+                .map(|i| {
+                    let c = world.characters[i].as_ref().unwrap();
+                    format!(
+                        "{:08x} {:08x} {:08x}",
+                        c.pos.x.to_bits(),
+                        c.pos.y.to_bits(),
+                        state(i).crc()
+                    )
+                })
+                .collect();
+            let want = states.trim();
+            if got.join(" ") != want {
+                let dump: Vec<String> = (0..CHARS)
+                    .map(|i| {
+                        state(i)
+                            .0
+                            .iter()
+                            .map(|v| format!("{:x}", *v as u32))
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    })
+                    .collect();
+                panic!(
+                    "{name}, run {run}, tick {ticks}:\n got  {}\n want {want}\n states:\n {}",
+                    got.join(" "),
+                    dump.join("\n ")
+                );
+            }
+            ticks += 1;
+        }
+    }
+    assert_eq!(ticks, 2 * 600, "{name}");
+}
+
+#[test]
+fn character_core() {
+    for name in MAPS {
+        let map = load(name);
+        check_core(name, &Collision::new(&map), &golden_file(name, "core"));
+    }
+}
+
+#[test]
+fn character_core_hook_teleporters() {
+    for name in ["coverage", "LearnToPlay"] {
+        let map = load(name);
+        check_core(
+            name,
+            &hook_tele_collision(&map),
+            &golden_file(name, "core-hooktele"),
         );
     }
 }

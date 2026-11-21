@@ -400,7 +400,7 @@ static void CoreState(SQueries &Q, const CCharacterCore &Core)
 		Q.Int(Id);
 }
 
-// "run <tuning preset> <teams>" then per tick, per character,
+// "run <run> <start tile index>" then per tick, per character,
 // "<dir> <jump> <hook> <target x> <target y>" and after all characters
 // "| <pos x> <pos y> <crc of the core state>" per character (hex float bits).
 static constexpr int CORE_CHARS = 4;
@@ -440,8 +440,6 @@ static int CoreMode(const char *pMapFile, const char *pOutFile, bool HookTele, b
 			Teams.Team(2, 1);
 			Teams.SetSolo(3, true);
 		}
-		fprintf(f, "run %d\n", Run);
-
 		CCharacterCore aCores[CORE_CHARS]{};
 		int Index = 0;
 		for(int Try = 0; Try < 100; Try++)
@@ -450,6 +448,7 @@ static int CoreMode(const char *pMapFile, const char *pOutFile, bool HookTele, b
 			if(Collision.GetTileIndex(Index) == 0)
 				break;
 		}
+		fprintf(f, "run %d %d\n", Run, Index);
 		const int aJumps[CORE_CHARS] = {2, 3, 1, 0};
 		for(int i = 0; i < CORE_CHARS; i++)
 		{

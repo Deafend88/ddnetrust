@@ -56,26 +56,19 @@ Maps: coverage, LearnToPlay, Gold Mine, Tutorial, Tsunami, ctf1, dm1 (read from
   every tick: 50,400 ticks, 100% identical (positions, velocities, query CRC). No bundled
   map has hook teleporters, so both sides also run coverage/LearnToPlay with all tele-in
   tiles turned into hook tele-ins (242 hook-tele hits): identical too.
+- 4.3 Character core: `physics/tuning.rs` (47 params, int hundredths like CTuneParam),
+  `physics/teams.rs` (CTeamsCore), `physics/core.rs` (CWorldCore + CCharacterCore: Tick,
+  TickDeferred, Move, Write/Read/Quantize, hooks incl. player hooks and hook
+  teleports, no PRNG so tele-out 0). `rs_parity core`: 4 interacting cores, 2 runs x 600
+  ticks per map (default tuning; changed tuning + team split + solo), jumps 2/3/1/0:
+  100% identical full core state on all 7 maps and both hook-teleporter variants
+  (player hooks, attachments, ground/air jumps, retracts and hook teleports all hit).
 
 ## In progress
-- M4.3 character core (gamecore.cpp) + tick parity.
-  - Done (committed, regenerates byte-identically): `rs_parity core` mode in `src/tools/rs_parity.cpp` (4 interacting
-    CCharacterCores, 2 runs per map: default tuning / changed tuning + team split +
-    solo, jumps 2/3/1/0, held random inputs, hooks aimed at players; per tick each
-    character's pos bits + CRC of its full state, `verbose` prints the state values).
-    Data generated: `tests/golden/maps/*.core.txt` (7 maps) and
-    `*.core-hooktele.txt` (coverage, LearnToPlay).
-  - Next: Rust `physics/tuning.rs` (CTuneParam = `trunc_i32(v * 100.0)`, read as
-    `/ 100.0`, all 48 params in tuning.h order), `physics/teams.rs` (CTeamsCore),
-    `physics/core.rs` (CWorldCore with switchers, no PRNG -> RandomOr0 = 0;
-    CCharacterCore Tick/TickDeferred/Move/Write/Read/Quantize/SetHookedPlayer; cores
-    live in the world and are taken out while they tick), then a `core` test in
-    `tests/parity.rs` replaying the recorded inputs with the same order as CoreMode
-    (all Tick(true), then per character Move + Quantize) and the same state layout
-    as `CoreState`.
+- M4.4 DDNet tile effects (prediction CCharacter/CGameWorld) + world parity.
 
 ## Next
-- M4.4 DDNet tile effects (prediction CCharacter/CGameWorld). Note: the C++ client
+- M5 prediction. Note for M4.4: the C++ client
   prediction never teleports the player through tele-in tiles (the server does); it
   predicts hook teleports and tele checkpoints only.
 
