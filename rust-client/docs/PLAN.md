@@ -126,8 +126,8 @@ and `datasrc/datatypes.py` unchanged (no edits to `datasrc/`) and emits one
 - enums/flags (`EMOTE_*`, `CHARACTERFLAG_*`, `GAMEINFOFLAG_*`, …) and `INPUT_STATE_MASK`;
 - `NETOBJTYPE_*` / `NETMSGTYPE_*` ids, ex-type UUIDs (MD5 v3, computed with `hashlib`);
 - each NetObject as a `#[repr(C)]` struct of `i32` fields plus `from_ints`/`as_ints`;
-- `secure_unpack_obj` with the same range checks as the generated `CNetObjHandler`
-  (out-of-range items are dropped exactly as the C++ client drops them);
+- `secure_unpack_obj` with the same range clamping as the generated `CNetObjHandler`
+  (out-of-range fields are clamped, short items without defaults are dropped);
 - pack/unpack for every NetMessage the client sends or handles.
 
 The output is committed so `cargo build` needs no Python. Regenerate with

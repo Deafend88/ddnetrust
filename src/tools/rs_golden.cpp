@@ -16,6 +16,9 @@
 #include <engine/shared/huffman.h>
 #include <engine/shared/network.h>
 #include <engine/shared/packer.h>
+#include <engine/shared/uuid_manager.h>
+
+#include <generated/protocol.h>
 
 #include <chrono>
 #include <cstdio>
@@ -526,6 +529,101 @@ static void GenPacket(FILE *f)
 	net_udp_close(RecvSocket);
 }
 
+// Protocol tables from datasrc/network.py as compiled into C++:
+//   "uuid <name> <hex16>"                      every UUID in g_UuidManager
+//   "objsize <name> <GetObjSize> <GetUnpackedObjSize>"
+//   "obj <name> <hexin> <hexout|FAIL>"         CNetObjHandler::SecureUnpackObj
+//   "msg <name> <hexin> <OK|failedon>"         CNetObjHandler::SecureUnpackMsg
+static void GenProtocol(FILE *f)
+{
+	for(int i = 0; i < g_UuidManager.NumUuids(); i++)
+	{
+		const int Id = OFFSET_UUID + i;
+		CUuid Uuid = g_UuidManager.GetUuid(Id);
+		fprintf(f, "uuid %s %s\n", g_UuidManager.GetName(Id), Hex(Uuid.m_aData, sizeof(Uuid.m_aData)).c_str());
+	}
+
+	CNetObjHandler Handler;
+	std::vector<int> vObjTypes, vMsgTypes;
+	for(int t = 1; t < NUM_NETOBJTYPES; t++)
+		vObjTypes.push_back(t);
+	for(int t = __NETOBJTYPE_UUID_HELPER + 1; t < OFFSET_NETMSGTYPE_UUID; t++)
+		vObjTypes.push_back(t);
+	for(int t = 1; t < NUM_NETMSGTYPES; t++)
+		vMsgTypes.push_back(t);
+	for(int t = __NETMSGTYPE_UUID_HELPER + 1; t < OFFSET_MAPITEMTYPE_UUID; t++)
+		vMsgTypes.push_back(t);
+
+	for(int t = 0; t < NUM_NETOBJTYPES; t++)
+		fprintf(f, "objsize %s %d %d\n", Handler.GetObjName(t), Handler.GetObjSize(t), Handler.GetUnpackedObjSize(t));
+
+	auto RandInt = []() -> int {
+		switch(Rand() % 6)
+		{
+		case 0: return Rand() % 4;
+		case 1: return -(int)(Rand() % 4);
+		case 2: return (int)(Rand() % 300) - 150;
+		case 3: return (int)(Rand() ^ (Rand() << 16));
+		case 4: return Rand() % 2 ? 0x7fffffff : (int)0x80000000;
+		default: return Rand() % 1000000;
+		}
+	};
+
+	for(int Type : vObjTypes)
+	{
+		const int NumInts = Handler.GetUnpackedObjSize(Type) / (int)sizeof(int);
+		for(int Case = 0; Case < 40; Case++)
+		{
+			int n = NumInts + (int)(Rand() % 5) - 3;
+			if(n < 0)
+				n = 0;
+			std::vector<int> vIn(n);
+			for(int &v : vIn)
+				v = RandInt();
+			Bytes In(vIn.size() * sizeof(int));
+			if(!In.empty())
+				mem_copy(In.data(), vIn.data(), In.size());
+			In.reserve(1);
+			CUnpacker u;
+			u.Reset(In.data(), (int)In.size());
+			const void *pOut = Handler.SecureUnpackObj(Type, &u);
+			fprintf(f, "obj %s %s %s\n", Handler.GetObjName(Type), Hex(In).c_str(),
+				pOut ? Hex((const unsigned char *)pOut, Handler.GetUnpackedObjSize(Type)).c_str() : "FAIL");
+		}
+	}
+
+	for(int Type : vMsgTypes)
+	{
+		for(int Case = 0; Case < 40; Case++)
+		{
+			CPacker p;
+			p.Reset();
+			int NumFields = Rand() % 9;
+			for(int k = 0; k < NumFields; k++)
+			{
+				if(Rand() % 3)
+					p.AddInt(Rand() % 2 ? RandInt() : (int)(Rand() % 3));
+				else
+				{
+					Bytes s = RandSkewed(Rand() % 6);
+					for(auto &b : s)
+						if(b == 0)
+							b = ' ';
+					std::string Str(s.begin(), s.end());
+					p.AddString(Str.c_str());
+				}
+			}
+			Bytes In(p.Data(), p.Data() + p.Size());
+			Bytes Buf = In;
+			Buf.reserve(1);
+			CUnpacker u;
+			u.Reset(Buf.data(), (int)Buf.size());
+			const void *pOut = Handler.SecureUnpackMsg(Type, &u);
+			fprintf(f, "msg %s %s %s\n", Handler.GetMsgName(Type), Hex(In).c_str(), pOut ? "OK" : Handler.FailedMsgOn());
+		}
+	}
+}
+
 int main(int argc, const char **argv)
 {
 	CCmdlineFix CmdlineFix(&argc, &argv);
@@ -548,6 +646,7 @@ int main(int argc, const char **argv)
 		{"huffman.txt", GenHuffman},
 		{"chunk_header.txt", GenChunkHeader},
 		{"packet.txt", GenPacket},
+		{"protocol.txt", GenProtocol},
 	};
 	for(const SGen &Gen : aGens)
 	{

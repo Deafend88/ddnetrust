@@ -3,7 +3,8 @@
 //! Regenerate (from the repo root, after building the `rs_golden` CMake target):
 //!     build-rs/rs_golden.exe rust-client/tests/golden
 
-use ddnet::protocol::{huffman, packer, packet, varint};
+use ddnet::protocol::{generated as g, huffman, netobj, packer, packet, varint};
+use std::collections::HashMap;
 
 fn golden(name: &str) -> String {
     let path = format!("{}/../tests/golden/{name}", env!("CARGO_MANIFEST_DIR"));
@@ -197,4 +198,67 @@ fn packet() {
         }
     }
     assert!(sixup_rejected > 0);
+}
+
+#[test]
+fn protocol() {
+    let text = golden("protocol.txt");
+    let mut cpp_uuids: HashMap<String, String> = HashMap::new();
+    let (mut objs, mut msgs) = (0, 0);
+    for line in text.lines() {
+        let f: Vec<&str> = line.splitn(4, ' ').collect();
+        match f[0] {
+            "uuid" => {
+                cpp_uuids.insert(f[1].into(), f[2].into());
+            }
+            "objsize" => {
+                if f[1] == "EX/UUID" {
+                    continue;
+                }
+                let spec = g::OBJ_SPECS.iter().find(|s| s.name == f[1]).expect(line);
+                let size = (spec.fields.len() * 4).to_string();
+                assert_eq!((size.as_str(), size.as_str()), (f[2], f[3]), "{line}");
+            }
+            "obj" => {
+                let spec = g::OBJ_SPECS.iter().find(|s| s.name == f[1]).expect(line);
+                let ints: Vec<i32> = unhex(f[2])
+                    .chunks(4)
+                    .map(|c| i32::from_le_bytes(c.try_into().unwrap()))
+                    .collect();
+                let got = netobj::secure_unpack_obj(spec, &ints).map_or("FAIL".into(), |out| {
+                    hex(&out
+                        .iter()
+                        .flat_map(|v| v.to_le_bytes())
+                        .collect::<Vec<u8>>())
+                });
+                assert_eq!(got, f[3], "{line}");
+                objs += 1;
+            }
+            "msg" => {
+                let &(id, _, _) = g::MSG_TYPES.iter().find(|m| m.1 == f[1]).expect(line);
+                let data = unhex(f[2]);
+                let got = g::unpack_game_msg(id, &mut packer::Unpacker::new(&data));
+                assert_eq!(got.err().unwrap_or("OK"), f[3], "{line}");
+                msgs += 1;
+            }
+            _ => panic!("bad line {line}"),
+        }
+    }
+    assert_eq!((objs, msgs), (1520, 2240));
+
+    // every UUID we generate exists in C++ (keyed by hex, since our tables hold the
+    // object/message names, not the UUID name strings)
+    let cpp: std::collections::HashSet<&String> = cpp_uuids.values().collect();
+    let ours = g::OBJ_SPECS.iter().filter_map(|s| s.uuid);
+    let ours = ours.chain(g::MSG_TYPES.iter().filter_map(|m| m.2));
+    let mut n = 0;
+    for uuid in ours {
+        assert!(cpp.contains(&hex(&uuid)), "unknown uuid {}", hex(&uuid));
+        n += 1;
+    }
+    for (_, name, uuid) in g::SYS_EX_MSGS {
+        assert_eq!(cpp_uuids.get(*name), Some(&hex(uuid)), "{name}");
+        n += 1;
+    }
+    assert!(n > 40, "only {n} uuids checked");
 }

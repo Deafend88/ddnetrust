@@ -14,8 +14,13 @@
   (`docs/DECISIONS.md`).
 - **M2 complete**: 26,000+ C++ golden vectors, all byte-identical.
 
+- M3 codegen: `scripts/gen_protocol.py` turns `datasrc/network.py` (+ the system ex
+  messages in `protocol_ex_msgs.h`) into `protocol/generated.rs`; `protocol/netobj.rs`
+  ports `SecureUnpackObj`. Verified against C++: all 87 registered UUIDs, object sizes,
+  1,520 object clamp/fail cases, 2,240 message accept/reject cases.
+
 ## In progress
-- Nothing.
+- M3: snapshot port, connection state machine, client flow, local-server integration test.
 
 ## Next
 - M3: headless client against a locally built `DDNet-Server`: protocol code generation
@@ -31,6 +36,16 @@ From a shell with the Visual Studio 18 x64 environment (`vcvars64.bat`), repo ro
 
 Golden files live in `rust-client/tests/golden/` (not `tests/data/`: the root
 `.gitignore` ignores every `data/` directory).
+
+## Local test server
+`build-rs/DDNet-Server.exe` (CMake target `game-server`). Run it only with cwd set to a
+scratch directory whose `storage.cfg` contains just `add_path $CURRENTDIR` and
+`add_path $DATADIR`, so it never touches the real `%APPDATA%/DDNet`, and with
+`sv_register 0`, `bindaddr 127.0.0.1`. Never connect to public servers until the user
+says so.
+
+## Regenerate protocol code
+    python rust-client/scripts/gen_protocol.py   # needs rustfmt on PATH
 
 ## Known issues / blockers
 - None.
