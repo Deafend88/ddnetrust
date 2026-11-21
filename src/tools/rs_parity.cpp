@@ -3,6 +3,7 @@
 //
 // Usage: rs_parity map <map file> <output file> <scratch dir>
 //        rs_parity collision <map file> <output file> [hooktele] [verbose]
+//        rs_parity core <map file> <output file> [hooktele] [verbose]
 //
 // "map" loads the map with CMap + CLayers and writes every item, every data blob and
 // the physics layers, then loads mutated copies of the file (truncated, bit flips,
@@ -12,6 +13,9 @@
 // queries the collision functions the game core and prediction use at every tick.
 // "hooktele" first turns all tele-in tiles (10, 26, 31, 63) into hook tele-ins (15),
 // since none of the bundled maps has hook teleporters.
+//
+// "core" ticks four interacting CCharacterCores with held random inputs and writes
+// their complete state every tick.
 
 #include <base/dbg.h>
 #include <base/fs.h>
@@ -28,6 +32,8 @@
 #include <engine/storage.h>
 
 #include <game/collision.h>
+#include <game/gamecore.h>
+#include <game/teamscore.h>
 #include <game/layers.h>
 #include <game/mapitems.h>
 
@@ -364,13 +370,173 @@ static int CollisionMode(const char *pMapFile, const char *pOutFile, bool HookTe
 	return 0;
 }
 
+// Everything CCharacterCore keeps between ticks, as ints (floats by their bits).
+static void CoreState(SQueries &Q, const CCharacterCore &Core)
+{
+	CNetObj_CharacterCore Net = {};
+	Core.Write(&Net);
+	for(int i = 1; i < (int)(sizeof(Net) / sizeof(int)); i++) // without m_Tick
+		Q.Int(((const int *)&Net)[i]);
+	Q.Vec(Core.m_Pos);
+	Q.Vec(Core.m_Vel);
+	Q.Vec(Core.m_HookPos);
+	Q.Vec(Core.m_HookDir);
+	Q.Vec(Core.m_HookTeleBase);
+	Q.Int(Core.m_HookTick);
+	Q.Int(Core.m_HookState);
+	Q.Int(Core.HookedPlayer());
+	Q.Int(Core.m_Jumped);
+	Q.Int(Core.m_JumpedTotal);
+	Q.Int(Core.m_Jumps);
+	Q.Int(Core.m_Direction);
+	Q.Int(Core.m_Angle);
+	Q.Int(Core.m_TriggeredEvents);
+	Q.Int(Core.m_Colliding);
+	Q.Int(Core.m_LeftWall);
+	Q.Int(Core.m_NewHook);
+	Q.Int(Core.m_Reset);
+	Q.Int((int)Core.m_AttachedPlayers.size());
+	for(int Id : Core.m_AttachedPlayers)
+		Q.Int(Id);
+}
+
+// "run <tuning preset> <teams>" then per tick, per character,
+// "<dir> <jump> <hook> <target x> <target y>" and after all characters
+// "| <pos x> <pos y> <crc of the core state>" per character (hex float bits).
+static constexpr int CORE_CHARS = 4;
+static int CoreMode(const char *pMapFile, const char *pOutFile, bool HookTele, bool Verbose)
+{
+	std::unique_ptr<IStorage> pStorage = CreateLocalStorage();
+	std::unique_ptr<IMap> pMap = CreateMap();
+	CLayers Layers;
+	FILE *f = fopen(pOutFile, "wb");
+	if(!pStorage || !f || !LoadMapAndLayers(pStorage.get(), pMapFile, pMap.get(), &Layers))
+		return -1;
+	if(HookTele)
+		MakeHookTeleporters(pMap.get(), &Layers);
+	CCollision Collision;
+	Collision.Init(&Layers);
+	const int Width = Collision.GetWidth(), Height = Collision.GetHeight();
+
+	for(int Run = 0; Run < 2; Run++)
+	{
+		CWorldCore World;
+		World.InitSwitchers(Collision.m_HighestSwitchNumber); // like CGameClient::OnConnected
+		CTeamsCore Teams;
+		CTuningParams Tuning;
+		if(Run == 1)
+		{
+			Tuning.m_Gravity = 0.3f;
+			Tuning.m_HookLength = 500.0f;
+			Tuning.m_HookFireSpeed = 120.0f;
+			Tuning.m_HookDragAccel = 5.0f;
+			Tuning.m_HookDragSpeed = 20.0f;
+			Tuning.m_GroundControlSpeed = 13.0f;
+			Tuning.m_AirFriction = 0.9f;
+			Tuning.m_VelrampStart = 300;
+			Tuning.m_HookDuration = 2.5f;
+			Tuning.m_GroundElasticityX = 0.5f;
+			Tuning.m_GroundElasticityY = 0.3f;
+			Teams.Team(2, 1);
+			Teams.SetSolo(3, true);
+		}
+		fprintf(f, "run %d\n", Run);
+
+		CCharacterCore aCores[CORE_CHARS]{};
+		int Index = 0;
+		for(int Try = 0; Try < 100; Try++)
+		{
+			Index = Rand() % (Width * Height);
+			if(Collision.GetTileIndex(Index) == 0)
+				break;
+		}
+		const int aJumps[CORE_CHARS] = {2, 3, 1, 0};
+		for(int i = 0; i < CORE_CHARS; i++)
+		{
+			CCharacterCore &Core = aCores[i];
+			Core.Init(&World, &Collision, &Teams);
+			Core.Reset();
+			Core.m_Id = i;
+			Core.m_Tuning = Tuning;
+			Core.m_Jumps = aJumps[i];
+			Core.m_Pos = vec2((Index % Width) * 32.0f + 16.0f + i * 30 - 45, (Index / Width) * 32.0f + 16.0f);
+			World.m_apCharacters[i] = &Core;
+		}
+
+		CNetObj_PlayerInput aInputs[CORE_CHARS] = {};
+		int aHold[CORE_CHARS][3] = {}; // ticks left for direction, hook, jump
+		for(int Tick = 0; Tick < 600; Tick++)
+		{
+			for(int i = 0; i < CORE_CHARS; i++)
+			{
+				CNetObj_PlayerInput &In = aInputs[i];
+				if(--aHold[i][0] <= 0)
+				{
+					In.m_Direction = (int)(Rand() % 3) - 1;
+					aHold[i][0] = 1 + Rand() % 40;
+				}
+				if(--aHold[i][1] <= 0)
+				{
+					In.m_Hook = Rand() % 2;
+					aHold[i][1] = 1 + Rand() % 60;
+					if(Rand() % 3 == 0)
+					{
+						// aim at another character
+						const vec2 Diff = aCores[(i + 1 + Rand() % (CORE_CHARS - 1)) % CORE_CHARS].m_Pos - aCores[i].m_Pos;
+						In.m_TargetX = (int)Diff.x;
+						In.m_TargetY = (int)Diff.y;
+					}
+					else
+					{
+						const float Angle = (Rand() % 360) * (pi / 180.0f);
+						In.m_TargetX = (int)(std::cos(Angle) * (50 + Rand() % 350));
+						In.m_TargetY = (int)(std::sin(Angle) * (50 + Rand() % 350));
+					}
+				}
+				if(--aHold[i][2] <= 0)
+				{
+					In.m_Jump = Rand() % 4 == 0;
+					aHold[i][2] = 1 + Rand() % 15;
+				}
+				fprintf(f, "%d %d %d %d %d ", In.m_Direction, In.m_Jump, In.m_Hook, In.m_TargetX, In.m_TargetY);
+				aCores[i].m_Input = In;
+			}
+			// like CGameWorld::Tick with entities ticked in id order: Tick, then Move + Quantize
+			for(auto &Core : aCores)
+				Core.Tick(true);
+			for(auto &Core : aCores)
+			{
+				Core.Move();
+				Core.Quantize();
+			}
+			fprintf(f, "|");
+			for(auto &Core : aCores)
+			{
+				SQueries Q;
+				CoreState(Q, Core);
+				fprintf(f, " %08x %08x %08x", FloatBits(Core.m_Pos.x), FloatBits(Core.m_Pos.y), Q.Crc());
+				if(Verbose)
+				{
+					fprintf(f, " [");
+					for(int v : Q.m_vValues)
+						fprintf(f, " %x", (unsigned)v);
+					fprintf(f, " ]");
+				}
+			}
+			fprintf(f, "\n");
+		}
+	}
+	fclose(f);
+	return 0;
+}
+
 int main(int argc, const char **argv)
 {
 	CCmdlineFix CmdlineFix(&argc, &argv);
 	log_set_global_logger_default();
 	if(argc == 5 && str_comp(argv[1], "map") == 0)
 		return MapMode(argv[2], argv[3], argv[4]);
-	if(argc >= 4 && str_comp(argv[1], "collision") == 0)
+	if(argc >= 4 && (str_comp(argv[1], "collision") == 0 || str_comp(argv[1], "core") == 0))
 	{
 		bool HookTele = false, Verbose = false;
 		for(int i = 4; i < argc; i++)
@@ -378,8 +544,10 @@ int main(int argc, const char **argv)
 			HookTele |= str_comp(argv[i], "hooktele") == 0;
 			Verbose |= str_comp(argv[i], "verbose") == 0;
 		}
+		if(str_comp(argv[1], "core") == 0)
+			return CoreMode(argv[2], argv[3], HookTele, Verbose);
 		return CollisionMode(argv[2], argv[3], HookTele, Verbose);
 	}
-	log_error(TOOL_NAME, "Usage: %s map <map file> <output file> <scratch dir> | collision <map file> <output file> [hooktele] [verbose]", argc > 0 ? argv[0] : TOOL_NAME);
+	log_error(TOOL_NAME, "Usage: %s map <map file> <output file> <scratch dir> | collision|core <map file> <output file> [hooktele] [verbose]", argc > 0 ? argv[0] : TOOL_NAME);
 	return -1;
 }

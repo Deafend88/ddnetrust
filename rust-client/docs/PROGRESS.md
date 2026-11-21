@@ -59,6 +59,20 @@ Maps: coverage, LearnToPlay, Gold Mine, Tutorial, Tsunami, ctf1, dm1 (read from
 
 ## In progress
 - M4.3 character core (gamecore.cpp) + tick parity.
+  - Done (committed, regenerates byte-identically): `rs_parity core` mode in `src/tools/rs_parity.cpp` (4 interacting
+    CCharacterCores, 2 runs per map: default tuning / changed tuning + team split +
+    solo, jumps 2/3/1/0, held random inputs, hooks aimed at players; per tick each
+    character's pos bits + CRC of its full state, `verbose` prints the state values).
+    Data generated: `tests/golden/maps/*.core.txt` (7 maps) and
+    `*.core-hooktele.txt` (coverage, LearnToPlay).
+  - Next: Rust `physics/tuning.rs` (CTuneParam = `trunc_i32(v * 100.0)`, read as
+    `/ 100.0`, all 48 params in tuning.h order), `physics/teams.rs` (CTeamsCore),
+    `physics/core.rs` (CWorldCore with switchers, no PRNG -> RandomOr0 = 0;
+    CCharacterCore Tick/TickDeferred/Move/Write/Read/Quantize/SetHookedPlayer; cores
+    live in the world and are taken out while they tick), then a `core` test in
+    `tests/parity.rs` replaying the recorded inputs with the same order as CoreMode
+    (all Tick(true), then per character Move + Quantize) and the same state layout
+    as `CoreState`.
 
 ## Next
 - M4.4 DDNet tile effects (prediction CCharacter/CGameWorld). Note: the C++ client
