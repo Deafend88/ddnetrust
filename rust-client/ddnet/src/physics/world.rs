@@ -3,7 +3,7 @@
 //! DDNet tiles (freeze, switches, speedups, tune zones, ...) to the character core.
 //!
 //! Weapons are not predicted (`m_PredictWeapons` false), so `FireWeapon` does nothing and
-//! no projectiles, lasers or pickups exist.
+//! no projectiles, lasers or pickups exist. Doors come from snapshot lasers.
 
 use super::collision::{
     CANTMOVE_DOWN, Collision, TILE_DEATH, TILE_FREEZE, TILE_JUMP, TILE_LFREEZE, TILE_LUNFREEZE,
@@ -13,11 +13,13 @@ use super::core::{
     COREEVENT_HOOK_ATTACH_GROUND, CharacterCore, HOOK_IDLE, NUM_WEAPONS, Ninja, PHYSICAL_SIZE,
     SERVER_TICK_SPEED, WorldCore, count_input, read_core, read_ddnet, set_hooked_player,
 };
+use super::door::{Door, reset_door_collision};
 use super::teams::{MAX_CLIENTS, NUM_DDRACE_TEAMS, TeamsCore};
 use super::tuning::{Param, Tuning};
 use super::vmath::{Vec2, distance, dot, normalize, trunc_i32, vec2};
 use crate::protocol::generated::{
-    self as g, ObjCharacter, ObjCharacterCore, ObjDDNetCharacter, ObjPlayerInput,
+    self as g, ObjCharacter, ObjCharacterCore, ObjDDNetCharacter, ObjDDNetLaser, ObjEntityEx,
+    ObjLaser, ObjPlayerInput,
 };
 
 const TILE_UNFREEZE: i32 = 11;
@@ -998,7 +1000,7 @@ fn set_hit_disabled(c: &mut CharacterCore, disabled: bool) {
     c.laser_hit_disabled = disabled;
 }
 
-/// C++: `CGameWorld` holding only characters.
+/// C++: `CGameWorld` holding characters and doors.
 #[derive(Clone)]
 pub struct GameWorld<'a> {
     col: &'a Collision,
@@ -1011,6 +1013,9 @@ pub struct GameWorld<'a> {
     chars: Vec<Option<Character>>,
     /// Character ids in entity list order: C++ inserts at the front.
     order: Vec<usize>,
+    /// Doors in entity list order. C++ copies none into the predicted world; a clone
+    /// keeps them, but only `net_obj_end` reads them.
+    doors: Vec<Door>,
     /// C++: `m_LocalClientId`, set by `net_obj_begin`.
     local_id: i32,
 }
@@ -1029,6 +1034,7 @@ impl<'a> GameWorld<'a> {
             config,
             chars: vec![None; MAX_CLIENTS],
             order: Vec::new(),
+            doors: Vec::new(),
             local_id: -1,
         }
     }
@@ -1129,6 +1135,70 @@ impl<'a> GameWorld<'a> {
         for ch in self.chars.iter_mut().flatten() {
             ch.marked_for_destroy = true;
         }
+        for door in &mut self.doors {
+            door.marked_for_destroy = true;
+        }
+    }
+
+    /// C++: `CGameWorld::NetObjAdd` for `NETOBJTYPE_LASER`/`NETOBJTYPE_DDNETLASER`, with
+    /// `ExtractLaserInfo`. Only doors are predicted. `data` holds at least the object's
+    /// ints.
+    pub fn net_obj_add_laser(
+        &mut self,
+        id: i32,
+        type_id: i32,
+        data: &[i32],
+        ex: Option<&ObjEntityEx>,
+    ) {
+        let ddnet = type_id == g::NETOBJTYPE_DDNETLASER;
+        let (from, to, owner, mut type_, mut number, predict) = if ddnet {
+            let l = ObjDDNetLaser::from_ints(data);
+            (
+                vec2(l.from_x as f32, l.from_y as f32),
+                vec2(l.to_x as f32, l.to_y as f32),
+                l.owner,
+                l.type_,
+                l.switch_number,
+                l.flags & g::LASERFLAG_NO_PREDICT == 0,
+            )
+        } else {
+            let l = ObjLaser::from_ints(data);
+            (
+                vec2(l.from_x as f32, l.from_y as f32),
+                vec2(l.x as f32, l.y as f32),
+                -1,
+                -1,
+                0,
+                true,
+            )
+        };
+        if let Some(ex) = ex
+            && !(ddnet && number >= 0)
+        {
+            number = ex.switch_number;
+            type_ = match ex.entity_class {
+                g::ENTITYCLASS_LIGHT => g::LASERTYPE_FREEZE,
+                g::ENTITYCLASS_GUN_NORMAL..=g::ENTITYCLASS_GUN_UNFREEZE => g::LASERTYPE_GUN,
+                g::ENTITYCLASS_DRAGGER_WEAK..=g::ENTITYCLASS_DRAGGER_STRONG => g::LASERTYPE_DRAGGER,
+                g::ENTITYCLASS_DOOR => g::LASERTYPE_DOOR,
+                _ => type_,
+            };
+        }
+        // C++: IsLocalTeam (no local player: as in net_char_add)
+        let local_team =
+            owner < 0 || self.local_id < 0 || self.teams.can_collide(self.local_id, owner);
+        // doors follow the tile config, everything else needs weapon prediction
+        if !local_team || !predict || type_ != g::LASERTYPE_DOOR || !self.config.predict_tiles {
+            return;
+        }
+        let net = Door::new(id, from, to, number);
+        if let Some(door) = self.doors.iter_mut().find(|d| d.id == id)
+            && net.matches(door)
+        {
+            door.marked_for_destroy = false; // C++: Keep (Read sets the same positions)
+            return;
+        }
+        self.doors.insert(0, net);
     }
 
     /// C++: `CGameWorld::NetCharAdd` (with the extended object, see `Character::read`).
@@ -1181,12 +1251,20 @@ impl<'a> GameWorld<'a> {
                 hc.marked_for_destroy = false;
             }
         }
-        // RemoveEntities (doors come with snapshot entities, not ported)
+        // RemoveEntities
         for i in 0..MAX_CLIENTS {
             if self.chars[i].as_ref().is_some_and(|c| c.marked_for_destroy) {
                 self.remove_character(i);
             }
         }
+        let col = self.col;
+        self.doors.retain(|d| {
+            if d.marked_for_destroy {
+                d.destroy(col);
+            }
+            !d.marked_for_destroy
+        });
+        reset_door_collision(&mut self.doors, col);
     }
 
     /// C++: `CEntity::Destroy` of a character.

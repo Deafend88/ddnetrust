@@ -104,7 +104,8 @@ There is one `tick ... pos` line per second, and the position changes as the scr
 moves. The prediction counters compare every server snapshot of your tee with what the
 client predicted for that tick. Alone on `dm1` they stay at 0 mispredicted and 0
 prediction errors; other players bumping or hooking you cause some, which is normal.
-Maps with doors (e.g. `coverage`) still mispredict, because doors are not predicted yet.
+Maps with doors (e.g. `coverage`) also stay at 0: door lasers from the snapshot are
+predicted like the C++ client does.
 
 At the same time the server window shows:
 

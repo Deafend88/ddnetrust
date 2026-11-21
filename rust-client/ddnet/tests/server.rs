@@ -166,7 +166,7 @@ fn prediction_matches_server() {
         eprintln!("SKIPPED: no DDNet-Server (set DDNET_SERVER or build the game-server target)");
         return;
     };
-    for map_name in ["dm1"] {
+    for map_name in ["dm1", "coverage"] {
         let (server, port) = start_server(&exe, map_name);
         let socket = net::connect_socket(format!("127.0.0.1:{port}").parse().unwrap()).unwrap();
         let start = Instant::now();

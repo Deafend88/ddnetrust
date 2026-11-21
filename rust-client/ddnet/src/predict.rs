@@ -4,8 +4,8 @@
 //! `cl_predict_freeze 1`, `cl_antiping 0`). Weapons are not predicted.
 //!
 //! Not ported yet: `Sv_TeamsState` (team membership: everyone is in team 0 unless a
-//! snapshot says solo/super), `Sv_TuneParams` (default tuning), doors and other snapshot
-//! entities, the dummy, and the rendering-only parts (smoothing, events).
+//! snapshot says solo/super), `Sv_TuneParams` (default tuning), snapshot entities other
+//! than doors, the dummy, and the rendering-only parts (smoothing, events).
 
 use std::collections::BTreeMap;
 
@@ -15,7 +15,8 @@ use crate::physics::core::{CharacterCore, WorldCore};
 use crate::physics::teams::{MAX_CLIENTS, NUM_DDRACE_TEAMS, TEAM_FLOCK, TeamsCore};
 use crate::physics::world::{GameWorld, WorldConfig, core_obj};
 use crate::protocol::generated::{
-    self as g, ObjCharacter, ObjCharacterCore, ObjDDNetCharacter, ObjGameInfoEx, ObjSwitchState,
+    self as g, ObjCharacter, ObjCharacterCore, ObjDDNetCharacter, ObjDDNetLaser, ObjEntityEx,
+    ObjGameInfoEx, ObjSwitchState,
 };
 use crate::protocol::snapshot::Item;
 
@@ -361,6 +362,22 @@ impl<'a> Predictor<'a> {
             }) = c
             {
                 self.world.net_char_add(i, cur, ext, i == local);
+            }
+        }
+        // C++: SnapCollectEntities: entities sorted by id with their EntityEx; only
+        // lasers matter here (doors)
+        if let Some(items) = client.snapshot_at(tick) {
+            let mut lasers: Vec<&Item> = items
+                .iter()
+                .filter(|it| [g::NETOBJTYPE_LASER, g::NETOBJTYPE_DDNETLASER].contains(&it.type_id))
+                .collect();
+            lasers.sort_by_key(|it| it.id);
+            for it in lasers {
+                let ex = find(items, g::NETOBJTYPE_ENTITYEX, it.id)
+                    .map(|e| ObjEntityEx::from_ints(&ints(e, ObjEntityEx::NUM_INTS)));
+                let data = ints(it, ObjDDNetLaser::NUM_INTS);
+                self.world
+                    .net_obj_add_laser(it.id, it.type_id, &data, ex.as_ref());
             }
         }
         self.world.net_obj_end();

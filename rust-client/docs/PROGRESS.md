@@ -40,7 +40,7 @@
   character, prediction runs ahead of the server, server logs entry, `version=20030`
   and a normal leave (no timeout); its teehistorian holds "DDNet-rs 0.1.0".
 
-### M4 — map + physics parity (in progress)
+### M4 — map + physics parity (complete)
 Maps: coverage, LearnToPlay, Gold Mine, Tutorial, Tsunami, ctf1, dm1 (read from
 `data/maps/`). `tests/parity.rs` holds everything; data from `src/tools/rs_parity.cpp`.
 - 4.1 Map loading: `map/datafile.rs` (CDataFileReader incl. Validate, zlib via `flate2`)
@@ -80,7 +80,7 @@ Maps: coverage, LearnToPlay, Gold Mine, Tutorial, Tsunami, ctf1, dm1 (read from
   projectiles are not ported), and Read needs the DDNet extended object (vanilla path
   not ported). The C++ client prediction never teleports through tele-in tiles.
 
-### M5 — prediction (in progress)
+### M5 — prediction (complete)
 - 5.1 Snapshots into the prediction world: `predict.rs` ports the prediction parts of
   CGameClient::OnNewSnapshot (active characters, Evolve of dead-reckoned cores,
   GameInfoEx prediction flags, switch states, solo), UpdatePrediction (strong/weak
@@ -99,13 +99,28 @@ Maps: coverage, LearnToPlay, Gold Mine, Tutorial, Tsunami, ctf1, dm1 (read from
   more right after it leaves (its removal), then 0 of the next ~149: prediction recovers
   at the next snapshot, by re-reading the server world like C++. Not compared against a
   live C++ client (none is built here; CLIENT=OFF).
+- 5.3 Doors: `physics/door.rs` ports the prediction CDoor (Read/Match, ResetCollision
+  incl. the map-configured length via MapSide/MapLength and the map-size cap, Destroy),
+  `world.rs` NetObjAdd for laser objects (ExtractLaserInfo incl. EntityEx, IsLocalTeam,
+  no-predict flag, doors gated by PredictTiles, insert at front, Keep on Match) and
+  NetObjEnd (destroy unkept doors, ResetDoorCollision in map order with switch doors
+  last). The collision door grid is `Cell`-based so the server-state world writes it
+  through the shared `&Collision` like C++. `predict.rs` feeds lasers in
+  SnapCollectEntities order (by id, with their EntityEx).
+  `rs_parity doors`: per map 60 snapshots of the doors the server creates (server
+  OnEntity/CDoor geometry), every door tile also copied to the front layer (half with a
+  conflicting laser length), extra doors on the same origin tiles with other numbers and
+  directions, and 200 odd lasers (vanilla + EntityEx, other types/owners/teams,
+  no-predict, switch numbers -1/300, origins on solid/death/nolaser tiles, huge and
+  zero lengths); items leave, return and move under the same id; PredictTiles off every
+  10th snapshot. The door grid after every snapshot is 100% identical on all 7 maps
+  (Tsunami/ctf1/dm1 have no switch layer, so C++ has no door grid there: all empty on
+  both sides). 17 hand-made mutations of door.rs/world.rs are all caught.
+  Live: `prediction_matches_server` now runs `dm1` and `coverage` (tee spawns next to a
+  switch door the server closes): 250 of 250 snapshots match on each, 0 prediction
+  errors, stable over 3 runs. Without the door reset, coverage had 94 mismatches.
 
-## In progress
-- M5 doors: `coverage` mispredicts (94/250 snapshots) because the tee spawns next to a
-  door (switch type 240 = ENTITY_DOOR) that the server closes; C++ gets door state from
-  snapshot entities (NetObjAdd -> CDoor -> door collision layer). Next: doors (NetObjAdd
-  for door lasers -> door collision shared by both worlds, ResetDoorCollision), then
-  re-enable `coverage` in `prediction_matches_server`.
+M5 is complete. Not ported (see Later): weapons, teams/tuning messages, the dummy.
 
 ## Later
 - Weapon prediction (`m_PredictWeapons`/AntiPingWeapons: FireWeapon, ninja dash,
@@ -155,9 +170,10 @@ Build the `rs_parity` target like `rs_golden`, then per map (repo root):
     build-rs/rs_parity.exe collision "data/maps/<name>.map" rust-client/tests/golden/maps/<name>.collision-hooktele.txt hooktele
 
 (hooktele only for coverage and LearnToPlay; add `verbose` to see every query value).
-`core` and `world` work like `collision` (`<name>.core.txt`, `<name>.world.txt`,
-`-hooktele` variants for coverage and LearnToPlay). All modes are deterministic: the
-data regenerates byte for byte.
+`core`, `world` and `doors` work like `collision` (`<name>.core.txt`, `<name>.world.txt`,
+`<name>.doors.txt`; `-hooktele` variants of core and world for coverage and LearnToPlay;
+`doors` takes no flags). All modes are deterministic: the data regenerates byte for
+byte.
 
 ## Regenerate protocol code
     python rust-client/scripts/gen_protocol.py   # needs rustfmt on PATH

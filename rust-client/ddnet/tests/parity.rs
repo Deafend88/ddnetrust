@@ -794,3 +794,115 @@ fn world_hook_teleporters() {
         );
     }
 }
+
+/// rs_parity's `MakeFrontDoors`: every game/switch-layer door tile is copied to the front
+/// layer with its laser tiles, every second door one laser length further.
+fn front_door_layers(map: &Map) -> Layers {
+    const DOOR: u8 = 240; // ENTITY_OFFSET + ENTITY_DOOR
+    const SHORT: u8 = 210; // ENTITY_OFFSET + ENTITY_LASER_SHORT
+    const SIDES: [(i32, i32); 8] = [
+        (0, 1),
+        (1, 1),
+        (1, 0),
+        (1, -1),
+        (0, -1),
+        (-1, -1),
+        (-1, 0),
+        (-1, 1),
+    ];
+    let mut l = Layers::from_map(map);
+    let (w, h) = (l.width, l.height);
+    let Some(mut front) = l.front.take() else {
+        return l;
+    };
+    let mut doors = 0;
+    for i in 0..w * h {
+        for layer in 0..2 {
+            let source = |index: i32| match (layer, &l.switch) {
+                (0, _) => l.tiles[index as usize].index,
+                (_, Some(s)) => s[index as usize].type_,
+                _ => 0,
+            };
+            if source(i) != DOOR {
+                continue;
+            }
+            doors += 1;
+            front[i as usize].index = DOOR;
+            for (dx, dy) in SIDES {
+                let (x, y) = (i % w + dx, i / w + dy);
+                if x < 0 || x >= w || y < 0 || y >= h {
+                    continue;
+                }
+                let laser = source(y * w + x);
+                if !(SHORT..=SHORT + 2).contains(&laser) {
+                    continue;
+                }
+                front[(y * w + x) as usize].index = if doors % 2 == 1 {
+                    laser
+                } else {
+                    SHORT + (laser - SHORT + 1) % 3
+                };
+            }
+        }
+    }
+    l.front = Some(front);
+    l
+}
+
+/// Door lasers snapshot by snapshot through `GameWorld` (`net_obj_begin`,
+/// `net_obj_add_laser`, `net_obj_end`): the collision door grid after each snapshot
+/// must equal `rs_parity doors`.
+#[test]
+fn doors() {
+    for name in MAPS {
+        let col = Collision::from_layers(front_door_layers(&load(name)));
+        let text = golden_file(name, "doors");
+        let mut world = GameWorld::new(&col, WorldConfig::default());
+        let mut teams = TeamsCore::default();
+        teams.set_team(2, 1);
+        let mut lines = text.lines().skip(1); // "pool ..."
+        let mut snaps = 0;
+        while let Some(snap) = lines.next() {
+            let s: Vec<i32> = snap
+                .split(' ')
+                .skip(1)
+                .map(|v| v.parse().unwrap())
+                .collect();
+            world.config.predict_tiles = s[1] != 0;
+            world.net_obj_begin(teams.clone(), 0);
+            for _ in 0..s[2] {
+                let line = lines.next().unwrap();
+                let (item, ex) = line.split_once(" ex ").unwrap_or((line, ""));
+                let (type_name, item) = item.split_once(' ').unwrap();
+                let type_id = match type_name {
+                    "laser" => g::NETOBJTYPE_LASER,
+                    _ => g::NETOBJTYPE_DDNETLASER,
+                };
+                let v: Vec<i32> = item.split(' ').map(|v| v.parse().unwrap()).collect();
+                let ex: Vec<i32> = ex.split(' ').filter_map(|v| v.parse().ok()).collect();
+                let ex = (!ex.is_empty()).then(|| g::ObjEntityEx::from_ints(&ex));
+                let mut data = v[1..].to_vec();
+                data.resize(10, 0);
+                world.net_obj_add_laser(v[0], type_id, &data, ex.as_ref());
+            }
+            world.net_obj_end();
+            let mut q = Queries::default();
+            let mut tiles = 0;
+            for i in 0..col.width() * col.height() {
+                let d = col.get_door_tile(i);
+                q.int(d.index);
+                q.int(d.flags);
+                q.int(d.number);
+                tiles += (d.index != 0) as i32;
+            }
+            assert_eq!(
+                lines.next().unwrap(),
+                format!("grid {tiles} {:08x}", q.crc()),
+                "{name} snapshot {}",
+                s[0]
+            );
+            snaps += 1;
+        }
+        assert_eq!(snaps, 60, "{name}");
+    }
+}

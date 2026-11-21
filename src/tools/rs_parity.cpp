@@ -1,10 +1,11 @@
-// Parity data for the Rust client (rust-client/): runs the real C++ map loading and
+﻿// Parity data for the Rust client (rust-client/): runs the real C++ map loading and
 // physics code and writes what it computed, for rust-client/ddnet/tests/parity.rs.
 //
 // Usage: rs_parity map <map file> <output file> <scratch dir>
 //        rs_parity collision <map file> <output file> [hooktele] [verbose]
 //        rs_parity core <map file> <output file> [hooktele] [verbose]
 //        rs_parity world <map file> <output file> [hooktele] [verbose]
+//        rs_parity doors <map file> <output file>
 //
 // "map" loads the map with CMap + CLayers and writes every item, every data blob and
 // the physics layers, then loads mutated copies of the file (truncated, bit flips,
@@ -21,6 +22,12 @@
 // "world" ticks four characters through the client prediction (CGameWorld with
 // CCharacter, as in CGameClient::OnPredict), spawned on DDNet tiles (freeze, switches,
 // speedups, tune zones, ...), and writes their state and the switch states every tick.
+//
+// "doors" feeds the door lasers the server creates for the map (with every door tile also
+// copied to the front layer, half of them with another length), more doors on the same
+// tiles and odd lasers a server could send, into CGameWorld snapshot by snapshot (NetObjBegin/NetObjAdd/NetObjEnd as in
+// CGameClient::UpdatePrediction), with items leaving, returning and moving, and writes
+// the collision door grid after each one.
 
 #include <base/dbg.h>
 #include <base/fs.h>
@@ -48,7 +55,9 @@
 #include <zlib.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
+#include <functional>
 #include <map>
 #include <string>
 #include <vector>
@@ -857,12 +866,244 @@ static int WorldMode(const char *pMapFile, const char *pOutFile, bool HookTele, 
 	return 0;
 }
 
+// One laser snapshot item: its type, id, ints and optional EntityEx.
+struct SLaserItem
+{
+	int m_Type;
+	int m_Id;
+	std::vector<int> m_vData;
+	bool m_HasEx;
+	CNetObj_EntityEx m_Ex;
+};
+
+static constexpr int DOOR_SNAPS = 60;
+static constexpr int DOOR_LASERS = 200;
+static const int s_aDoorSides[8][2] = {{0, 1}, {1, 1}, {1, 0}, {1, -1}, {0, -1}, {-1, -1}, {-1, 0}, {-1, 1}};
+
+// Every door tile of the game and switch layers also becomes a front-layer door, with the
+// laser tiles around it copied to the front layer: unchanged for every second door, one
+// length further for the others, so their layers configure different lengths.
+static void MakeFrontDoors(IMap *pMap, CLayers *pLayers)
+{
+	if(!pLayers->FrontLayer())
+		return;
+	CTile *pFront = static_cast<CTile *>(pMap->GetData(pLayers->FrontLayer()->m_Front));
+	CTile *pGame = static_cast<CTile *>(pMap->GetData(pLayers->GameLayer()->m_Data));
+	CSwitchTile *pSwitch = pLayers->SwitchLayer() ? static_cast<CSwitchTile *>(pMap->GetData(pLayers->SwitchLayer()->m_Switch)) : nullptr;
+	const int Width = pLayers->GameLayer()->m_Width, Height = pLayers->GameLayer()->m_Height;
+	if(!pFront || !pGame)
+		return;
+	int Doors = 0;
+	for(int i = 0; i < Width * Height; i++)
+		for(int Layer = 0; Layer < 2; Layer++)
+		{
+			const auto Source = [&](int Index) -> int { return Layer == 0 ? pGame[Index].m_Index : (pSwitch ? pSwitch[Index].m_Type : 0); };
+			if(Source(i) != ENTITY_OFFSET + ENTITY_DOOR)
+				continue;
+			Doors++;
+			pFront[i].m_Index = ENTITY_OFFSET + ENTITY_DOOR;
+			for(const auto &Side : s_aDoorSides)
+			{
+				const int x = i % Width + Side[0], y = i / Width + Side[1];
+				if(x < 0 || x >= Width || y < 0 || y >= Height)
+					continue;
+				const int Laser = Source(y * Width + x) - ENTITY_OFFSET;
+				if(Laser < ENTITY_LASER_SHORT || Laser > ENTITY_LASER_LONG)
+					continue;
+				pFront[y * Width + x].m_Index = ENTITY_OFFSET + (Doors % 2 ? Laser : ENTITY_LASER_SHORT + (Laser - ENTITY_LASER_SHORT + 1) % 3);
+			}
+		}
+}
+
+static int DoorsMode(const char *pMapFile, const char *pOutFile)
+{
+	std::unique_ptr<IStorage> pStorage = CreateLocalStorage();
+	std::unique_ptr<IMap> pMap = CreateMap();
+	CLayers Layers;
+	FILE *f = fopen(pOutFile, "wb");
+	if(!pStorage || !f || !LoadMapAndLayers(pStorage.get(), pMapFile, pMap.get(), &Layers))
+		return -1;
+	MakeFrontDoors(pMap.get(), &Layers);
+	CCollision Collision;
+	Collision.Init(&Layers);
+	const int Width = Collision.GetWidth(), Height = Collision.GetHeight();
+
+	// the doors the server creates (IGameController::OnEntity and server CDoor), snapped
+	// as for a DDNet client (CDoor::Snap, SnapLaserObject)
+	std::vector<SLaserItem> vPool;
+	int NextId = 10;
+	const auto AddDoor = [&](vec2 Pos, int Side, int Length, int Number) {
+		const float Rotation = pi / 4 * Side;
+		const vec2 Direction = vec2(std::sin(Rotation), std::cos(Rotation));
+		vec2 To;
+		Collision.IntersectNoLaser(Pos, Pos + normalize(Direction) * (float)Length, &To, nullptr);
+		vPool.push_back({NETOBJTYPE_DDNETLASER, NextId++,
+			{round_to_int(Pos.x), round_to_int(Pos.y), round_to_int(To.x), round_to_int(To.y), -1, -1, LASERTYPE_DOOR, Number, 0, 0}, false, {}});
+	};
+	for(int y = 0; y < Height; y++)
+		for(int x = 0; x < Width; x++)
+			for(const int Layer : {LAYER_GAME, LAYER_FRONT, LAYER_SWITCH})
+			{
+				if((Layer == LAYER_FRONT && !Collision.FrontLayer()) || (Layer == LAYER_SWITCH && !Collision.SwitchLayer()))
+					continue;
+				if(Collision.Entity(x, y, Layer) != ENTITY_DOOR)
+					continue;
+				const int Number = Layer == LAYER_SWITCH ? Collision.SwitchLayer()[y * Width + x].m_Number : 0;
+				for(int i = 0; i < 8; i++)
+				{
+					const int Side = Collision.Entity(x + s_aDoorSides[i][0], y + s_aDoorSides[i][1], Layer);
+					if(Side >= ENTITY_LASER_SHORT && Side <= ENTITY_LASER_LONG)
+						AddDoor(vec2(x * 32.0f + 16.0f, y * 32.0f + 16.0f), i, 32 * 3 + 32 * (Side - ENTITY_LASER_SHORT) * 3, Number);
+				}
+			}
+	const int ServerDoors = (int)vPool.size();
+	// more doors on the same tiles, in other directions and with other switch numbers
+	for(int i = 0; i < ServerDoors; i++)
+		if(Rand() % 2)
+		{
+			const int aNumbers[] = {0, 0, 1, 2, 7};
+			const vec2 Pos(vPool[i].m_vData[0], vPool[i].m_vData[1]);
+			const int Side = Rand() % 8;
+			const int Length = 32 * (1 + Rand() % 9);
+			AddDoor(Pos, Side, Length, aNumbers[Rand() % 5]);
+		}
+	// tiles a door can start on that the client treats specially
+	// (game solid, game death/nolaser, front death/nolaser)
+	std::vector<std::vector<int>> vvSpecial;
+	for(const auto &IsSpecial : std::vector<std::function<bool(int)>>{
+		    [&](int i) { return Collision.GetTileIndex(i) == TILE_SOLID; },
+		    [&](int i) { return Collision.GetTileIndex(i) == TILE_DEATH || Collision.GetTileIndex(i) == TILE_NOLASER; },
+		    [&](int i) { return Collision.GetFrontTileIndex(i) == TILE_DEATH || Collision.GetFrontTileIndex(i) == TILE_NOLASER; }})
+	{
+		std::vector<int> vTiles;
+		for(int i = 0; i < Width * Height; i++)
+			if(IsSpecial(i))
+				vTiles.push_back(i);
+		if(!vTiles.empty())
+			vvSpecial.push_back(vTiles);
+	}
+	// lasers a server could send: other types, vanilla lasers with EntityEx, other
+	// owners, no-predict flags, odd switch numbers, doors off or across the map
+	for(int i = 0; i < DOOR_LASERS; i++)
+	{
+		const int Range = (Width + Height) * 32;
+		const auto Coord = [&](int Size) {
+			switch(Rand() % 8)
+			{
+			case 0: return (int)(Rand() % 2000000) - 1000000;
+			case 1: return (int)(Rand() % (Range * 2)) - Range / 2;
+			default: return (int)(Rand() % (Size * 32));
+			}
+		};
+		int X = Coord(Width);
+		int Y = Coord(Height);
+		if(!vvSpecial.empty() && Rand() % 3 == 0)
+		{
+			const std::vector<int> &vSpecial = vvSpecial[Rand() % vvSpecial.size()];
+			const int Index = vSpecial[Rand() % vSpecial.size()];
+			X = Index % Width * 32 + 16;
+			Y = Index / Width * 32 + 16;
+		}
+		int FromX = X, FromY = Y;
+		switch(Rand() % 4)
+		{
+		case 0: break; // zero length
+		case 1:
+			FromX = Coord(Width);
+			FromY = Coord(Height);
+			break;
+		default:
+		{
+			// along one of the eight door sides, sometimes off by a bit
+			const int Side = Rand() % 8;
+			const float Len = 32.0f * (1 + Rand() % 12);
+			FromX = X + round_to_int(std::sin(pi / 4 * Side) * Len) + (Rand() % 4 == 0 ? (int)(Rand() % 21) - 10 : 0);
+			FromY = Y + round_to_int(std::cos(pi / 4 * Side) * Len);
+		}
+		}
+		const int aNumbers[] = {-1, 0, 0, 1, 2, Collision.m_HighestSwitchNumber, Collision.m_HighestSwitchNumber + 1, 300};
+		const int Number = aNumbers[Rand() % 8];
+		const int aTypes[] = {LASERTYPE_DOOR, LASERTYPE_DOOR, LASERTYPE_DOOR, LASERTYPE_RIFLE, LASERTYPE_DRAGGER, LASERTYPE_FREEZE};
+		const int aOwners[] = {-1, -1, -1, 0, 1, 2, 3};
+		const int Owner = aOwners[Rand() % 7];
+		SLaserItem Item;
+		Item.m_Id = NextId++;
+		Item.m_HasEx = Rand() % 2 == 0;
+		Item.m_Ex.m_SwitchNumber = aNumbers[Rand() % 8];
+		Item.m_Ex.m_Layer = 0;
+		const int aClasses[] = {ENTITYCLASS_DOOR, ENTITYCLASS_DOOR, ENTITYCLASS_LIGHT, ENTITYCLASS_GUN_NORMAL, ENTITYCLASS_DRAGGER_WEAK, ENTITYCLASS_PICKUP};
+		Item.m_Ex.m_EntityClass = aClasses[Rand() % 6];
+		if(Rand() % 3 == 0)
+		{
+			Item.m_Type = NETOBJTYPE_LASER;
+			Item.m_vData = {X, Y, FromX, FromY, -1};
+		}
+		else
+		{
+			const int Type = aTypes[Rand() % 6];
+			const int Flags = Rand() % 6 == 0 ? LASERFLAG_NO_PREDICT : 0;
+			Item.m_Type = NETOBJTYPE_DDNETLASER;
+			Item.m_vData = {X, Y, FromX, FromY, -1, Owner, Type, Number, 0, Flags};
+		}
+		vPool.push_back(Item);
+	}
+	fprintf(f, "pool %d %d\n", ServerDoors, (int)vPool.size());
+
+	g_Config.m_SvFreezeDelay = 3;
+	CGameWorld World;
+	World.Init(&Collision, nullptr, nullptr);
+	CTeamsCore Teams;
+	Teams.Team(2, 1); // owner 2 is not in the local player's team
+	for(int Snap = 0; Snap < DOOR_SNAPS; Snap++)
+	{
+		World.m_WorldConfig.m_PredictTiles = Snap % 10 != 9;
+		// most items stay, some leave and come back, some move under the same id
+		std::vector<SLaserItem> vSnap;
+		for(SLaserItem &Item : vPool)
+		{
+			if(Snap > 0 && Rand() % 10 == 0)
+				Item.m_vData[2] += 32 * ((int)(Rand() % 3) - 1);
+			if(Snap == 0 || Rand() % 5 != 0)
+				vSnap.push_back(Item);
+		}
+		fprintf(f, "snap %d %d %d\n", Snap, World.m_WorldConfig.m_PredictTiles, (int)vSnap.size());
+		World.NetObjBegin(Teams, 0);
+		for(const SLaserItem &Item : vSnap) // sorted by id, like SnapCollectEntities
+		{
+			fprintf(f, "%s %d", Item.m_Type == NETOBJTYPE_LASER ? "laser" : "ddnetlaser", Item.m_Id); // ex type numbers are not stable
+			for(int v : Item.m_vData)
+				fprintf(f, " %d", v);
+			if(Item.m_HasEx)
+				fprintf(f, " ex %d %d %d", Item.m_Ex.m_SwitchNumber, Item.m_Ex.m_Layer, Item.m_Ex.m_EntityClass);
+			fprintf(f, "\n");
+			World.NetObjAdd(Item.m_Id, Item.m_Type, Item.m_vData.data(), Item.m_HasEx ? &Item.m_Ex : nullptr);
+		}
+		World.NetObjEnd();
+		SQueries Q;
+		int Tiles = 0;
+		for(int i = 0; i < Width * Height; i++)
+		{
+			CDoorTile Door;
+			Collision.GetDoorTile(i, &Door);
+			Q.Int(Door.m_Index);
+			Q.Int(Door.m_Flags);
+			Q.Int(Door.m_Number);
+			Tiles += Door.m_Index != 0;
+		}
+		fprintf(f, "grid %d %08x\n", Tiles, Q.Crc());
+	}
+	fclose(f);
+	return 0;
+}
+
 int main(int argc, const char **argv)
 {
 	CCmdlineFix CmdlineFix(&argc, &argv);
 	log_set_global_logger_default();
 	if(argc == 5 && str_comp(argv[1], "map") == 0)
 		return MapMode(argv[2], argv[3], argv[4]);
+	if(argc == 4 && str_comp(argv[1], "doors") == 0)
+		return DoorsMode(argv[2], argv[3]);
 	if(argc >= 4 && (str_comp(argv[1], "collision") == 0 || str_comp(argv[1], "core") == 0 || str_comp(argv[1], "world") == 0))
 	{
 		bool HookTele = false, Verbose = false;
@@ -877,6 +1118,6 @@ int main(int argc, const char **argv)
 			return CoreMode(argv[2], argv[3], HookTele, Verbose);
 		return CollisionMode(argv[2], argv[3], HookTele, Verbose);
 	}
-	log_error(TOOL_NAME, "Usage: %s map <map file> <output file> <scratch dir> | collision|core|world <map file> <output file> [hooktele] [verbose]", argc > 0 ? argv[0] : TOOL_NAME);
+	log_error(TOOL_NAME, "Usage: %s map <map file> <output file> <scratch dir> | collision|core|world <map file> <output file> [hooktele] [verbose] | doors <map file> <output file>", argc > 0 ? argv[0] : TOOL_NAME);
 	return -1;
 }

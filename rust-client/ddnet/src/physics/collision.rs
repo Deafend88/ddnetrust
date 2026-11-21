@@ -2,6 +2,7 @@
 //! and the client prediction use. Weapon-only queries (`IntersectLine`, `MovePoint`,
 //! the laser intersections) come with weapons.
 
+use std::cell::Cell;
 use std::collections::BTreeMap;
 
 use super::vmath::{Vec2, direction, distance, mix, round_to_int, trunc_i32, vec2};
@@ -42,6 +43,13 @@ pub const ROTATION_0: i32 = 0;
 pub const ROTATION_90: i32 = TILEFLAG_ROTATE;
 pub const ROTATION_180: i32 = TILEFLAG_XFLIP | TILEFLAG_YFLIP;
 pub const ROTATION_270: i32 = TILEFLAG_XFLIP | TILEFLAG_YFLIP | TILEFLAG_ROTATE;
+
+/// C++: `ENTITY_OFFSET` (mapitems.h).
+const ENTITY_OFFSET: i32 = 255 - 16 * 4;
+/// C++: `LAYER_GAME`, `LAYER_FRONT`, `LAYER_SWITCH`: the layers `entity` reads.
+pub const LAYER_GAME: i32 = 0;
+pub const LAYER_FRONT: i32 = 1;
+pub const LAYER_SWITCH: i32 = 4;
 
 pub const CANTMOVE_LEFT: i32 = 1 << 0;
 pub const CANTMOVE_RIGHT: i32 = 1 << 1;
@@ -206,7 +214,8 @@ pub struct Collision {
     speedup: Option<Vec<SpeedupTile>>,
     switch: Option<Vec<SwitchTile>>,
     tune: Option<Vec<TuneTile>>,
-    door: Option<Vec<DoorTile>>,
+    /// Written by doors in the prediction world (C++ mutates the shared grid too).
+    door: Option<Vec<Cell<DoorTile>>>,
     pub highest_switch_number: i32,
     /// Tele-out positions by tele number - 1. C++ also lists tele-ins, check-outs and
     /// other tele tiles; only the server reads those.
@@ -286,15 +295,20 @@ impl Collision {
             speedup: l.speedup,
             switch: l.switch,
             tune: l.tune,
-            door: l.has_switch_layer.then(|| vec![DoorTile::default(); count]),
+            door: l
+                .has_switch_layer
+                .then(|| vec![Cell::new(DoorTile::default()); count]),
             highest_switch_number: 0,
             tele_outs: BTreeMap::new(),
         };
 
         if let (Some(switch), Some(door)) = (&mut c.switch, &mut c.door) {
-            for (s, d) in switch.iter_mut().zip(door.iter_mut()) {
+            for (s, d) in switch.iter_mut().zip(door.iter()) {
                 c.highest_switch_number = c.highest_switch_number.max(s.number as i32);
-                d.number = s.number;
+                d.set(DoorTile {
+                    number: s.number,
+                    ..DoorTile::default()
+                });
                 // keep only switchable tile types below TILE_NPH_ENABLE
                 let index = s.type_ as i32;
                 if index <= TILE_NPH_ENABLE
@@ -485,9 +499,48 @@ impl Collision {
     /// C++: `CCollision::GetDoorTile`.
     pub fn get_door_tile(&self, index: i32) -> DoorTile {
         match &self.door {
-            Some(door) if index >= 0 && door[index as usize].index != 0 => door[index as usize],
+            Some(door) if index >= 0 && door[index as usize].get().index != 0 => {
+                door[index as usize].get()
+            }
             _ => DoorTile::default(),
         }
+    }
+
+    /// C++: `CCollision::Entity` for `LAYER_GAME`, `LAYER_FRONT` and `LAYER_SWITCH`.
+    /// `None` when the map has no such layer (callers check `FrontLayer()`/`SwitchLayer()`
+    /// first in C++).
+    pub fn entity(&self, x: i32, y: i32, layer: i32) -> Option<i32> {
+        let has_layer = match layer {
+            LAYER_GAME => true,
+            LAYER_FRONT => self.front.is_some(),
+            LAYER_SWITCH => self.switch.is_some(),
+            _ => false,
+        };
+        if !has_layer {
+            return None;
+        }
+        if x < 0 || x >= self.width || y < 0 || y >= self.height {
+            return Some(0);
+        }
+        let i = (y * self.width + x) as usize;
+        let tile = match layer {
+            LAYER_FRONT => self.front.as_ref()?[i].index,
+            LAYER_SWITCH => self.switch.as_ref()?[i].type_,
+            _ => self.tiles[i].index,
+        };
+        Some(tile as i32 - ENTITY_OFFSET)
+    }
+
+    /// C++: `CCollision::SetDoorCollisionAt`.
+    pub fn set_door_collision_at(&self, x: f32, y: f32, type_: u8, flags: u8, number: u8) {
+        let Some(door) = &self.door else { return };
+        let nx = (round_to_int(x) / 32).clamp(0, self.width - 1);
+        let ny = (round_to_int(y) / 32).clamp(0, self.height - 1);
+        door[(ny * self.width + nx) as usize].set(DoorTile {
+            index: type_,
+            flags,
+            number,
+        });
     }
 
     /// C++: `CCollision::TeleOuts`.
@@ -715,7 +768,7 @@ impl Collision {
                 .contains(&(t[i].type_ as i32))
             })
             || self.speedup.as_ref().is_some_and(|s| s[i].force > 0)
-            || self.door.as_ref().is_some_and(|d| d[i].index != 0)
+            || self.door.as_ref().is_some_and(|d| d[i].get().index != 0)
             || self.switch.as_ref().is_some_and(|s| s[i].type_ != 0)
             || self.tune.as_ref().is_some_and(|t| t[i].type_ != 0)
             || self.tile_exists_next(index)
@@ -759,7 +812,7 @@ impl Collision {
             || self
                 .door
                 .as_ref()
-                .is_some_and(|d| stoppers(&|i| (d[i].index as i32, d[i].flags as i32)))
+                .is_some_and(|d| stoppers(&|i| (d[i].get().index as i32, d[i].get().flags as i32)))
     }
 
     /// C++: `CCollision::GetMapIndex` (collision.cpp:911).
