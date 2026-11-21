@@ -2,4 +2,5 @@
 
 pub mod huffman;
 pub mod packer;
+pub mod packet;
 pub mod varint;

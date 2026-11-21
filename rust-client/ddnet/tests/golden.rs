@@ -3,7 +3,7 @@
 //! Regenerate (from the repo root, after building the `rs_golden` CMake target):
 //!     build-rs/rs_golden.exe rust-client/tests/golden
 
-use ddnet::protocol::{huffman, packer, varint};
+use ddnet::protocol::{huffman, packer, packet, varint};
 
 fn golden(name: &str) -> String {
     let path = format!("{}/../tests/golden/{name}", env!("CARGO_MANIFEST_DIR"));
@@ -118,4 +118,83 @@ fn huffman() {
         let got = got.map_or("ERR".into(), |n| hex(&out[..n]));
         assert_eq!(got, f[3], "{line}");
     }
+}
+
+#[test]
+fn chunk_header() {
+    let text = golden("chunk_header.txt");
+    for line in text.lines() {
+        let f: Vec<&str> = line.split(' ').collect();
+        match f[0] {
+            "chpack" => {
+                let h = packet::ChunkHeader {
+                    flags: f[1].parse().unwrap(),
+                    size: f[2].parse().unwrap(),
+                    sequence: f[3].parse().unwrap(),
+                };
+                let mut out = Vec::new();
+                h.pack(&mut out);
+                assert_eq!(hex(&out), f[4], "{line}");
+            }
+            "chunpack" => {
+                let (h, n) = packet::ChunkHeader::unpack(&unhex(f[1])).unwrap();
+                let got = format!("{} {} {} {n}", h.flags, h.size, h.sequence);
+                assert_eq!(got, f[2..].join(" "), "{line}");
+            }
+            _ => panic!("bad line {line}"),
+        }
+    }
+}
+
+#[test]
+fn chunk_header_short_input() {
+    assert_eq!(packet::ChunkHeader::unpack(&[0x40]), None);
+    assert_eq!(packet::ChunkHeader::unpack(&[0x40, 0x00]), None); // vital needs 3 bytes
+    assert!(packet::ChunkHeader::unpack(&[0x00, 0x00]).is_some());
+}
+
+#[test]
+fn packet() {
+    let text = golden("packet.txt");
+    let mut sixup_rejected = 0;
+    for line in text.lines() {
+        let f: Vec<&str> = line.split(' ').collect();
+        match f[0] {
+            "penc" => {
+                let p: Vec<i32> = f[1..5].iter().map(|x| x.parse().unwrap()).collect();
+                let out = packet::encode(p[0], p[1], p[2], &unhex(f[5]), p[3]);
+                assert_eq!(hex(&out), f[6], "{line}");
+            }
+            "cenc" => {
+                let extra: [u8; 4] = unhex(f[2]).try_into().unwrap();
+                let out = packet::encode_connless(&unhex(f[3]), (f[1] == "1").then_some(extra));
+                assert_eq!(hex(&out), f[4], "{line}");
+            }
+            "pdec" => {
+                let got = packet::decode(&unhex(f[1]));
+                if f[3] == "1" {
+                    // 0.7 packet: C++ parses it, the 0.6-only client drops it
+                    assert_eq!(got, None, "{line}");
+                    sixup_rejected += 1;
+                    continue;
+                }
+                let got = got.map_or("ERR 0".into(), |p| {
+                    let extra = if p.flags & packet::PACKETFLAG_EXTENDED != 0 {
+                        hex(&p.extra)
+                    } else {
+                        "-".into()
+                    };
+                    let data = hex(&p.data);
+                    format!("OK 0 {} {} {} {data} {extra}", p.flags, p.ack, p.num_chunks)
+                });
+                assert_eq!(got, f[2..].join(" "), "{line}");
+            }
+            "backroom" => {
+                let got = packet::is_seq_in_backroom(f[1].parse().unwrap(), f[2].parse().unwrap());
+                assert_eq!(got, f[3] == "1", "{line}");
+            }
+            _ => panic!("bad line {line}"),
+        }
+    }
+    assert!(sixup_rejected > 0);
 }

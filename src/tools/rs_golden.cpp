@@ -5,15 +5,19 @@
 //
 // Usage: rs_golden <output_dir>
 
+#include <base/dbg.h>
 #include <base/logger.h>
+#include <base/mem.h>
 #include <base/net.h>
 #include <base/os.h>
 #include <base/str.h>
 
 #include <engine/shared/compression.h>
 #include <engine/shared/huffman.h>
+#include <engine/shared/network.h>
 #include <engine/shared/packer.h>
 
+#include <chrono>
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -368,6 +372,160 @@ static void GenHuffman(FILE *f)
 	}
 }
 
+// Chunk headers (split 4, the 0.6 layout):
+//   "chpack <flags> <size> <seq> <hex>"
+//   "chunpack <hex3> <flags> <size> <seq> <consumed>"
+static void GenChunkHeader(FILE *f)
+{
+	int aSizes[] = {0, 1, 15, 16, 17, 63, 64, 255, 256, 1000, 1023};
+	int aSeqs[] = {0, 1, 3, 4, 255, 256, 511, 512, 1023};
+	for(int Flags = 0; Flags < 4; Flags++)
+		for(int Size : aSizes)
+			for(int Seq : aSeqs)
+			{
+				CNetChunkHeader h;
+				h.m_Flags = Flags;
+				h.m_Size = Size;
+				h.m_Sequence = Seq;
+				unsigned char aBuf[3];
+				unsigned char *pEnd = h.Pack(aBuf);
+				fprintf(f, "chpack %d %d %d %s\n", Flags, Size, Seq, Hex(aBuf, (int)(pEnd - aBuf)).c_str());
+			}
+	for(int i = 0; i < 5000; i++)
+	{
+		Bytes In = RandBytes(3);
+		CNetChunkHeader h;
+		unsigned char *pEnd = h.Unpack(In.data());
+		fprintf(f, "chunpack %s %d %d %d %d\n", Hex(In).c_str(), h.m_Flags, h.m_Size, h.m_Sequence, (int)(pEnd - In.data()));
+	}
+}
+
+// Packets, sent with the real CNetBase::SendPacket* over loopback and captured:
+//   "penc <flags> <ack> <numchunks> <token> <datahex> <outhex>"
+//   "cenc <extended> <extrahex> <datahex> <outhex>"
+// Decoded with CNetBase::UnpackPacket the way CNetClient::Recv calls it:
+//   "pdec <hexin> <ERR|OK> <sixup> <flags> <ack> <numchunks> <datahex> <extrahex>"
+//   "backroom <seq> <ack> <0|1>"
+static void GenPacket(FILE *f)
+{
+	CNetBase::Init();
+	net_init();
+
+	NETSOCKET RecvSocket = nullptr;
+	NETADDR RecvAddr;
+	for(int Port = 47800; Port < 47900 && !RecvSocket; Port++)
+	{
+		char aAddr[64];
+		str_format(aAddr, sizeof(aAddr), "127.0.0.1:%d", Port);
+		net_addr_from_str(&RecvAddr, aAddr);
+		RecvSocket = net_udp_create(RecvAddr);
+	}
+	NETADDR BindAddr = NETADDR_ZEROED;
+	BindAddr.type = NETTYPE_IPV4;
+	NETSOCKET SendSocket = net_udp_create(BindAddr);
+	dbg_assert(RecvSocket && SendSocket, "could not open sockets");
+
+	auto Receive = [&]() {
+		dbg_assert(net_socket_read_wait(RecvSocket, std::chrono::seconds(2)) > 0, "no packet received");
+		NETADDR From;
+		unsigned char *pData;
+		int Size = net_udp_recv(RecvSocket, &From, &pData);
+		dbg_assert(Size >= 0, "recv failed");
+		return Bytes(pData, pData + Size);
+	};
+
+	std::vector<Bytes> vSent;
+	int aTokens[] = {NET_SECURITY_TOKEN_UNSUPPORTED, NET_SECURITY_TOKEN_UNKNOWN, 0x12345678, (int)0xdeadbeef};
+	for(int i = 0; i < 600; i++)
+	{
+		CNetPacketConstruct p = {};
+		int Kind = Rand() % 3;
+		p.m_Flags = Kind == 0 ? 0 : Kind == 1 ? NET_PACKETFLAG_RESEND : NET_PACKETFLAG_CONTROL;
+		p.m_Ack = Rand() % NET_MAX_SEQUENCE;
+		Bytes Data;
+		if(Kind == 2)
+		{
+			Data = RandBytes(1 + Rand() % 8);
+			Data[0] = Rand() % 5; // control message id
+			p.m_NumChunks = 0;
+		}
+		else
+		{
+			int Size = Rand() % 4 == 0 ? Rand() % 8 : Rand() % (NET_MAX_PACKETSIZE - NET_PACKETHEADERSIZE - 4);
+			Data = Rand() % 2 ? RandSkewed(Size) : RandBytes(Size);
+			p.m_NumChunks = (Kind == 1 ? 0 : 1) + Rand() % 10;
+		}
+		p.m_DataSize = (int)Data.size();
+		if(!Data.empty())
+			mem_copy(p.m_aChunkData, Data.data(), Data.size());
+		int Token = aTokens[Rand() % 4];
+		int Flags = p.m_Flags, Ack = p.m_Ack, NumChunks = p.m_NumChunks;
+		CNetBase::SendPacket(SendSocket, &RecvAddr, &p, Token);
+		Bytes Out = Receive();
+		fprintf(f, "penc %d %d %d %d %s %s\n", Flags, Ack, NumChunks, Token, Hex(Data).c_str(), Hex(Out).c_str());
+		vSent.push_back(Out);
+	}
+	for(int i = 0; i < 100; i++)
+	{
+		bool Extended = Rand() % 2;
+		Bytes Extra = RandBytes(NET_CONNLESS_EXTRA_SIZE);
+		Bytes Data = RandBytes(Rand() % 64);
+		CNetBase::SendPacketConnless(SendSocket, &RecvAddr, Data.data(), (int)Data.size(), Extended, Extra.data());
+		Bytes Out = Receive();
+		fprintf(f, "cenc %d %s %s %s\n", Extended, Hex(Extra).c_str(), Hex(Data).c_str(), Hex(Out).c_str());
+		vSent.push_back(Out);
+	}
+
+	// decode: everything sent above, plus garbage
+	std::vector<Bytes> vDecode = vSent;
+	for(int i = 0; i < 3000; i++)
+	{
+		Bytes v = RandBytes(Rand() % 4 == 0 ? Rand() % 1500 : Rand() % 40);
+		if(!v.empty() && Rand() % 2)
+			v[0] &= 0xfc & ~(NET_PACKETFLAG_UNUSED << 2); // mostly 0.6, ack bits clear
+		vDecode.push_back(v);
+	}
+	for(const Bytes &Sent : vSent)
+	{
+		if(Sent.size() > 4 && Rand() % 3 == 0)
+		{
+			Bytes Cut(Sent.begin(), Sent.begin() + Rand() % Sent.size());
+			vDecode.push_back(Cut);
+			Bytes Flip = Sent;
+			Flip[3 + Rand() % (Flip.size() - 3)] ^= 1 << (Rand() % 8);
+			vDecode.push_back(Flip);
+		}
+	}
+	for(Bytes &In : vDecode)
+	{
+		Bytes Buf = In;
+		Buf.reserve(1);
+		CNetPacketConstruct p = {};
+		bool Sixup = false;
+		SECURITY_TOKEN Token, ResponseToken;
+		int Ret = CNetBase::UnpackPacket(Buf.data(), (int)Buf.size(), &p, Sixup, true, &Token, &ResponseToken);
+		if(Ret != 0)
+			fprintf(f, "pdec %s ERR %d\n", Hex(In).c_str(), Sixup);
+		else
+			fprintf(f, "pdec %s OK %d %d %d %d %s %s\n", Hex(In).c_str(), Sixup, p.m_Flags, p.m_Ack, p.m_NumChunks,
+				Hex(p.m_aChunkData, p.m_DataSize).c_str(),
+				(p.m_Flags & NET_PACKETFLAG_EXTENDED) ? Hex(p.m_aExtraData, NET_CONNLESS_EXTRA_SIZE).c_str() : "-");
+	}
+
+	int aEdge[] = {0, 1, 511, 512, 513, 1022, 1023};
+	for(int Seq : aEdge)
+		for(int Ack : aEdge)
+			fprintf(f, "backroom %d %d %d\n", Seq, Ack, CNetBase::IsSeqInBackroom(Seq, Ack));
+	for(int i = 0; i < 3000; i++)
+	{
+		int Seq = Rand() % NET_MAX_SEQUENCE, Ack = Rand() % NET_MAX_SEQUENCE;
+		fprintf(f, "backroom %d %d %d\n", Seq, Ack, CNetBase::IsSeqInBackroom(Seq, Ack));
+	}
+
+	net_udp_close(SendSocket);
+	net_udp_close(RecvSocket);
+}
+
 int main(int argc, const char **argv)
 {
 	CCmdlineFix CmdlineFix(&argc, &argv);
@@ -388,6 +546,8 @@ int main(int argc, const char **argv)
 		{"varint.txt", GenVarint},
 		{"packer.txt", GenPacker},
 		{"huffman.txt", GenHuffman},
+		{"chunk_header.txt", GenChunkHeader},
+		{"packet.txt", GenPacket},
 	};
 	for(const SGen &Gen : aGens)
 	{

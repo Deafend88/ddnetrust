@@ -8,12 +8,19 @@
   sanitize helpers from `base/str.cpp`); 7,300 golden vectors from `rs_golden` pass.
 - M2 Huffman: `protocol/huffman.rs`; 5,610 compress/decompress vectors pass, incl.
   garbage input and the wrapped unsigned bit-counter quirk (hit 23 times).
+- M2 headers: `protocol/packet.rs` (chunk header, packet encode/decode, connless,
+  `IsSeqInBackroom`); 13,299 vectors pass. Packet vectors are captured from the real
+  `CNetBase::SendPacket*` over loopback UDP. 0.7 packets are rejected on receive
+  (`docs/DECISIONS.md`).
+- **M2 complete**: 26,000+ C++ golden vectors, all byte-identical.
 
 ## In progress
-- M2: packet and chunk headers.
+- Nothing.
 
 ## Next
-- M3: headless client against a locally built `DDNet-Server`.
+- M3: headless client against a locally built `DDNet-Server`: protocol code generation
+  from `datasrc/network.py`, UUID messages, sans-IO connection (`net/conn.rs`),
+  handshake, map download, snapshots, inputs, disconnect.
 
 ## How to regenerate golden vectors
 From a shell with the Visual Studio 18 x64 environment (`vcvars64.bat`), repo root:
