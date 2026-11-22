@@ -107,3 +107,21 @@ after the image data and accepts files without `IEND`, while png-rs reads the ne
 chunk header. The pnglite compatibility flags C++ computes only feed a warning and are
 not reproduced. C++ truncates `mapres/<name>.png` at 511 bytes; Rust does not, which
 only matters for names so long that neither file can exist.
+
+## 2026-11-22 — Tees: what differs from C++ on purpose
+
+- Quad containers (`RenderQuadContainerAsSprite`, the tee, hand, weapon, hook and
+  emoticon quads) are drawn with the math of the buffered backends (Vulkan, GL3: rotate
+  in container space, then scale, then move), not the unbuffered fallback (scale, then
+  rotate). The reference screenshots come from Vulkan; the two differ for mirrored eyes
+  and non-square scales.
+- `CAnimState::Add` evaluates into an uninitialized temporary; DDNet-rs starts it at
+  zero. Only a time outside every keyframe range would read it, and the C++ callers
+  only pass times in [0, 1] (checked by `rs_parity anims`).
+- Skins are loaded synchronously on first use from `skins/` and the C++ client's
+  `downloadedskins/`; there is no skin download, so unknown skins are drawn as
+  `default` (C++ downloads them from skins.ddnet.org first).
+- Not drawn yet: particles (freeze flakes, sparkles of invincible tees, skid trails,
+  powerup shine), muzzle flashes and the ninja hadoken (they pick a frame with
+  `rand()`), emoticon messages (`Sv_Emoticon` is not handled), the hook collision line
+  (only with the aim flag), the unpredicted shadow (default off), 0.7 skins.

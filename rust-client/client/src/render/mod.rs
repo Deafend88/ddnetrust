@@ -1,7 +1,11 @@
 //! Map and game rendering (M6.3+). See `docs/PLAN.md` section 9.
 
+pub mod anim;
+pub mod content;
 pub mod envelope;
 pub mod map;
+pub mod players;
+pub mod tee;
 
 /// C++: `IGraphics::CalcScreenParams` (engine/graphics.cpp): the world area a screen
 /// with this aspect shows at this zoom, as (width, height).

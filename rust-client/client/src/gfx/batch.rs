@@ -69,6 +69,42 @@ pub struct QuadItem {
 #[derive(Clone, Copy, Debug)]
 pub struct FreeformItem(pub [[f32; 2]; 4]);
 
+/// One quad of a C++ quad container (`QuadContainerAddQuads` with no rotation set):
+/// corners TL, TR, BR, BL and the texture coordinate slots 0..3 at the time it was added.
+#[derive(Clone, Copy, Debug)]
+pub struct ContainerQuad {
+    pub pos: [[f32; 2]; 4],
+    pub uv: [[f32; 2]; 4],
+}
+
+impl ContainerQuad {
+    /// C++: `QuadContainerAddSprite(Index, X, Y, Width, Height)` after `QuadsSetSubset`
+    /// (`subset` = TlU, TlV, BrU, BrV).
+    pub fn new(x: f32, y: f32, w: f32, h: f32, subset: [f32; 4]) -> Self {
+        let [tl_u, tl_v, br_u, br_v] = subset;
+        Self::free(
+            x,
+            y,
+            w,
+            h,
+            [[tl_u, tl_v], [br_u, tl_v], [br_u, br_v], [tl_u, br_v]],
+        )
+    }
+
+    /// The same after `QuadsSetSubsetFree` (texture coordinates per slot).
+    pub fn free(x: f32, y: f32, w: f32, h: f32, uv: [[f32; 2]; 4]) -> Self {
+        Self {
+            pos: [[x, y], [x + w, y], [x + w, y + h], [x, y + h]],
+            uv,
+        }
+    }
+
+    /// C++: `QuadContainerAddSprite(Index, Width, Height)`: centered on the origin.
+    pub fn centered(w: f32, h: f32, subset: [f32; 4]) -> Self {
+        Self::new(-w / 2.0, -h / 2.0, w, h, subset)
+    }
+}
+
 /// C++: `NormalizeColorComponent`: rounded to the nearest of 256 steps.
 pub fn normalize_color(c: [f32; 4]) -> [u8; 4] {
     c.map(|v| (v.clamp(0.0, 1.0) * 255.0 + 0.5) as u8)
@@ -229,6 +265,39 @@ impl Batch {
             let p = f.0;
             self.push_quad([p[0], p[1], p[3], p[2]], [0, 1, 3, 2]);
         }
+    }
+
+    /// C++: `RenderQuadContainerEx` for one quad, as the buffered backends (Vulkan,
+    /// GL3) draw it: the container quad (corners TL, TR, BR, BL with their texture
+    /// coordinates, see `ContainerQuad`) rotated by the current rotation around its
+    /// center in container space, then scaled and moved to (x, y), coloured with colour
+    /// slot 0, texture clamped (`WrapClamp`, then `WrapNormal`).
+    pub fn container_quad(&mut self, q: &ContainerQuad, x: f32, y: f32, sx: f32, sy: f32) {
+        let p = q.pos;
+        let center = [
+            p[0][0] + (p[1][0] - p[0][0]) / 2.0,
+            p[0][1] + (p[2][1] - p[0][1]) / 2.0,
+        ];
+        let (sin, cos) = self.rotation.sin_cos();
+        let rotate = self.rotation != 0.0;
+        let pos = p.map(|v| {
+            let v = if rotate {
+                // C++ primex.vert
+                let (ox, oy) = (v[0] - center[0], v[1] - center[1]);
+                [
+                    ox * cos - oy * sin + center[0],
+                    ox * sin + oy * cos + center[1],
+                ]
+            } else {
+                v
+            };
+            [v[0] * sx + x, v[1] * sy + y]
+        });
+        let wrap = self.wrap;
+        self.wrap = Wrap::Clamp;
+        let color = self.colors[0];
+        self.quad_raw(pos, q.uv.map(|t| [t[0], t[1], 0.0]), [color; 4]);
+        self.wrap = wrap;
     }
 
     fn push_quad(&mut self, pos: [[f32; 2]; 4], slots: [usize; 4]) {

@@ -230,6 +230,8 @@ pub struct Client {
     pub intra_tick: f32,
     pub intra_tick_since_prev: f32,
     pub pred_intra_tick: f32,
+    /// C++: `GameTickTime`: seconds since the previous snapshot's tick.
+    pub game_tick_time: f32,
     inputs: [SentInput; NUM_INPUTS],
     current_input: usize,
     next_ping: i64,
@@ -293,6 +295,7 @@ impl Client {
             intra_tick: 0.0,
             intra_tick_since_prev: 0.0,
             pred_intra_tick: 0.0,
+            game_tick_time: 0.0,
             inputs: [SentInput {
                 tick: -1,
                 data: ObjPlayerInput::default(),
@@ -330,6 +333,11 @@ impl Client {
     /// Server tick of the current snapshot. C++: `GameTick`.
     pub fn game_tick(&self) -> Option<i32> {
         self.cur_tick
+    }
+
+    /// Server tick of the previous snapshot. C++: `PrevGameTick`.
+    pub fn prev_game_tick(&self) -> Option<i32> {
+        self.prev_tick
     }
 
     /// C++: `PredGameTick`.
@@ -821,6 +829,7 @@ impl Client {
                 (game_now - prev_tick_start) as f32 / (cur_tick_start - prev_tick_start) as f32;
             self.intra_tick_since_prev =
                 (game_now - prev_tick_start) as f32 / (FREQ / TICK_SPEED) as f32;
+            self.game_tick_time = (game_now - prev_tick_start) as f32 / FREQ as f32;
             let cur_pred_start = (prev_pred_tick + 1) as i64 * FREQ / TICK_SPEED;
             let prev_pred_start = prev_pred_tick as i64 * FREQ / TICK_SPEED;
             self.pred_intra_tick =

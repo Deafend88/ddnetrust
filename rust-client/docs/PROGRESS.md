@@ -204,28 +204,47 @@ M5 is complete. Not ported (see Later): weapons, teams/tuning messages, the dumm
   followed C++ tee is out of our snapshot range until 6.7 sends Cl_ShowDistance) and
   coverage (mostly entities; its map layers match, camera 2 px off until 6.5 adds
   prediction-based centering).
-- 6.4 Tees: **not started** (no code, nothing uncommitted; last commit a10a83219).
-  Next steps, in order:
-  1. Generate `datasrc/content.py` data (sprite sets with their grids, sprites,
-     animations with keyframes, weapon specs) into a committed
-     `client/src/render/content.rs`, like `scripts/gen_protocol.py` does for network.py.
-  2. Cut images into sprite textures like `CGraphics_Threaded::LoadSpriteTexture`
-     (graphics_threaded.cpp:331): CheckImageDivisibility (with its resize),
-     IsImageFormatRgba, and the default image as fallback for sprites that are fully
-     transparent in a custom asset (IsImageSubFullyTransparent). Use it for the game
-     skin (assets.cpp LoadGameSkin).
-  3. Skins: `CSkins::LoadSkinData` (skins.cpp:285): divisibility, RGBA and body-size
-     checks, CheckMetrics, the colourable grayscale variant; fall back to `default`.
-  4. `CAnimState` (game/client/animstate.cpp) plus a new `rs_parity anims` mode (every
-     animation at many times, blended like players.cpp does) and colour vectors for
-     ColorHSLA unpacking, UnclampLighting and color_cast; both must be 100%.
-  5. `RenderTee` (game/client/render.cpp): body, feet, hands, eyes and emotes, the
-     outline pass, direction; `RenderHook` (players.cpp) chain and head; the held
-     weapon. Draw the local tee and others from the current snapshot (interpolation is
-     6.5).
-  6. Verify with `scripts/compare_screenshots.ps1` without the tee mask (pickups still
-     masked; on dm1 also the second tee until both are drawn), plus scenes with a
-     custom-colour skin, each emote and both directions.
+- 6.4 Tees: `scripts/gen_content.py` generates `client/src/render/content.rs` from
+  `datasrc/content.py` (sprite sets, sprites, animations, weapon specs; floats written
+  like the C++ literals). `render/anim.rs` ports CAnimState. `image.rs` gained the
+  bicubic ResizeImage, CheckImageDivisibility (with its resize), ConvertToGrayscale and
+  the sprite-cutting helpers; `skin.rs` ports CSkins::LoadSkinData (divisibility, RGBA
+  and size checks, blood colour, CheckMetrics, the colourable grayscale variant) and
+  LoadSpriteTexture's fallback for fully transparent sprites. `render/tee.rs`: skin and
+  game-skin/emoticon sprite textures, CTeeRenderInfo::ApplyColors (UnclampLighting),
+  the tee and weapon quad containers, RenderTee6 (outline pass, body, eyes per emote,
+  feet incl. the air-jump indicator and flipped feet) and RenderHand6.
+  `render/players.rs`: CPlayers::OnRender (hooks first, local last), RenderHook (head,
+  chain, hand) and RenderPlayer (animation choice incl. in-air/sit/walk/run, hammer and
+  ninja swing, weapons incl. recoil and hands, chat bubble and AFK "zzz"), skins from
+  ClientInfo (invalid/x_ names -> default), team colours, the ninja skin for ninja and
+  frozen tees. `Batch::container_quad` draws quad-container quads like the Vulkan
+  backend. Drawn from the current snapshot (previous = current); 6.5 interpolates.
+  Verified: `rs_parity anims` (idle, every animation set and added at every keyframe
+  time and 100 random times, 5,000 RenderPlayer blends from random positions incl. the
+  walk/run times: 8,621 states), `rs_parity colors` (5,269 packed colours with and
+  without UnclampLighting) and `rs_parity skins` (all 101 skins in `data/skins`, as is,
+  cropped so they need the bicubic resize, and as RGB: 404 results) are bit-identical
+  (`tests/tees.rs`); 12 of 15 hand-made mutations are caught (the other 3 give
+  identical floats or bytes). A GPU test draws a custom-coloured tee and checks the
+  body texel times the colour. Screenshots against the C++ client (scene names in
+  `compare_screenshots.ps1 -Name`, server `sv_max_afk_time 0`): Gold Mine with the
+  C++ tee in 5 skins/colour sets, one per eye emote (pain/bluekitty, happy/default
+  custom red, surprise/redstripe, angry/coala custom, blink/santa_cammo custom black):
+  99.67-99.78% each, no mask; the only tee difference is a sparkle particle C++ draws
+  around its own tee. Gold Mine AFK (zzz emote, sit): 99.75%. LearnToPlay 99.74%,
+  Tutorial 99.45% (its keyboard quad edges, as in 6.3, plus the sparkle).
+  Not checked by screenshot: a left-facing tee (the C++ tee's aim follows its mouse,
+  which the script cannot move; comes with 6.7), hooks and walking tees (moving, so
+  they need 6.5's interpolation to compare), dm1/ctf1 (the C++ tee spawns outside our
+  snapshot range until 6.7 sends Cl_ShowDistance/Cl_CameraInfo).
+  Found on the way: integration-test builds also rebuild `target/debug/ddnet-rs.exe`,
+  so run the screenshot script only after a plain `cargo build`.
+- 6.5 Interpolation: **next**. Per PLAN §9.3: Evolve snapshot characters, prev/cur
+  characters with IntraGameTick for others, predicted PrevPredicted/Predicted with
+  PredIntraGameTick for the local tee (UpdateRenderedCharacters, gameclient.cpp:3762),
+  the DDNet target interpolation, and the predicted freeze state for the local tee
+  (`ponytail:` note in `render/players.rs`). Then hook and walking-tee screenshots.
 
 ## Later
 - Weapon prediction (`m_PredictWeapons`/AntiPingWeapons: FireWeapon, ninja dash,
@@ -277,7 +296,7 @@ Build the `rs_parity` target like `rs_golden`, then per map (repo root):
 (hooktele only for coverage and LearnToPlay; add `verbose` to see every query value).
 `core`, `world` and `doors` work like `collision` (`<name>.core.txt`, `<name>.world.txt`,
 `<name>.doors.txt`; `-hooktele` variants of core and world for coverage and LearnToPlay;
-`doors` takes no flags). M6.2 data (repo root):
+`doors` takes no flags). M6.2-M6.4 data (repo root):
 
     python rust-client/scripts/gen_png_corpus.py
     build-rs/rs_parity.exe png rust-client/tests/golden/png.txt rust-client/tests/golden/png data
@@ -285,11 +304,15 @@ Build the `rs_parity` target like `rs_golden`, then per map (repo root):
     build-rs/rs_parity.exe envelopes "data/maps/<name>.map" rust-client/tests/golden/maps/<name>.envelopes.txt
     build-rs/rs_parity.exe envelopes-synthetic rust-client/tests/golden/envelopes.txt
     build-rs/rs_parity.exe screen rust-client/tests/golden/screen.txt
+    build-rs/rs_parity.exe anims rust-client/tests/golden/anims.txt
+    build-rs/rs_parity.exe colors rust-client/tests/golden/colors.txt
+    build-rs/rs_parity.exe skins rust-client/tests/golden/skins.txt data/skins
 
 All modes are deterministic: the data regenerates byte for byte.
 
-## Regenerate protocol code
+## Regenerate protocol code and content data
     python rust-client/scripts/gen_protocol.py   # needs rustfmt on PATH
+    python rust-client/scripts/gen_content.py
 
 ## Known issues / blockers
 - Resend buffer is a byte budget, not C++'s ring buffer (differs only with ~32 KiB

@@ -10,8 +10,13 @@
 # Needs: build-rs\DDNet-Server.exe, build-rs-client\DDNet.exe (CLIENT=ON, VULKAN=ON),
 # a debug build of ddnet-rs and its shotdiff example (cargo build -p ddnet-rs --examples).
 #
+# -ServerArgs and -CppArgs add console commands for the server and the C++ client, e.g.
+# -ServerArgs 'sv_max_afk_time 0' -CppArgs 'player_skin bluekitty','cl_run_on_join "say /emote happy 999"'.
+# -Name sets the output file names (default: the map name).
+#
 # Usage (repo root): rust-client\scripts\compare_screenshots.ps1 -Map dm1 [-Mask "340,240,460,340"]
-param([string]$Map = "dm1", [string[]]$Mask = @("340,240,460,340"), [int]$Wait = 5, [string]$OutDir = "$env:TEMP\ddnet-rs-compare")
+param([string]$Map = "dm1", [string[]]$Mask = @("340,240,460,340"), [int]$Wait = 5, [string]$OutDir = "$env:TEMP\ddnet-rs-compare",
+    [string[]]$ServerArgs = @(), [string[]]$CppArgs = @(), [string]$Name = "")
 $ErrorActionPreference = "Stop"
 $repo = Resolve-Path "$PSScriptRoot\..\.."
 $srvDir = "$OutDir\server"; $cDir = "$OutDir\cpp-client"
@@ -46,13 +51,17 @@ function Save-ClientArea([int]$ProcessId, [string]$Out) {
     $bmp.Clone($rect, [System.Drawing.Imaging.PixelFormat]::Format24bppRgb).Save($Out, [System.Drawing.Imaging.ImageFormat]::Png)
 }
 
-$name = $Map -replace ' ', '_'
-$srv = Start-Process -FilePath "$repo\build-rs\DDNet-Server.exe" -ArgumentList '"sv_register 0"', '"bindaddr 127.0.0.1"', '"sv_port 8303"', "`"sv_map $Map`"" -WorkingDirectory $srvDir -RedirectStandardOutput "$srvDir\server.log" -RedirectStandardError "$srvDir\server.err" -PassThru
+$name = if ($Name) { $Name } else { $Map -replace ' ', '_' }
+# one quoted console argument (inner quotes escaped for the console)
+$quote = { param($a) '"' + ($a -replace '"', '\"') + '"' }
+$sargs = @('"sv_register 0"', '"bindaddr 127.0.0.1"', '"sv_port 8303"', "`"sv_map $Map`"") + ($ServerArgs | ForEach-Object { & $quote $_ })
+$srv = Start-Process -FilePath "$repo\build-rs\DDNet-Server.exe" -ArgumentList $sargs -WorkingDirectory $srvDir -RedirectStandardOutput "$srvDir\server.log" -RedirectStandardError "$srvDir\server.err" -PassThru
 $c = $null; $r = $null
 try {
     Start-Sleep -Seconds 2
     $env:ALL_PROXY = "http://127.0.0.1:9"; $env:HTTPS_PROXY = "http://127.0.0.1:9"; $env:HTTP_PROXY = "http://127.0.0.1:9"
-    $cargs = '"gfx_backend Vulkan"', '"gfx_fullscreen 0"', '"gfx_borderless 0"', '"gfx_screen_width 800"', '"gfx_screen_height 600"', '"cl_showhud 0"', '"cl_showchat 0"', '"cl_nameplates 0"', '"cl_showkillmessages 0"', '"cl_motd_time 0"', '"cl_show_welcome 1"', '"br_indicate_finished 0"', '"snd_enable 0"', '"logfile cpp.log"', '"connect 127.0.0.1:8303"'
+    $cargs = '"gfx_backend Vulkan"', '"gfx_fullscreen 0"', '"gfx_borderless 0"', '"gfx_screen_width 800"', '"gfx_screen_height 600"', '"cl_showhud 0"', '"cl_showchat 0"', '"cl_nameplates 0"', '"cl_showkillmessages 0"', '"cl_motd_time 0"', '"cl_show_welcome 1"', '"br_indicate_finished 0"', '"snd_enable 0"', '"logfile cpp.log"'
+    $cargs += ($CppArgs | ForEach-Object { & $quote $_ }) + '"connect 127.0.0.1:8303"'
     $c = Start-Process -FilePath "$repo\build-rs-client\DDNet.exe" -ArgumentList $cargs -WorkingDirectory $cDir -PassThru
     Start-Sleep -Seconds 3
     $r = Start-Process -FilePath "$repo\rust-client\target\debug\ddnet-rs.exe" -ArgumentList "127.0.0.1:8303", "--size", "800x600", "--follow", "0" -WorkingDirectory $OutDir -PassThru

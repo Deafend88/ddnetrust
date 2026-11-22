@@ -11,6 +11,9 @@
 //        rs_parity envelopes-synthetic <output file>
 //        rs_parity screen <output file>
 //        rs_parity png <output file> <dir>...
+//        rs_parity anims <output file>
+//        rs_parity colors <output file>
+//        rs_parity skins <output file> <skins dir>
 //
 // "map" loads the map with CMap + CLayers and writes every item, every data blob and
 // the physics layers, then loads mutated copies of the file (truncated, bit flips,
@@ -39,7 +42,10 @@
 // and on copies with changed image/layer item ints. "envelopes" evaluates the map's
 // envelopes like CEnvelopeState; "envelopes-synthetic" random ones of every curve type.
 // "screen" maps random cameras to world rectangles with IGraphics::MapScreenToWorld.
+// "anims" blends CAnimState like CPlayers::RenderPlayer, "colors" converts tee colours,
+// "skins" prepares skin images like CSkins::LoadSkinData.
 
+#include <base/color.h>
 #include <base/dbg.h>
 #include <base/fs.h>
 #include <base/io.h>
@@ -59,6 +65,7 @@
 #include <engine/shared/uuid_manager.h>
 #include <engine/storage.h>
 
+#include <game/client/animstate.h>
 #include <game/client/prediction/entities/character.h>
 #include <game/client/prediction/gameworld.h>
 #include <game/collision.h>
@@ -68,6 +75,8 @@
 #include <game/layers.h>
 #include <game/mapitems.h>
 
+#include <generated/client_data.h>
+
 #include <zlib.h>
 
 #include <algorithm>
@@ -76,6 +85,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <functional>
+#include <limits>
 #include <map>
 #include <string>
 #include <tuple>
@@ -1359,7 +1369,7 @@ static int EnvelopesMode(const char *pMapFile, const char *pOutFile)
 			if(Access.NumPoints() > 0)
 				MaxMillis = Access.GetPoint(Access.NumPoints() - 1)->m_Time.GetInternal();
 		}
-		for(int i = 0; i < 200; i++)
+		for(int i = 0; i < 100; i++)
 		{
 			const long long Time = RandomTime(MaxMillis);
 			const int Offset = Rand() % 3 == 0 ? 0 : (int)(Rand() % 20001) - 10000;
@@ -1494,6 +1504,322 @@ static int ScreenMode(const char *pOutFile)
 	return 0;
 }
 
+static void PrintKeyframe(FILE *f, const CAnimKeyframe *pFrame)
+{
+	fprintf(f, " %08x %08x %08x", FloatBits(pFrame->m_X), FloatBits(pFrame->m_Y), FloatBits(pFrame->m_Angle));
+}
+
+static void PrintAnimState(FILE *f, const CAnimState &State)
+{
+	PrintKeyframe(f, State.GetBody());
+	PrintKeyframe(f, State.GetBackFoot());
+	PrintKeyframe(f, State.GetFrontFoot());
+	PrintKeyframe(f, State.GetAttach());
+	fprintf(f, "\n");
+}
+
+// "anims": CAnimState as CPlayers::RenderPlayer blends it (players.cpp:650): base, one
+// movement animation at a time (keyframe times, random times, and the walk/run times
+// RenderPlayer derives from a position), then hammer or ninja swing at a time in [0, 1].
+// Lines: "idle <state>", "set <anim> <time> <state>", "add <anim> <time> <amount>
+// <state>" and "player <x> <anim> <swing anim> <swing time> <walk> <run> <state>",
+// floats by their bits; <state> is x, y, angle of body, back foot, front foot, attach.
+static int AnimsMode(const char *pOutFile)
+{
+	FILE *f = fopen(pOutFile, "wb");
+	if(!f)
+		return -1;
+	fprintf(f, "idle");
+	PrintAnimState(f, *CAnimState::GetIdle());
+	std::vector<float> vTimes = {0.0f, 1.0f, 0.5f};
+	for(int a = 0; a < NUM_ANIMS; a++)
+	{
+		const CAnimation &Anim = g_pData->m_aAnimations[a];
+		for(const CAnimSequence *pSeq : {&Anim.m_Body, &Anim.m_BackFoot, &Anim.m_FrontFoot, &Anim.m_Attach})
+			for(int i = 0; i < pSeq->m_NumFrames; i++)
+				vTimes.push_back(pSeq->m_aFrames[i].m_Time);
+	}
+	for(int i = 0; i < 100; i++)
+		vTimes.push_back((Rand() % 1000001) / 1000000.0f);
+	for(int a = 0; a < NUM_ANIMS; a++)
+	{
+		for(float Time : vTimes)
+		{
+			CAnimState State;
+			State.Set(&g_pData->m_aAnimations[a], Time);
+			fprintf(f, "set %d %08x", a, FloatBits(Time));
+			PrintAnimState(f, State);
+			const float Amount = (Rand() % 2001) / 1000.0f - 1.0f;
+			State.Set(&g_pData->m_aAnimations[ANIM_BASE], 0.0f);
+			State.Add(&g_pData->m_aAnimations[a], Time, Amount);
+			fprintf(f, "add %d %08x %08x", a, FloatBits(Time), FloatBits(Amount));
+			PrintAnimState(f, State);
+		}
+	}
+	const int aMoves[] = {ANIM_INAIR, ANIM_SIT_LEFT, ANIM_SIT_RIGHT, ANIM_IDLE, ANIM_WALK, ANIM_RUN_LEFT, ANIM_RUN_RIGHT};
+	for(int i = 0; i < 5000; i++)
+	{
+		const float X = (float)((int)(Rand() % 400001) - 200000) / (float)(1 + Rand() % 64);
+		const int Move = aMoves[Rand() % std::size(aMoves)];
+		const int Swing = Rand() % 3 == 0 ? -1 : (Rand() % 2 ? ANIM_HAMMER_SWING : ANIM_NINJA_SWING);
+		const float SwingTime = std::clamp(((int)(Rand() % 1400) - 200) / 1000.0f, 0.0f, 1.0f);
+		// C++: RenderPlayer
+		float WalkTime = std::fmod(X, 100.0f) / 100.0f;
+		float RunTime = std::fmod(X, 200.0f) / 200.0f;
+		if(WalkTime < 0.0f)
+			WalkTime += 1.0f;
+		if(RunTime < 0.0f)
+			RunTime += 1.0f;
+		CAnimState State;
+		State.Set(&g_pData->m_aAnimations[ANIM_BASE], 0.0f);
+		const float MoveTime = Move == ANIM_WALK ? WalkTime : (Move == ANIM_RUN_LEFT || Move == ANIM_RUN_RIGHT) ? RunTime : 0.0f;
+		State.Add(&g_pData->m_aAnimations[Move], MoveTime, 1.0f);
+		if(Swing >= 0)
+			State.Add(&g_pData->m_aAnimations[Swing], SwingTime, 1.0f);
+		fprintf(f, "player %08x %d %d %08x %08x %08x", FloatBits(X), Move, Swing, FloatBits(SwingTime), FloatBits(WalkTime), FloatBits(RunTime));
+		PrintAnimState(f, State);
+	}
+	fclose(f);
+	return 0;
+}
+
+// "colors": tee colours from packed HSL ints, as CTeeRenderInfo::ApplyColors
+// (UnclampLighting) and the team colours (plain color_cast). Lines: "<packed> <r g b a
+// with UnclampLighting> <r g b a without>", floats by their bits.
+static int ColorsMode(const char *pOutFile)
+{
+	FILE *f = fopen(pOutFile, "wb");
+	if(!f)
+		return -1;
+	std::vector<int> vColors = {0, 255, 65408, 7039872, 65461, 10223541, 0xffffff, 0xff0000, 0xfe0000, 0xd5ffff, 0x2aff80, -1, (int)0x80000000};
+	for(int h = 0; h < 256; h++)
+		vColors.push_back(h << 16 | 0xff80);
+	for(int i = 0; i < 5000; i++)
+		vColors.push_back((int)(Rand() << 8 ^ Rand()));
+	for(int c : vColors)
+	{
+		const ColorRGBA A = color_cast<ColorRGBA>(ColorHSLA(c).UnclampLighting(ColorHSLA::DARKEST_LGT));
+		const ColorRGBA B = color_cast<ColorRGBA>(ColorHSLA(c));
+		fprintf(f, "%d %08x %08x %08x %08x %08x %08x %08x %08x\n", c, FloatBits(A.r), FloatBits(A.g), FloatBits(A.b), FloatBits(A.a),
+			FloatBits(B.r), FloatBits(B.g), FloatBits(B.b), FloatBits(B.a));
+	}
+	fclose(f);
+	return 0;
+}
+
+// Copies of CGraphics_Threaded::CheckImageDivisibility (graphics_threaded.cpp:593, without
+// the warning), CheckMetrics (skins.cpp:254) and CSkins::LoadSkinData (skins.cpp:289):
+// they are members of classes that need a running client; the image functions they call
+// (ResizeImage, HighestBit, ConvertToGrayscale) are the real ones.
+static bool SkinCheckImageDivisibility(CImageInfo &Image, int DivX, int DivY, bool AllowResize)
+{
+	bool ImageIsValid = true;
+	bool WidthBroken = Image.m_Width == 0 || (Image.m_Width % DivX) != 0;
+	bool HeightBroken = Image.m_Height == 0 || (Image.m_Height % DivY) != 0;
+	if(WidthBroken || HeightBroken)
+		ImageIsValid = false;
+	if(AllowResize && !ImageIsValid && Image.m_Width > 0 && Image.m_Height > 0)
+	{
+		int NewWidth = DivX;
+		int NewHeight = DivY;
+		if(WidthBroken)
+		{
+			NewWidth = std::max(HighestBit(Image.m_Width), DivX);
+			NewHeight = (NewWidth / DivX) * DivY;
+		}
+		else
+		{
+			NewHeight = std::max(HighestBit(Image.m_Height), DivY);
+			NewWidth = (NewHeight / DivY) * DivX;
+		}
+		ResizeImage(Image, NewWidth, NewHeight);
+		ImageIsValid = true;
+	}
+	return ImageIsValid;
+}
+
+struct SSkinMetric
+{
+	int m_Width = std::numeric_limits<int>::lowest(), m_Height = std::numeric_limits<int>::lowest();
+	int m_OffsetX = std::numeric_limits<int>::max(), m_OffsetY = std::numeric_limits<int>::max();
+	int m_MaxWidth = std::numeric_limits<int>::lowest(), m_MaxHeight = std::numeric_limits<int>::lowest();
+};
+
+static void SkinCheckMetrics(SSkinMetric &Metrics, const uint8_t *pImg, int ImgWidth, int ImgX, int ImgY, int CheckWidth, int CheckHeight)
+{
+	int MaxY = -1;
+	int MinY = CheckHeight + 1;
+	int MaxX = -1;
+	int MinX = CheckWidth + 1;
+	for(int y = 0; y < CheckHeight; y++)
+	{
+		for(int x = 0; x < CheckWidth; x++)
+		{
+			int OffsetAlpha = (y + ImgY) * ImgWidth + (x + ImgX) * 4 + 3;
+			uint8_t AlphaValue = pImg[OffsetAlpha];
+			if(AlphaValue > 0)
+			{
+				if(MaxY < y)
+					MaxY = y;
+				if(MinY > y)
+					MinY = y;
+				if(MaxX < x)
+					MaxX = x;
+				if(MinX > x)
+					MinX = x;
+			}
+		}
+	}
+	// CSkinMetricVariableSize keeps the maximum, CSkinMetricVariableInt the minimum
+	Metrics.m_Width = std::max(Metrics.m_Width, std::clamp((MaxX - MinX) + 1, 1, CheckWidth));
+	Metrics.m_Height = std::max(Metrics.m_Height, std::clamp((MaxY - MinY) + 1, 1, CheckHeight));
+	Metrics.m_OffsetX = std::min(Metrics.m_OffsetX, std::clamp(MinX, 0, CheckWidth - 1));
+	Metrics.m_OffsetY = std::min(Metrics.m_OffsetY, std::clamp(MinY, 0, CheckHeight - 1));
+	Metrics.m_MaxWidth = std::max(Metrics.m_MaxWidth, CheckWidth);
+	Metrics.m_MaxHeight = std::max(Metrics.m_MaxHeight, CheckHeight);
+}
+
+static bool SkinLoadData(CImageInfo &Info, CImageInfo &InfoGrayscale, ColorRGBA &BloodColor, SSkinMetric &Body, SSkinMetric &Feet)
+{
+	if(!SkinCheckImageDivisibility(Info, g_pData->m_aSprites[SPRITE_TEE_BODY].m_pSet->m_Gridx, g_pData->m_aSprites[SPRITE_TEE_BODY].m_pSet->m_Gridy, true))
+		return false;
+	if(Info.m_Format != CImageInfo::FORMAT_RGBA)
+		return false;
+	const size_t BodyWidth = g_pData->m_aSprites[SPRITE_TEE_BODY].m_W * (Info.m_Width / g_pData->m_aSprites[SPRITE_TEE_BODY].m_pSet->m_Gridx);
+	const size_t BodyHeight = g_pData->m_aSprites[SPRITE_TEE_BODY].m_H * (Info.m_Height / g_pData->m_aSprites[SPRITE_TEE_BODY].m_pSet->m_Gridy);
+	if(BodyWidth > Info.m_Width || BodyHeight > Info.m_Height)
+		return false;
+	auto Rect = [&](int Sprite, int &X, int &Y, int &W, int &H) {
+		const CDataSprite &S = g_pData->m_aSprites[Sprite];
+		const int GridW = Info.m_Width / S.m_pSet->m_Gridx, GridH = Info.m_Height / S.m_pSet->m_Gridy;
+		X = S.m_X * GridW;
+		Y = S.m_Y * GridH;
+		W = S.m_W * GridW;
+		H = S.m_H * GridH;
+	};
+	const size_t PixelStep = Info.PixelSize();
+	const size_t Pitch = Info.m_Width * PixelStep;
+	{
+		int64_t aColors[3] = {0};
+		for(size_t y = 0; y < BodyHeight; y++)
+			for(size_t x = 0; x < BodyWidth; x++)
+			{
+				const size_t Offset = y * Pitch + x * PixelStep;
+				if(Info.m_pData[Offset + 3] > 128)
+					for(size_t c = 0; c < 3; c++)
+						aColors[c] += Info.m_pData[Offset + c];
+			}
+		const vec3 NormalizedColor = normalize(vec3(aColors[0], aColors[1], aColors[2]));
+		BloodColor = ColorRGBA(NormalizedColor.x, NormalizedColor.y, NormalizedColor.z);
+	}
+	int X, Y, W, H;
+	SkinCheckMetrics(Body, Info.m_pData, Pitch, 0, 0, BodyWidth, BodyHeight);
+	Rect(SPRITE_TEE_BODY_OUTLINE, X, Y, W, H);
+	SkinCheckMetrics(Body, Info.m_pData, Pitch, X, Y, W, H);
+	Rect(SPRITE_TEE_FOOT, X, Y, W, H);
+	SkinCheckMetrics(Feet, Info.m_pData, Pitch, X, Y, W, H);
+	Rect(SPRITE_TEE_FOOT_OUTLINE, X, Y, W, H);
+	SkinCheckMetrics(Feet, Info.m_pData, Pitch, X, Y, W, H);
+
+	InfoGrayscale = Info.DeepCopy();
+	ConvertToGrayscale(InfoGrayscale);
+	int aFreq[256] = {0};
+	uint8_t OrgWeight = 1;
+	uint8_t NewWeight = 192;
+	for(size_t y = 0; y < BodyHeight; y++)
+		for(size_t x = 0; x < BodyWidth; x++)
+		{
+			const size_t Offset = y * Pitch + x * PixelStep;
+			if(InfoGrayscale.m_pData[Offset + 3] > 128)
+				aFreq[InfoGrayscale.m_pData[Offset]]++;
+		}
+	for(int i = 1; i < 256; i++)
+		if(aFreq[OrgWeight] < aFreq[i])
+			OrgWeight = i;
+	for(size_t y = 0; y < BodyHeight; y++)
+		for(size_t x = 0; x < BodyWidth; x++)
+		{
+			const size_t Offset = y * Pitch + x * PixelStep;
+			uint8_t v = InfoGrayscale.m_pData[Offset];
+			if(v <= OrgWeight)
+				v = (uint8_t)((v / (float)OrgWeight) * NewWeight);
+			else
+				v = (uint8_t)(((v - OrgWeight) / (float)(255 - OrgWeight)) * (255 - NewWeight) + NewWeight);
+			InfoGrayscale.m_pData[Offset] = v;
+			InfoGrayscale.m_pData[Offset + 1] = v;
+			InfoGrayscale.m_pData[Offset + 2] = v;
+		}
+	return true;
+}
+
+// "skins": every PNG in <dir> loaded like CSkins::LoadSkinDirect (file PNG loader, then
+// LoadSkinData), as is and as variants: cropped to sizes that need the bicubic resize,
+// and without alpha. Lines: "<file> <variant> fail" or "<file> <variant> <w> <h> <blood
+// r g b bits> <body metric> <feet metric> <crc image> <crc grayscale>".
+static int SkinsMode(const char *pOutFile, const char *pDir)
+{
+	FILE *f = fopen(pOutFile, "wb");
+	if(!f)
+		return -1;
+	std::vector<std::string> vFiles;
+	for(const auto &Entry : std::filesystem::directory_iterator(pDir))
+		if(Entry.is_regular_file() && Entry.path().extension() == ".png")
+			vFiles.push_back(Entry.path().filename().generic_string());
+	std::sort(vFiles.begin(), vFiles.end());
+	for(const std::string &Name : vFiles)
+	{
+		const std::string Path = std::string(pDir) + "/" + Name;
+		CImageInfo Original;
+		int Incompatible;
+		IOHANDLE File = io_open(Path.c_str(), IOFLAG_READ);
+		if(!File || !CImageLoader::LoadPng(File, Name.c_str(), Original, Incompatible))
+		{
+			fprintf(f, "%s - fail\n", Name.c_str());
+			continue;
+		}
+		// variants: 0 as is, 1/2 cropped (width, height not divisible), 3 RGB
+		for(int Variant = 0; Variant < 4; Variant++)
+		{
+			CImageInfo Info = Original.DeepCopy();
+			if(Variant == 1 || Variant == 2)
+			{
+				const size_t W = Variant == 1 ? Info.m_Width * 3 / 4 + 1 : Info.m_Width;
+				const size_t H = Variant == 2 ? Info.m_Height * 3 / 4 + 1 : Info.m_Height;
+				CImageInfo Cropped;
+				Cropped.m_Width = W;
+				Cropped.m_Height = H;
+				Cropped.m_Format = Info.m_Format;
+				Cropped.Allocate();
+				Cropped.CopyRectFrom(Info, 0, 0, W, H, 0, 0);
+				Info.Free();
+				Info = std::move(Cropped);
+			}
+			else if(Variant == 3 && Info.m_Format == CImageInfo::FORMAT_RGBA)
+			{
+				for(size_t i = 0; i < Info.m_Width * Info.m_Height; i++)
+					mem_copy(&Info.m_pData[i * 3], &Info.m_pData[i * 4], 3);
+				Info.m_Format = CImageInfo::FORMAT_RGB;
+			}
+			CImageInfo Gray;
+			ColorRGBA Blood;
+			SSkinMetric Body, Feet;
+			if(!SkinLoadData(Info, Gray, Blood, Body, Feet))
+				fprintf(f, "%s %d fail\n", Name.c_str(), Variant);
+			else
+				fprintf(f, "%s %d %d %d %08x %08x %08x %d %d %d %d %d %d %d %d %d %d %d %d %08x %08x\n", Name.c_str(), Variant, (int)Info.m_Width, (int)Info.m_Height,
+					FloatBits(Blood.r), FloatBits(Blood.g), FloatBits(Blood.b),
+					Body.m_Width, Body.m_Height, Body.m_OffsetX, Body.m_OffsetY, Body.m_MaxWidth, Body.m_MaxHeight,
+					Feet.m_Width, Feet.m_Height, Feet.m_OffsetX, Feet.m_OffsetY, Feet.m_MaxWidth, Feet.m_MaxHeight,
+					Crc(Info.m_pData, Info.DataSize()), Crc(Gray.m_pData, Gray.DataSize()));
+			Info.Free();
+			Gray.Free();
+		}
+		Original.Free();
+	}
+	fclose(f);
+	return 0;
+}
+
 int main(int argc, const char **argv)
 {
 	CCmdlineFix CmdlineFix(&argc, &argv);
@@ -1506,6 +1832,12 @@ int main(int argc, const char **argv)
 		return EnvelopesMode(argv[2], argv[3]);
 	if(argc == 3 && str_comp(argv[1], "screen") == 0)
 		return ScreenMode(argv[2]);
+	if(argc == 3 && str_comp(argv[1], "anims") == 0)
+		return AnimsMode(argv[2]);
+	if(argc == 3 && str_comp(argv[1], "colors") == 0)
+		return ColorsMode(argv[2]);
+	if(argc == 4 && str_comp(argv[1], "skins") == 0)
+		return SkinsMode(argv[2], argv[3]);
 	if(argc == 3 && str_comp(argv[1], "envelopes-synthetic") == 0)
 		return EnvelopesSyntheticMode(argv[2]);
 	if(argc == 4 && str_comp(argv[1], "mapimages") == 0)
@@ -1526,6 +1858,6 @@ int main(int argc, const char **argv)
 			return CoreMode(argv[2], argv[3], HookTele, Verbose);
 		return CollisionMode(argv[2], argv[3], HookTele, Verbose);
 	}
-	log_error(TOOL_NAME, "Usage: %s map <map file> <output file> <scratch dir> | collision|core|world <map file> <output file> [hooktele] [verbose] | doors|mapimages|envelopes <map file> <output file> | envelopes-synthetic|screen <output file> | png <output file> <dir>...", argc > 0 ? argv[0] : TOOL_NAME);
+	log_error(TOOL_NAME, "Usage: %s map <map file> <output file> <scratch dir> | collision|core|world <map file> <output file> [hooktele] [verbose] | doors|mapimages|envelopes <map file> <output file> | envelopes-synthetic|screen|anims|colors <output file> | png <output file> <dir>... | skins <output file> <dir>", argc > 0 ? argv[0] : TOOL_NAME);
 	return -1;
 }

@@ -3362,7 +3362,7 @@ if(TOOLS)
       endif()
       if(TOOL MATCHES "^rs_parity$")
         # the client prediction world, which is not built without the client
-        foreach(S laser_data pickup_data projectile_data prediction/entity prediction/gameworld
+        foreach(S animstate laser_data pickup_data projectile_data prediction/entity prediction/gameworld
             prediction/entities/character prediction/entities/door prediction/entities/dragger
             prediction/entities/laser prediction/entities/pickup prediction/entities/plasma
             prediction/entities/projectile)

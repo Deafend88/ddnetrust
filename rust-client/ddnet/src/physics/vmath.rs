@@ -89,6 +89,18 @@ pub fn direction(angle: f32) -> Vec2 {
     vec2(angle.cos(), angle.sin())
 }
 
+/// C++: `angle` (vmath.h).
+pub fn angle(a: Vec2) -> f32 {
+    if a.x == 0.0 && a.y == 0.0 {
+        return 0.0;
+    }
+    if a.x == 0.0 {
+        return if a.y < 0.0 { -PI / 2.0 } else { PI / 2.0 };
+    }
+    let result = (a.y / a.x).atan();
+    if a.x < 0.0 { result + PI } else { result }
+}
+
 /// C++: `mix` (math.h): `a + (b - a) * amount`.
 pub fn mix(a: Vec2, b: Vec2, amount: f32) -> Vec2 {
     a + (b - a) * amount

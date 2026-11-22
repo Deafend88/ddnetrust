@@ -4,4 +4,5 @@ pub mod assets;
 pub mod gfx;
 pub mod image;
 pub mod render;
+pub mod skin;
 pub mod storage;

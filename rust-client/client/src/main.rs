@@ -1,6 +1,6 @@
-//! `ddnet-rs`: the graphical client. So far (M6.3) it connects to a local server and
-//! draws the map's layers around the local tee (or a fixed view), through the
-//! offscreen world target. F12 saves a screenshot into our own directory.
+//! `ddnet-rs`: the graphical client. So far (M6.4) it connects to a local server and
+//! draws the map's layers and the tees around the local tee (or a fixed view),
+//! through the offscreen world target. F12 saves a screenshot into our own directory.
 //!
 //! Usage: ddnet-rs <server ip:port> [--data-dir PATH] [--vsync] [--size WxH] [--view X,Y]
 //!        [--follow CLIENT_ID] [--zoom Z] [--screenshot-after SECONDS]
@@ -12,11 +12,13 @@ use std::time::Instant;
 use ddnet::map::Map;
 use ddnet::net;
 use ddnet::net::client::{Client, PlayerInfo, State};
+use ddnet::physics::collision::Collision;
 use ddnet::protocol::generated as g;
 use ddnet_rs::assets;
 use ddnet_rs::gfx::batch::Batch;
 use ddnet_rs::gfx::{self, Gfx, Size, block_on};
 use ddnet_rs::render::map::{MapRender, View, hsl_packed_to_rgb};
+use ddnet_rs::render::players::Players;
 use ddnet_rs::storage::{self, Storage};
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, KeyEvent, WindowEvent};
@@ -50,7 +52,8 @@ struct Running {
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
     gfx: Gfx,
-    map: Option<MapRender>,
+    map: Option<(MapRender, Collision)>,
+    players: Players,
     map_shown_at: Option<Instant>,
 }
 
@@ -98,13 +101,15 @@ impl App {
             wgpu::PresentMode::AutoNoVsync
         };
         surface.configure(&device, &config);
-        let gfx = Gfx::new(device, queue, config.format, size_of(&config));
+        let mut gfx = Gfx::new(device, queue, config.format, size_of(&config));
+        let players = Players::new(&mut gfx, &self.storage);
         Ok(Running {
             window,
             surface,
             config,
             gfx,
             map: None,
+            players,
             map_shown_at: None,
         })
     }
@@ -161,7 +166,7 @@ impl App {
                 .and_then(|m| Map::load(m.data.clone()).ok())
         {
             let images = assets::load_map_images(&self.storage, &m);
-            r.map = Some(MapRender::new(&mut r.gfx, &m, &images));
+            r.map = Some((MapRender::new(&mut r.gfx, &m, &images), Collision::new(&m)));
             r.map_shown_at = Some(Instant::now());
         }
         let camera = self.camera();
@@ -180,7 +185,7 @@ impl App {
         let mut batch = Batch::default();
         let [cr, cg, cb] = hsl_packed_to_rgb(BACKGROUND_COLOR);
         batch.clear(cr, cg, cb);
-        if let (Some(map), Some(center)) = (&r.map, camera) {
+        if let (Some((map, collision)), Some(center)) = (&r.map, camera) {
             let view = View {
                 center,
                 zoom: self.options.zoom,
@@ -189,6 +194,13 @@ impl App {
                 envelope_time,
             };
             map.render_background(&mut batch, &view);
+            r.players.render(
+                &mut r.gfx,
+                &self.storage,
+                &mut batch,
+                &self.client,
+                collision,
+            );
             map.render_foreground(&mut batch, &view);
         }
         let world = r.gfx.world_view();

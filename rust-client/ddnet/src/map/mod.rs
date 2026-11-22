@@ -116,7 +116,7 @@ pub struct Map {
 }
 
 /// C++: `IntsToStr` (gamecore.cpp:92): `None` if the name is not valid UTF-8.
-fn ints_to_str(ints: &[i32]) -> Option<String> {
+pub fn ints_to_str(ints: &[i32]) -> Option<String> {
     let mut bytes: Vec<u8> = ints
         .iter()
         .flat_map(|v| v.to_be_bytes().map(|b| b ^ 0x80))

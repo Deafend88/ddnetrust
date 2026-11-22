@@ -576,11 +576,20 @@ fn quad_layer(
 /// C++: `color_cast<ColorRGBA>(ColorHSLA(packed))` for a packed config colour without
 /// alpha, e.g. `cl_background_color 128`.
 pub fn hsl_packed_to_rgb(packed: u32) -> [f32; 3] {
-    let (h, s, l) = (
+    hsl_to_rgb(unpack_hsl(packed))
+}
+
+/// C++: `ColorHSLA(unsigned)` without alpha: (h, s, l).
+pub fn unpack_hsl(packed: u32) -> [f32; 3] {
+    [
         ((packed >> 16) & 0xff) as f32 / 255.0,
         ((packed >> 8) & 0xff) as f32 / 255.0,
         (packed & 0xff) as f32 / 255.0,
-    );
+    ]
+}
+
+/// C++: `color_cast<ColorRGBA>(const ColorHSLA &)` (color.h).
+pub fn hsl_to_rgb([h, s, l]: [f32; 3]) -> [f32; 3] {
     let h1 = h * 6.0;
     let c = (1.0 - (2.0 * l - 1.0).abs()) * s;
     // C++ std::fmod(float, int) and what follows are computed in double
