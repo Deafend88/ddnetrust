@@ -204,6 +204,29 @@ M5 is complete. Not ported (see Later): weapons, teams/tuning messages, the dumm
   followed C++ tee is out of our snapshot range until 6.7 sends Cl_ShowDistance) and
   coverage (mostly entities; its map layers match, camera 2 px off until 6.5 adds
   prediction-based centering).
+- 6.4 Tees: **not started** (no code, nothing uncommitted; last commit a10a83219).
+  The plan's open questions (PLAN.md §9.6) are still unanswered; the defaults apply.
+  Next steps, in order:
+  1. Generate `datasrc/content.py` data (sprite sets with their grids, sprites,
+     animations with keyframes, weapon specs) into a committed
+     `client/src/render/content.rs`, like `scripts/gen_protocol.py` does for network.py.
+  2. Cut images into sprite textures like `CGraphics_Threaded::LoadSpriteTexture`
+     (graphics_threaded.cpp:331): CheckImageDivisibility (with its resize),
+     IsImageFormatRgba, and the default image as fallback for sprites that are fully
+     transparent in a custom asset (IsImageSubFullyTransparent). Use it for the game
+     skin (assets.cpp LoadGameSkin).
+  3. Skins: `CSkins::LoadSkinData` (skins.cpp:285): divisibility, RGBA and body-size
+     checks, CheckMetrics, the colourable grayscale variant; fall back to `default`.
+  4. `CAnimState` (game/client/animstate.cpp) plus a new `rs_parity anims` mode (every
+     animation at many times, blended like players.cpp does) and colour vectors for
+     ColorHSLA unpacking, UnclampLighting and color_cast; both must be 100%.
+  5. `RenderTee` (game/client/render.cpp): body, feet, hands, eyes and emotes, the
+     outline pass, direction; `RenderHook` (players.cpp) chain and head; the held
+     weapon. Draw the local tee and others from the current snapshot (interpolation is
+     6.5).
+  6. Verify with `scripts/compare_screenshots.ps1` without the tee mask (pickups still
+     masked; on dm1 also the second tee until both are drawn), plus scenes with a
+     custom-colour skin, each emote and both directions.
 
 ## Later
 - Weapon prediction (`m_PredictWeapons`/AntiPingWeapons: FireWeapon, ninja dash,
