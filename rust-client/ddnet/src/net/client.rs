@@ -166,6 +166,37 @@ impl SmoothTime {
     }
 }
 
+/// The render fractions of `CClient::Update` (client.cpp:2934).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct IntraTicks {
+    /// C++ `IntraGameTick`: between the previous and the current snapshot.
+    pub intra: f32,
+    /// C++ `IntraGameTickSincePrev`.
+    pub since_prev: f32,
+    /// C++ `GameTickTime`: seconds since the previous snapshot's tick.
+    pub tick_time: f32,
+    /// C++ `PredIntraGameTick`: within the predicted tick.
+    pub pred_intra: f32,
+    pub prev_pred_tick: i32,
+}
+
+/// C++: the render fractions of `CClient::Update` (client.cpp:2934) for the previous
+/// and current snapshot ticks and the game and predicted times (`FREQ` units).
+pub fn intra_ticks(prev_tick: i32, cur_tick: i32, game_now: i64, pred_now: i64) -> IntraTicks {
+    let cur_tick_start = cur_tick as i64 * FREQ / TICK_SPEED;
+    let prev_tick_start = prev_tick as i64 * FREQ / TICK_SPEED;
+    let prev_pred_tick = (pred_now * TICK_SPEED / FREQ) as i32;
+    let cur_pred_start = prev_pred_tick.wrapping_add(1) as i64 * FREQ / TICK_SPEED;
+    let prev_pred_start = prev_pred_tick as i64 * FREQ / TICK_SPEED;
+    IntraTicks {
+        intra: (game_now - prev_tick_start) as f32 / (cur_tick_start - prev_tick_start) as f32,
+        since_prev: (game_now - prev_tick_start) as f32 / (FREQ / TICK_SPEED) as f32,
+        tick_time: (game_now - prev_tick_start) as f32 / FREQ as f32,
+        pred_intra: (pred_now - prev_pred_start) as f32 / (cur_pred_start - prev_pred_start) as f32,
+        prev_pred_tick,
+    }
+}
+
 /// C++: `CSnapshotStorage::CHolder`.
 struct StoredSnapshot {
     tick: i32,
@@ -821,20 +852,10 @@ impl Client {
             self.on_new_snapshot(now);
         }
         if let Some(prev) = self.prev_tick {
-            // C++ client.cpp:2934: the render fractions between ticks
-            let cur_tick_start = cur as i64 * FREQ / TICK_SPEED;
-            let prev_tick_start = prev as i64 * FREQ / TICK_SPEED;
-            let prev_pred_tick = (pred_now * TICK_SPEED / FREQ) as i32;
-            self.intra_tick =
-                (game_now - prev_tick_start) as f32 / (cur_tick_start - prev_tick_start) as f32;
-            self.intra_tick_since_prev =
-                (game_now - prev_tick_start) as f32 / (FREQ / TICK_SPEED) as f32;
-            self.game_tick_time = (game_now - prev_tick_start) as f32 / FREQ as f32;
-            let cur_pred_start = (prev_pred_tick + 1) as i64 * FREQ / TICK_SPEED;
-            let prev_pred_start = prev_pred_tick as i64 * FREQ / TICK_SPEED;
-            self.pred_intra_tick =
-                (pred_now - prev_pred_start) as f32 / (cur_pred_start - prev_pred_start) as f32;
-            let new_pred_tick = prev_pred_tick + 1;
+            let t = intra_ticks(prev, cur, game_now, pred_now);
+            (self.intra_tick, self.intra_tick_since_prev) = (t.intra, t.since_prev);
+            (self.game_tick_time, self.pred_intra_tick) = (t.tick_time, t.pred_intra);
+            let new_pred_tick = t.prev_pred_tick + 1;
             if (new_pred_tick - prev).abs() > self.max_latency_ticks() {
                 // prediction time reset
                 self.predicted_time

@@ -13,6 +13,7 @@ use ddnet::map::Map;
 use ddnet::net;
 use ddnet::net::client::{Client, PlayerInfo, State};
 use ddnet::physics::collision::Collision;
+use ddnet::predict::{Predictor, Rendered};
 use ddnet::protocol::generated as g;
 use ddnet_rs::assets;
 use ddnet_rs::gfx::batch::Batch;
@@ -52,7 +53,8 @@ struct Running {
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
     gfx: Gfx,
-    map: Option<(MapRender, Collision)>,
+    map: Option<(MapRender, &'static Collision)>,
+    predictor: Option<Predictor<'static>>,
     players: Players,
     map_shown_at: Option<Instant>,
 }
@@ -64,6 +66,8 @@ struct App {
     client: Client,
     start: Instant,
     running: Option<Running>,
+    /// C++ `m_LocalCharacterPos` (or the followed tee's): kept while the tee is gone.
+    center: Option<(f32, f32)>,
     error: Option<String>,
 }
 
@@ -109,26 +113,24 @@ impl App {
             config,
             gfx,
             map: None,
+            predictor: None,
             players,
             map_shown_at: None,
         })
     }
 
-    /// The camera center: the fixed view, else the followed or local tee in the current
-    /// snapshot.
-    // ponytail: no interpolation yet (6.5 adds it)
-    fn camera(&self) -> Option<(f32, f32)> {
+    /// The camera center (C++ `CCamera` without dyncam): the fixed view, else the
+    /// rendered position of the followed or local tee (C++ `m_LocalCharacterPos`: the
+    /// interpolated, or when predicting the predicted, position), else the last one.
+    fn camera(&mut self, rendered: &[Rendered]) -> Option<(f32, f32)> {
         if let Some(v) = self.options.view {
             return Some(v);
         }
-        let id = self.options.follow.or(self.client.local_id())?;
-        let item = self
-            .client
-            .snapshot()
-            .iter()
-            .find(|it| it.type_id == g::NETOBJTYPE_CHARACTER && it.id == id)?;
-        let c = g::ObjCharacter::from_ints(&item.data);
-        Some((c.x as f32, c.y as f32))
+        let id = self.options.follow.or(self.client.local_id());
+        if let Some(r) = rendered.iter().find(|r| Some(r.id) == id) {
+            self.center = Some((r.pos.x, r.pos.y));
+        }
+        self.center
     }
 
     /// C++: `CEnvelopeState::Update` while playing: predicted tick and intra tick since
@@ -166,10 +168,22 @@ impl App {
                 .and_then(|m| Map::load(m.data.clone()).ok())
         {
             let images = assets::load_map_images(&self.storage, &m);
-            r.map = Some((MapRender::new(&mut r.gfx, &m, &images), Collision::new(&m)));
+            // ponytail: one map per run; leaked so the predictor can borrow it, free it
+            // when map changes are supported
+            let collision: &'static Collision = Box::leak(Box::new(Collision::new(&m)));
+            r.map = Some((MapRender::new(&mut r.gfx, &m, &images), collision));
+            r.predictor = Some(Predictor::new(collision));
             r.map_shown_at = Some(Instant::now());
         }
-        let camera = self.camera();
+        // C++: CGameClient::OnNewSnapshot/OnPredict, then UpdateRenderedCharacters
+        let (rendered, local_freeze_end) = match &mut r.predictor {
+            Some(p) => {
+                p.update(&mut self.client);
+                (p.rendered(&self.client), p.predicted_freeze_end())
+            }
+            None => (Vec::new(), None),
+        };
+        let camera = self.camera(&rendered);
         let envelope_time = self.envelope_time();
         let r = self.running.as_mut().unwrap();
         let frame = match r.surface.get_current_texture() {
@@ -200,6 +214,8 @@ impl App {
                 &mut batch,
                 &self.client,
                 collision,
+                &rendered,
+                local_freeze_end,
             );
             map.render_foreground(&mut batch, &view);
         }
@@ -390,6 +406,7 @@ fn main() {
         client,
         start,
         running: None,
+        center: None,
         error: None,
     };
     let event_loop = match EventLoop::new() {

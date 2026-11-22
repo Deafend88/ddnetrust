@@ -125,3 +125,14 @@ only matters for names so long that neither file can exist.
   powerup shine), muzzle flashes and the ninja hadoken (they pick a frame with
   `rand()`), emoticon messages (`Sv_Emoticon` is not handled), the hook collision line
   (only with the aim flag), the unpredicted shadow (default off), 0.7 skins.
+
+## 2026-11-22 — Interpolation: simplifications
+
+- C++ reuses last snapshot's evolved character when the snapped object did not change
+  (OnNewSnapshot); DDNet-rs evolves again from the snapped tick, which gives the same
+  core (evolution is deterministic).
+- C++ keeps `m_PredictedWorld` between frames and requires the local character in it
+  to draw it predicted; DDNet-rs draws it predicted once any prediction has run, which
+  is the same condition after the first prediction.
+- Antiping (`cl_antiping 1`: other players predicted and smoothed) is not ported; its
+  default is off.

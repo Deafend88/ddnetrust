@@ -3,9 +3,11 @@
 //! that move characters, with the default client config (`cl_predict 1`,
 //! `cl_predict_freeze 1`, `cl_antiping 0`). Weapons are not predicted.
 //!
+//! `rendered` ports `UpdateRenderedCharacters`: what the renderer draws between ticks.
+//!
 //! Not ported yet: `Sv_TeamsState` (team membership: everyone is in team 0 unless a
 //! snapshot says solo/super), `Sv_TuneParams` (default tuning), snapshot entities other
-//! than doors, the dummy, and the rendering-only parts (smoothing, events).
+//! than doors, the dummy, antiping smoothing and events.
 
 use std::collections::BTreeMap;
 
@@ -13,6 +15,7 @@ use crate::net::client::Client;
 use crate::physics::collision::Collision;
 use crate::physics::core::{CharacterCore, WorldCore};
 use crate::physics::teams::{MAX_CLIENTS, NUM_DDRACE_TEAMS, TEAM_FLOCK, TeamsCore};
+use crate::physics::vmath::{Vec2, mix, vec2};
 use crate::physics::world::{GameWorld, WorldConfig, core_obj};
 use crate::protocol::generated::{
     self as g, ObjCharacter, ObjCharacterCore, ObjDDNetCharacter, ObjDDNetLaser, ObjEntityEx,
@@ -27,11 +30,29 @@ const TILE_SWITCHOPEN: i32 = 24;
 const TILE_SWITCHCLOSE: i32 = 25;
 
 /// C++: `m_Snap.m_aCharacters[i]` of an active character (in this and the previous
-/// snapshot), its core evolved to the snapshot tick.
+/// snapshot): `prev` evolved to the previous snapshot's tick, `cur` to the current one,
+/// and the DDNet objects of both snapshots.
 #[derive(Clone, Copy, Debug)]
 struct SnapChar {
+    prev: ObjCharacter,
     cur: ObjCharacter,
     ext: Option<ObjDDNetCharacter>,
+    prev_ext: Option<ObjDDNetCharacter>,
+}
+
+/// A character as the renderer sees it this frame. C++: `m_aClients[i]`'s `m_RenderPrev`,
+/// `m_RenderCur`, `m_RenderPos` and `m_IsPredicted` after `UpdateRenderedCharacters`,
+/// plus the snapshots' DDNet objects.
+#[derive(Clone, Copy, Debug)]
+pub struct Rendered {
+    pub id: i32,
+    pub prev: ObjCharacter,
+    pub cur: ObjCharacter,
+    pub pos: Vec2,
+    /// Drawn between the predicted ticks with `PredIntraGameTick` (the local tee).
+    pub predicted: bool,
+    pub ext: Option<ObjDDNetCharacter>,
+    pub prev_ext: Option<ObjDDNetCharacter>,
 }
 
 /// How well prediction matched the server.
@@ -64,10 +85,25 @@ pub struct Predictor<'a> {
     local_id: i32,
     /// C++: `m_PredictedChar` written as a net object, and `m_PredictedTick`.
     predicted_char: Option<ObjCharacterCore>,
+    /// C++: `m_aClients[local].m_PrevPredicted` and `m_Predicted`: the local core at
+    /// the start and the end of the last predicted tick.
+    prev_predicted_core: Option<CharacterCore>,
+    predicted_core: Option<CharacterCore>,
+    /// C++: `Predict()`: a local character to predict, not spectating, world not paused.
+    predicting: bool,
     predicted_tick: i32,
     /// The latest prediction of the local character for each tick.
     history: BTreeMap<i32, ObjCharacterCore>,
     pub stats: Stats,
+}
+
+/// C++: `CCharacterCore::Write` into a `CNetObj_Character` (all but the tick).
+fn write_core(c: &mut ObjCharacter, core: &CharacterCore) {
+    let o = core.write();
+    (c.x, c.y, c.vel_x, c.vel_y, c.angle, c.direction, c.jumped) =
+        (o.x, o.y, o.vel_x, o.vel_y, o.angle, o.direction, o.jumped);
+    (c.hooked_player, c.hook_state, c.hook_tick) = (o.hooked_player, o.hook_state, o.hook_tick);
+    (c.hook_x, c.hook_y, c.hook_dx, c.hook_dy) = (o.hook_x, o.hook_y, o.hook_dx, o.hook_dy);
 }
 
 /// Pads a snapshot item to `n` ints (shorter items come from older servers).
@@ -100,6 +136,9 @@ impl<'a> Predictor<'a> {
             chars: vec![None; MAX_CLIENTS],
             local_id: -1,
             predicted_char: None,
+            prev_predicted_core: None,
+            predicted_core: None,
+            predicting: false,
             predicted_tick: -1,
             history: BTreeMap::new(),
             stats: Stats::default(),
@@ -130,11 +169,7 @@ impl<'a> Predictor<'a> {
             w.move_(0, self.col, &teams);
             w.quantize(0);
         }
-        let o = w.characters[0].as_ref().unwrap().write();
-        (c.x, c.y, c.vel_x, c.vel_y, c.angle, c.direction, c.jumped) =
-            (o.x, o.y, o.vel_x, o.vel_y, o.angle, o.direction, o.jumped);
-        (c.hooked_player, c.hook_state, c.hook_tick) = (o.hooked_player, o.hook_state, o.hook_tick);
-        (c.hook_x, c.hook_y, c.hook_dx, c.hook_dy) = (o.hook_x, o.hook_y, o.hook_dx, o.hook_dy);
+        write_core(c, w.characters[0].as_ref().unwrap());
     }
 
     /// C++: the prediction parts of `CGameClient::OnNewSnapshot`.
@@ -152,28 +187,58 @@ impl<'a> Predictor<'a> {
             .map_or(-1, |p| p.client_id);
 
         self.chars = vec![None; MAX_CLIENTS];
+        let prev_tick = prev.unwrap_or(0);
+        let ext_of = |items: &[Item], id: i32| {
+            find(items, g::NETOBJTYPE_DDNETCHARACTER, id)
+                .map(|e| ObjDDNetCharacter::from_ints(&ints(e, ObjDDNetCharacter::NUM_INTS)))
+        };
         for it in items
             .iter()
             .filter(|it| it.type_id == g::NETOBJTYPE_CHARACTER)
         {
             let id = it.id as usize;
-            if id >= MAX_CLIENTS || find(prev_items, g::NETOBJTYPE_CHARACTER, it.id).is_none() {
+            let Some(old) = find(prev_items, g::NETOBJTYPE_CHARACTER, it.id) else {
+                continue;
+            };
+            if id >= MAX_CLIENTS {
                 continue;
             }
             let mut cur = ObjCharacter::from_ints(&ints(it, ObjCharacter::NUM_INTS));
+            let mut prev = ObjCharacter::from_ints(&ints(old, ObjCharacter::NUM_INTS));
+            // limit evolving to 3 seconds
             // ponytail: C++ reuses its previous evolve when the snapped object did not
             // change; evolving again from the snapped tick gives the same core.
+            if prev_tick - prev.tick <= 3 * TICK_SPEED && prev.tick != 0 {
+                self.evolve(&mut prev, prev_tick);
+            }
             if tick - cur.tick <= 3 * TICK_SPEED && cur.tick != 0 {
                 self.evolve(&mut cur, tick);
             }
-            let ext = find(items, g::NETOBJTYPE_DDNETCHARACTER, it.id)
-                .map(|e| ObjDDNetCharacter::from_ints(&ints(e, ObjDDNetCharacter::NUM_INTS)));
+            let ext = ext_of(items, it.id);
             if let Some(ext) = ext {
                 self.teams
                     .set_solo(it.id, ext.flags & g::CHARACTERFLAG_SOLO != 0);
             }
-            self.chars[id] = Some(SnapChar { cur, ext });
+            let prev_ext = ext_of(prev_items, it.id);
+            self.chars[id] = Some(SnapChar {
+                prev,
+                cur,
+                ext,
+                prev_ext,
+            });
         }
+        // C++: m_SpecInfo.m_Active (spectator team, paused or /spec) and IsWorldPaused
+        let local_team = find(items, g::NETOBJTYPE_PLAYERINFO, self.local_id)
+            .map(|it| g::ObjPlayerInfo::from_ints(&ints(it, g::ObjPlayerInfo::NUM_INTS)).team);
+        let local_flags = find(items, g::NETOBJTYPE_DDNETPLAYER, self.local_id)
+            .map_or(0, |it| ints(it, g::ObjDDNetPlayer::NUM_INTS)[0]);
+        let spectating = local_team == Some(g::TEAM_SPECTATORS)
+            || local_flags & (g::EXPLAYERFLAG_PAUSED | g::EXPLAYERFLAG_SPEC) != 0;
+        let paused = items
+            .iter()
+            .find(|it| it.type_id == g::NETOBJTYPE_GAMEINFO)
+            .is_some_and(|it| ints(it, 2)[1] & g::GAMESTATEFLAG_PAUSED != 0);
+        self.predicting = self.local_char().is_some() && !spectating && !paused;
 
         // game info: C++ GetGameInfo, only what prediction reads
         let info = items
@@ -359,6 +424,7 @@ impl<'a> Predictor<'a> {
             if let Some(SnapChar {
                 cur,
                 ext: Some(ext),
+                ..
             }) = c
             {
                 self.world.net_char_add(i, cur, ext, i == local);
@@ -381,6 +447,50 @@ impl<'a> Predictor<'a> {
             }
         }
         self.world.net_obj_end();
+    }
+
+    /// C++: `CGameClient::UpdateRenderedCharacters` (gameclient.cpp:3762) with
+    /// `cl_antiping 0`: every active character between the snapshots with
+    /// `IntraGameTick`; the local one, when predicting, between its predicted cores with
+    /// `PredIntraGameTick`. Ordered by client id.
+    pub fn rendered(&self, client: &Client) -> Vec<Rendered> {
+        let pos = |c: &ObjCharacter| vec2(c.x as f32, c.y as f32);
+        let predicted = self
+            .prev_predicted_core
+            .as_ref()
+            .zip(self.predicted_core.as_ref());
+        (0..MAX_CLIENTS)
+            .filter_map(|i| {
+                let c = self.chars[i]?;
+                let mut r = Rendered {
+                    id: i as i32,
+                    prev: c.prev,
+                    cur: c.cur,
+                    pos: mix(pos(&c.prev), pos(&c.cur), client.intra_tick),
+                    predicted: false,
+                    ext: c.ext,
+                    prev_ext: c.prev_ext,
+                };
+                // C++ also needs the character in the predicted world, where it is once
+                // a prediction ran (`predicted`)
+                if self.predicting
+                    && i as i32 == self.local_id
+                    && let Some((prev, cur)) = predicted
+                {
+                    write_core(&mut r.cur, cur);
+                    write_core(&mut r.prev, prev);
+                    r.predicted = true;
+                    r.pos = mix(pos(&r.prev), pos(&r.cur), client.pred_intra_tick);
+                }
+                Some(r)
+            })
+            .collect()
+    }
+
+    /// C++: `m_aClients[local].m_Predicted.m_FreezeEnd`, the predicted freeze of the
+    /// local tee (`None` before the first prediction).
+    pub fn predicted_freeze_end(&self) -> Option<i32> {
+        self.predicted_core.as_ref().map(|c| c.freeze_end)
     }
 
     /// C++: `CGameClient::IsOtherTeam` for a playing (not spectating) local player.
@@ -425,6 +535,9 @@ impl<'a> Predictor<'a> {
             return;
         }
         for t in cur + 1..=pred {
+            if t == pred {
+                self.prev_predicted_core = w.character(local).map(|c| c.1.clone());
+            }
             let input = client.input_at(t);
             if let Some(input) = &input {
                 w.on_direct_input(local, input);
@@ -438,6 +551,7 @@ impl<'a> Predictor<'a> {
             self.history.insert(t, core);
             if t == pred {
                 self.predicted_char = Some(core);
+                self.predicted_core = w.character(local).map(|c| c.1.clone());
             }
         }
         if self.predicted_tick == pred {

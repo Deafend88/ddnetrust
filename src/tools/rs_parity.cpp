@@ -13,6 +13,7 @@
 //        rs_parity png <output file> <dir>...
 //        rs_parity anims <output file>
 //        rs_parity colors <output file>
+//        rs_parity interp <output file>
 //        rs_parity skins <output file> <skins dir>
 //
 // "map" loads the map with CMap + CLayers and writes every item, every data blob and
@@ -43,7 +44,8 @@
 // envelopes like CEnvelopeState; "envelopes-synthetic" random ones of every curve type.
 // "screen" maps random cameras to world rectangles with IGraphics::MapScreenToWorld.
 // "anims" blends CAnimState like CPlayers::RenderPlayer, "colors" converts tee colours,
-// "skins" prepares skin images like CSkins::LoadSkinData.
+// "skins" prepares skin images like CSkins::LoadSkinData. "interp" computes the render
+// fractions between ticks, interpolated positions and other players' aim angles.
 
 #include <base/color.h>
 #include <base/dbg.h>
@@ -54,6 +56,7 @@
 #include <base/mem.h>
 #include <base/os.h>
 #include <base/str.h>
+#include <base/time.h>
 #include <base/vmath.h>
 
 #include <engine/gfx/image_loader.h>
@@ -1820,6 +1823,113 @@ static int SkinsMode(const char *pOutFile, const char *pDir)
 	return 0;
 }
 
+// Copy of the non-local part of CPlayers::GetPlayerTargetAngle (players.cpp:123): a
+// member of a component that needs a running client.
+static float OtherTargetAngle(const CNetObj_Character *pPrevChar, const CNetObj_Character *pPlayerChar, const CNetObj_DDNetCharacter *pExtendedData, const CNetObj_DDNetCharacter *pPrevExtendedData, float Intra)
+{
+	if(pExtendedData)
+	{
+		if(pPrevExtendedData)
+		{
+			float MixX = mix((float)pPrevExtendedData->m_TargetX, (float)pExtendedData->m_TargetX, Intra);
+			float MixY = mix((float)pPrevExtendedData->m_TargetY, (float)pExtendedData->m_TargetY, Intra);
+			return angle(vec2(MixX, MixY));
+		}
+		else
+		{
+			return angle(vec2(pExtendedData->m_TargetX, pExtendedData->m_TargetY));
+		}
+	}
+	else
+	{
+		if(pPlayerChar->m_Angle > (256.0f * pi) && pPrevChar->m_Angle < 0)
+		{
+			return mix((float)pPrevChar->m_Angle, (float)(pPlayerChar->m_Angle - 256.0f * 2 * pi), Intra) / 256.0f;
+		}
+		else if(pPlayerChar->m_Angle < 0 && pPrevChar->m_Angle > (256.0f * pi))
+		{
+			return mix((float)pPrevChar->m_Angle, (float)(pPlayerChar->m_Angle + 256.0f * 2 * pi), Intra) / 256.0f;
+		}
+		else
+		{
+			return mix((float)pPrevChar->m_Angle, (float)pPlayerChar->m_Angle, Intra) / 256.0f;
+		}
+	}
+}
+
+// "interp": the render fractions of CClient::Update (client.cpp:2934, copied: CClient
+// needs a running client) for random snapshot ticks and game/predicted times, positions
+// mixed like UpdateRenderedCharacters (gameclient.cpp:3762) and GetPlayerTargetAngle for
+// other players (copied above), with angles that cross the top, DDNet targets with and
+// without a previous one. Lines: "intra <prev tick> <cur tick> <game now> <pred now>
+// <intra> <since prev> <tick time> <pred intra> <prev pred tick>", "pos <prev x y> <cur
+// x y> <amount> <x> <y>", "angle <prev> <cur> <mode> <prev target x y> <target x y>
+// <intra> <angle>" (mode 0: no target, 1: target, 2: target and previous target).
+static int InterpMode(const char *pOutFile)
+{
+	FILE *f = fopen(pOutFile, "wb");
+	if(!f)
+		return -1;
+	const int64_t Freq = time_freq();
+	const int TickSpeed = SERVER_TICK_SPEED;
+	for(int i = 0; i < 20000; i++)
+	{
+		const int CurTick = 1 + Rand() % 2000000;
+		const int PrevTick = CurTick - 1 - (Rand() % 4 == 0 ? Rand() % 50 : 0);
+		const int64_t PrevTickStart = PrevTick * Freq / TickSpeed;
+		const int64_t Now = PrevTickStart + (int64_t)((int)(Rand() % 60) - 10) * (Freq / 1000) + Rand() % 1000000;
+		const int64_t PredNow = Now + (int64_t)(Rand() % 300) * (Freq / 1000) + Rand() % 1000000;
+		// C++: CClient::Update
+		int64_t CurTickStart = CurTick * Freq / TickSpeed;
+		int PrevPredTick = (int)(PredNow * TickSpeed / Freq);
+		int NewPredTick = PrevPredTick + 1;
+		const float GameIntraTick = (Now - PrevTickStart) / (float)(CurTickStart - PrevTickStart);
+		const float GameTickTime = (Now - PrevTickStart) / (float)Freq;
+		const float GameIntraTickSincePrev = (Now - PrevTickStart) / (float)(Freq / TickSpeed);
+		int64_t CurPredTickStart = NewPredTick * Freq / TickSpeed;
+		int64_t PrevPredTickStart = PrevPredTick * Freq / TickSpeed;
+		const float PredIntraTick = (PredNow - PrevPredTickStart) / (float)(CurPredTickStart - PrevPredTickStart);
+		fprintf(f, "intra %d %d %lld %lld %08x %08x %08x %08x %d\n", PrevTick, CurTick, (long long)Now, (long long)PredNow,
+			FloatBits(GameIntraTick), FloatBits(GameIntraTickSincePrev), FloatBits(GameTickTime), FloatBits(PredIntraTick), PrevPredTick);
+
+		auto RandPos = [] { return (int)(Rand() % 400000) - 50000; };
+		CNetObj_Character Prev = {}, Cur = {};
+		Prev.m_X = RandPos();
+		Prev.m_Y = RandPos();
+		Cur.m_X = Rand() % 2 ? Prev.m_X + (int)(Rand() % 61) - 30 : RandPos();
+		Cur.m_Y = Rand() % 2 ? Prev.m_Y + (int)(Rand() % 61) - 30 : RandPos();
+		const float Amount = Rand() % 2 ? GameIntraTick : PredIntraTick;
+		const vec2 Pos = mix(vec2(Prev.m_X, Prev.m_Y), vec2(Cur.m_X, Cur.m_Y), Amount);
+		fprintf(f, "pos %d %d %d %d %08x %08x %08x\n", Prev.m_X, Prev.m_Y, Cur.m_X, Cur.m_Y, FloatBits(Amount), FloatBits(Pos.x), FloatBits(Pos.y));
+
+		// angles as CCharacterCore sends them: (int)(angle * 256), angle in (-pi/2, 3pi/2),
+		// a third of them crossing the top (between below 0 and above 256 pi)
+		auto RandAngle = [] { return (int)(Rand() % 1609) - 402; };
+		Prev.m_Angle = RandAngle();
+		Cur.m_Angle = RandAngle();
+		if(Rand() % 3 == 0)
+		{
+			Prev.m_Angle = -(int)(Rand() % 402) - 1;
+			Cur.m_Angle = 805 + Rand() % 400;
+			if(Rand() % 2)
+				std::swap(Prev.m_Angle, Cur.m_Angle);
+		}
+		CNetObj_DDNetCharacter Ext = {}, PrevExt = {};
+		const int Mode = Rand() % 3;
+		Ext.m_TargetX = (int)(Rand() % 2001) - 1000;
+		Ext.m_TargetY = (int)(Rand() % 2001) - 1000;
+		PrevExt.m_TargetX = Rand() % 4 == 0 ? Ext.m_TargetX : (int)(Rand() % 2001) - 1000;
+		PrevExt.m_TargetY = Rand() % 4 == 0 ? 0 : (int)(Rand() % 2001) - 1000;
+		if(Rand() % 10 == 0)
+			Ext.m_TargetX = Ext.m_TargetY = 0;
+		const float Angle = OtherTargetAngle(&Prev, &Cur, Mode ? &Ext : nullptr, Mode == 2 ? &PrevExt : nullptr, GameIntraTick);
+		fprintf(f, "angle %d %d %d %d %d %d %d %08x %08x\n", Prev.m_Angle, Cur.m_Angle, Mode, PrevExt.m_TargetX, PrevExt.m_TargetY, Ext.m_TargetX, Ext.m_TargetY,
+			FloatBits(GameIntraTick), FloatBits(Angle));
+	}
+	fclose(f);
+	return 0;
+}
+
 int main(int argc, const char **argv)
 {
 	CCmdlineFix CmdlineFix(&argc, &argv);
@@ -1836,6 +1946,8 @@ int main(int argc, const char **argv)
 		return AnimsMode(argv[2]);
 	if(argc == 3 && str_comp(argv[1], "colors") == 0)
 		return ColorsMode(argv[2]);
+	if(argc == 3 && str_comp(argv[1], "interp") == 0)
+		return InterpMode(argv[2]);
 	if(argc == 4 && str_comp(argv[1], "skins") == 0)
 		return SkinsMode(argv[2], argv[3]);
 	if(argc == 3 && str_comp(argv[1], "envelopes-synthetic") == 0)
@@ -1858,6 +1970,6 @@ int main(int argc, const char **argv)
 			return CoreMode(argv[2], argv[3], HookTele, Verbose);
 		return CollisionMode(argv[2], argv[3], HookTele, Verbose);
 	}
-	log_error(TOOL_NAME, "Usage: %s map <map file> <output file> <scratch dir> | collision|core|world <map file> <output file> [hooktele] [verbose] | doors|mapimages|envelopes <map file> <output file> | envelopes-synthetic|screen|anims|colors <output file> | png <output file> <dir>... | skins <output file> <dir>", argc > 0 ? argv[0] : TOOL_NAME);
+	log_error(TOOL_NAME, "Usage: %s map <map file> <output file> <scratch dir> | collision|core|world <map file> <output file> [hooktele] [verbose] | doors|mapimages|envelopes <map file> <output file> | envelopes-synthetic|screen|anims|colors|interp <output file> | png <output file> <dir>... | skins <output file> <dir>", argc > 0 ? argv[0] : TOOL_NAME);
 	return -1;
 }

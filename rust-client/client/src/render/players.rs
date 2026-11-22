@@ -2,8 +2,8 @@
 //! and `RenderHook`, plus the per-client skin data `CGameClient` keeps from the
 //! snapshot (`ClientInfo`, `DDNetCharacter`, `DDNetPlayer`, game info flags).
 //!
-//! Drawn from the current snapshot only (previous = current, no prediction): 6.5 adds
-//! interpolation. Not drawn yet: muzzle flashes, the ninja hadoken, emoticon messages
+//! Positions come from `Predictor::rendered` (C++ `UpdateRenderedCharacters`): other
+//! tees between the snapshots, the local tee between its predicted ticks. Not drawn yet: muzzle flashes, the ninja hadoken, emoticon messages
 //! (`Sv_Emoticon` is not handled), the hook collision line (only with the aim flag), particles (freeze
 //! flakes, sparkles, skid trails, powerup shine), the unpredicted shadow (default off).
 
@@ -13,7 +13,8 @@ use ddnet::map::ints_to_str;
 use ddnet::net::client::Client;
 use ddnet::physics::collision::Collision;
 use ddnet::physics::vmath::{PI, Vec2, angle, direction, distance, mix, normalize, vec2};
-use ddnet::protocol::generated::{self as g, ObjCharacter};
+use ddnet::predict::Rendered;
+use ddnet::protocol::generated as g;
 use ddnet::protocol::snapshot::Item;
 
 use super::anim::AnimState;
@@ -32,8 +33,6 @@ use crate::gfx::batch::Batch;
 use crate::skin::load_skin_data;
 use crate::storage::Storage;
 
-/// C++ `MAX_CLIENTS` (engine/shared/protocol.h).
-const MAX_CLIENTS: i32 = 128;
 /// C++ `SERVER_TICK_SPEED`.
 const TICK_SPEED: f32 = 50.0;
 
@@ -71,6 +70,33 @@ pub fn walk_run_times(x: f32) -> (f32, f32) {
     (walk_time, run_time)
 }
 
+/// C++: `CPlayers::GetPlayerTargetAngle` (players.cpp:123) for a player that is not
+/// ours: the DDNet target between the snapshots if the server sends it (`target`:
+/// previous if any, current), else the snapped angle the short way round.
+pub fn other_target_angle(
+    prev_angle: i32,
+    cur_angle: i32,
+    target: Option<(Option<Vec2>, Vec2)>,
+    intra: f32,
+) -> f32 {
+    let m = |a: f32, b: f32| a + (b - a) * intra;
+    match target {
+        Some((Some(prev), cur)) => return angle(vec2(m(prev.x, cur.x), m(prev.y, cur.y))),
+        Some((None, cur)) => return angle(cur),
+        None => {}
+    }
+    let (pa, ca) = (prev_angle as f32, cur_angle);
+    // If the player moves their weapon through top, then change the end angle by 2*Pi,
+    // so that the mix function will use the short path and not the long one.
+    if ca as f32 > 256.0 * PI && pa < 0.0 {
+        m(pa, ca as f32 - 256.0 * 2.0 * PI) / 256.0
+    } else if ca < 0 && pa > 256.0 * PI {
+        m(pa, ca as f32 + 256.0 * 2.0 * PI) / 256.0
+    } else {
+        m(pa, ca as f32) / 256.0
+    }
+}
+
 pub struct Players {
     quads: Quads,
     game_skin: GameSkin,
@@ -86,15 +112,9 @@ fn find(items: &[Item], type_id: i32, id: i32) -> Option<&[i32]> {
 }
 
 /// One client as `CPlayers::OnRender` sees it.
-struct Rendered {
-    id: i32,
-    prev: ObjCharacter,
-    cur: ObjCharacter,
-    /// C++ `m_RenderPos`.
-    pos: Vec2,
+struct Drawn {
+    r: Rendered,
     info: TeeRenderInfo,
-    /// C++ `m_HasExtendedDisplayInfo`: the DDNet target.
-    target: Option<Vec2>,
     inactive: bool,
     afk: bool,
 }
@@ -115,6 +135,8 @@ impl Players {
     }
 
     /// C++: `CPlayers::OnRender`, with the screen set to the world (game group).
+    /// `local_freeze_end`: the predicted freeze of the local tee, if predicted.
+    #[allow(clippy::too_many_arguments)]
     pub fn render(
         &mut self,
         gfx: &mut Gfx,
@@ -122,6 +144,8 @@ impl Players {
         batch: &mut Batch,
         client: &Client,
         collision: &Collision,
+        rendered: &[Rendered],
+        local_freeze_end: Option<i32>,
     ) {
         let snap = client.snapshot();
         let prev_snap = client
@@ -143,24 +167,17 @@ impl Players {
             .is_some_and(|d| g::ObjGameInfo::from_ints(d).game_flags & g::GAMEFLAG_TEAMS != 0);
 
         let mut players = Vec::new();
-        for item in snap
-            .iter()
-            .filter(|it| it.type_id == g::NETOBJTYPE_CHARACTER)
-        {
-            let id = item.id;
-            // C++: IsPlayerInfoAvailable (the character also needs a previous snapshot)
-            if !(0..MAX_CLIENTS).contains(&id)
-                || find(prev_snap, g::NETOBJTYPE_CHARACTER, id).is_none()
-                || find(snap, g::NETOBJTYPE_PLAYERINFO, id).is_none()
-                || find(prev_snap, g::NETOBJTYPE_PLAYERINFO, id).is_none()
-            {
+        for r in rendered {
+            let (id, cur) = (r.id, r.cur);
+            // C++: IsPlayerInfoAvailable (`rendered` holds the active characters)
+            let (Some(player), Some(_)) = (
+                find(snap, g::NETOBJTYPE_PLAYERINFO, id),
+                find(prev_snap, g::NETOBJTYPE_PLAYERINFO, id),
+            ) else {
                 continue;
-            }
-            let cur = ObjCharacter::from_ints(&item.data);
-            let player =
-                g::ObjPlayerInfo::from_ints(find(snap, g::NETOBJTYPE_PLAYERINFO, id).unwrap());
-            let ddnet =
-                find(snap, g::NETOBJTYPE_DDNETCHARACTER, id).map(g::ObjDDNetCharacter::from_ints);
+            };
+            let player = g::ObjPlayerInfo::from_ints(player);
+            let ddnet = r.ext;
             let ex_player =
                 find(snap, g::NETOBJTYPE_DDNETPLAYER, id).map(g::ObjDDNetPlayer::from_ints);
 
@@ -197,9 +214,14 @@ impl Players {
                 }
             }
 
-            // C++: CPlayers::OnRender, freeze and ninja
-            // ponytail: snapshot freeze state also for the local tee (C++: predicted), 6.5
-            let frozen = ddnet.is_some_and(|d| d.freeze_end != 0);
+            // C++: CPlayers::OnRender, freeze and ninja; the local tee's freeze is
+            // predicted (C++ m_Predicted.m_FreezeEnd, which holds the snapshot's value
+            // until the first prediction)
+            let freeze_end = match local_freeze_end {
+                Some(f) if Some(id) == local => Some(f),
+                _ => ddnet.map(|d| d.freeze_end),
+            };
+            let frozen = freeze_end.is_some_and(|f| f != 0);
             // (the TEE_EFFECT_* flags only feed particles, which are not drawn)
             if frozen {
                 info.flags |= TEE_NO_WEAPON;
@@ -215,19 +237,12 @@ impl Players {
                     info.color_feet = [1.0; 4];
                 }
             }
-            let target = ddnet
-                .filter(|d| d.jumped_total != -1)
-                .map(|d| vec2(d.target_x as f32, d.target_y as f32));
             let ex_flags = ex_player.map_or(0, |p| p.flags);
             let afk = ex_flags & g::EXPLAYERFLAG_AFK != 0;
             let inactive = afk || ex_flags & g::EXPLAYERFLAG_PAUSED != 0;
-            players.push(Rendered {
-                id,
-                prev: cur,
-                cur,
-                pos: vec2(cur.x as f32, cur.y as f32),
+            players.push(Drawn {
+                r: *r,
                 info,
-                target,
                 inactive,
                 afk,
             });
@@ -236,10 +251,10 @@ impl Players {
         // C++: GetScreen, expanded by 100 for tees, weapons and emotes
         let [l, t, r, b] = batch.screen();
         let screen = [l - 100.0, t - 100.0, r + 100.0, b + 100.0];
-        let by_id = |id: i32| players.iter().find(|p| p.id == id);
+        let by_id = |id: i32| players.iter().find(|p| p.r.id == id);
         let ordered = players
             .iter()
-            .filter(|p| Some(p.id) != local)
+            .filter(|p| Some(p.r.id) != local)
             .chain(local.and_then(by_id));
         // render everyone else's hook, then our own
         for p in ordered.clone() {
@@ -257,10 +272,10 @@ impl Players {
         batch: &mut Batch,
         client: &Client,
         screen: &[f32; 4],
-        p: &Rendered,
-        by_id: &dyn Fn(i32) -> Option<&'a Rendered>,
+        p: &Drawn,
+        by_id: &dyn Fn(i32) -> Option<&'a Drawn>,
     ) {
-        let (prev, cur) = (&p.prev, &p.cur);
+        let (prev, cur) = (&p.r.prev, &p.r.cur);
         if cur.hook_state <= 0 {
             return;
         }
@@ -269,13 +284,17 @@ impl Players {
         if cur.hooked_player != -1 && hooked.is_none() {
             return;
         }
-        let intra = client.intra_tick;
+        let intra = if p.r.predicted {
+            client.pred_intra_tick
+        } else {
+            client.intra_tick
+        };
         let alpha = 1.0; // same team; C++ cl_show_others_alpha for other teams
         let mut info = p.info;
         info.size = 64.0;
-        let pos = p.pos;
+        let pos = p.r.pos;
         let hook_pos = match hooked {
-            Some(h) => h.pos,
+            Some(h) => h.r.pos,
             _ => mix(
                 vec2(prev.hook_x as f32, prev.hook_y as f32),
                 vec2(cur.hook_x as f32, cur.hook_y as f32),
@@ -325,8 +344,8 @@ impl Players {
     }
 
     /// C++: `CPlayers::GetPlayerTargetAngle` (players.cpp:97), without the dummy.
-    fn target_angle(client: &Client, p: &Rendered, local: Option<i32>) -> f32 {
-        if Some(p.id) == local {
+    fn target_angle(client: &Client, p: &Drawn, local: Option<i32>) -> f32 {
+        if Some(p.r.id) == local {
             // what would be sent to the server from our current input
             let i = &client.input;
             let mut dir = normalize(vec2(i.target_x as f32, i.target_y as f32));
@@ -335,21 +354,13 @@ impl Players {
             }
             return angle(dir);
         }
-        if let Some(t) = p.target {
-            // ponytail: no previous DDNet target until 6.5 interpolates
-            return angle(t);
-        }
-        let intra = client.intra_tick;
-        let (pa, ca) = (p.prev.angle as f32, p.cur.angle);
-        let m = |a: f32, b: f32| a + (b - a) * intra;
-        // the short way round when the weapon passes the top
-        if ca as f32 > 256.0 * PI && pa < 0.0 {
-            m(pa, ca as f32 - 256.0 * 2.0 * PI) / 256.0
-        } else if ca < 0 && pa > 256.0 * PI {
-            m(pa, ca as f32 + 256.0 * 2.0 * PI) / 256.0
-        } else {
-            m(pa, ca as f32) / 256.0
-        }
+        // using unpredicted angle when rendering other players in-game
+        // C++ m_HasExtendedDisplayInfo: the DDNet target, and the previous one
+        let xy = |d: g::ObjDDNetCharacter| vec2(d.target_x as f32, d.target_y as f32);
+        let target = (p.r.ext)
+            .filter(|d| d.jumped_total != -1)
+            .map(|d| (p.r.prev_ext.map(xy), xy(d)));
+        other_target_angle(p.r.prev.angle, p.r.cur.angle, target, client.intra_tick)
     }
 
     /// C++: `CPlayers::RenderPlayer` (players.cpp:565).
@@ -359,11 +370,11 @@ impl Players {
         client: &Client,
         collision: &Collision,
         screen: &[f32; 4],
-        p: &Rendered,
+        p: &Drawn,
         local: Option<i32>,
     ) {
-        let (prev, player) = (&p.prev, &p.cur);
-        let position = p.pos;
+        let (prev, player) = (&p.r.prev, &p.r.cur);
+        let position = p.r.pos;
         let [l, t, r, b] = *screen;
         // C++: CScreenRect::Inside
         if !(position.x >= l && position.x <= r && position.y >= t && position.y <= b) {
@@ -372,7 +383,11 @@ impl Players {
         let mut info = p.info;
         let alpha = 1.0;
         info.size = 64.0;
-        let intra = client.intra_tick;
+        let intra = if p.r.predicted {
+            client.pred_intra_tick
+        } else {
+            client.intra_tick
+        };
         let prev_tick = client.prev_game_tick().unwrap_or(0);
         let attack_time =
             (prev_tick - player.attack_tick) as f32 / TICK_SPEED + client.game_tick_time;

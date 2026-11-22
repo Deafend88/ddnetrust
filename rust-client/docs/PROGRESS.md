@@ -240,11 +240,36 @@ M5 is complete. Not ported (see Later): weapons, teams/tuning messages, the dumm
   snapshot range until 6.7 sends Cl_ShowDistance/Cl_CameraInfo).
   Found on the way: integration-test builds also rebuild `target/debug/ddnet-rs.exe`,
   so run the screenshot script only after a plain `cargo build`.
-- 6.5 Interpolation: **next**. Per PLAN §9.3: Evolve snapshot characters, prev/cur
-  characters with IntraGameTick for others, predicted PrevPredicted/Predicted with
-  PredIntraGameTick for the local tee (UpdateRenderedCharacters, gameclient.cpp:3762),
-  the DDNet target interpolation, and the predicted freeze state for the local tee
-  (`ponytail:` note in `render/players.rs`). Then hook and walking-tee screenshots.
+- 6.5 Interpolation: `predict.rs` keeps every active character's previous and
+  current snapshot core, both evolved like OnNewSnapshot (Prev to PrevGameTick, Cur to
+  GameTick, 3 s limit), with their DDNet objects; `predict` keeps the local core at the
+  start and end of the last predicted tick (C++ m_PrevPredicted/m_Predicted); and
+  `Predictor::rendered` ports UpdateRenderedCharacters for `cl_antiping 0`: others
+  between the snapshots with IntraGameTick, the local tee (when C++ Predict() holds: a
+  local character, not spectating/paused, world not paused) between its predicted cores
+  with PredIntraGameTick. `net/client.rs` `intra_ticks` is the CClient::Update fraction
+  code as a pure function. The renderer uses it: positions, hook and velocity with the
+  predicted or plain intra tick, other players' aim between the previous and current
+  DDNet target (`other_target_angle`, GetPlayerTargetAngle), the local tee's freeze from
+  its prediction, and the camera on the rendered local (or followed) tee, keeping the
+  last center while it is gone (C++ m_LocalCharacterPos). `ddnet-rs` now runs the
+  predictor (its collision is leaked once per run so the predictor can borrow it).
+  Verified: `rs_parity interp` (20,000 random tick pairs and game/predicted times
+  through the CClient::Update fractions, 20,000 position mixes, 20,000 aim angles incl.
+  crossing the top and DDNet targets with and without a previous one: 60,000 results)
+  is bit-identical (`tests/tees.rs`); 5 of 7 mutations caught, the other 2 are
+  equivalent rewrites. Live, `tests/server.rs rendered_positions_are_smooth`: two
+  scripted tees on dm1, the renderer's positions sampled every ~1 ms for 6 s: largest
+  step per frame 2.3 px for the predicted local tee (21.6 px without interpolation) and
+  14.9 px for the other tee (32.8 px; snapshots come every 2 ticks), stable over runs.
+  Screenshots unchanged: Gold Mine 99.73%, LearnToPlay 99.74%. coverage 95.7%: its
+  entities (6.6) plus sub-pixel differences along tile borders (no global offset; a 6.3
+  map issue, see Next).
+  Not compared by screenshot: moving tees and hooks (the two windows are captured a few
+  ms apart; the C++ client also ignores `+hook` on its command line).
+- Next: 6.6 entities (projectiles, lasers incl. doors, pickups, flags), then 6.7
+  (mouse, camera messages: lets dm1/ctf1 and left-facing tees be compared). Open
+  follow-up from 6.3: tile border sampling on coverage.
 
 ## Later
 - Weapon prediction (`m_PredictWeapons`/AntiPingWeapons: FireWeapon, ninja dash,
@@ -296,7 +321,7 @@ Build the `rs_parity` target like `rs_golden`, then per map (repo root):
 (hooktele only for coverage and LearnToPlay; add `verbose` to see every query value).
 `core`, `world` and `doors` work like `collision` (`<name>.core.txt`, `<name>.world.txt`,
 `<name>.doors.txt`; `-hooktele` variants of core and world for coverage and LearnToPlay;
-`doors` takes no flags). M6.2-M6.4 data (repo root):
+`doors` takes no flags). M6.2-M6.5 data (repo root):
 
     python rust-client/scripts/gen_png_corpus.py
     build-rs/rs_parity.exe png rust-client/tests/golden/png.txt rust-client/tests/golden/png data
@@ -307,6 +332,7 @@ Build the `rs_parity` target like `rs_golden`, then per map (repo root):
     build-rs/rs_parity.exe anims rust-client/tests/golden/anims.txt
     build-rs/rs_parity.exe colors rust-client/tests/golden/colors.txt
     build-rs/rs_parity.exe skins rust-client/tests/golden/skins.txt data/skins
+    build-rs/rs_parity.exe interp rust-client/tests/golden/interp.txt
 
 All modes are deterministic: the data regenerates byte for byte.
 

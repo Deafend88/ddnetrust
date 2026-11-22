@@ -300,3 +300,86 @@ fn prediction_recovers_from_interference() {
     );
     drop(server);
 }
+
+/// M6.5: what the renderer would draw each frame (`Predictor::rendered`) moves smoothly
+/// across tick boundaries: two scripted tees on dm1, the local one drawn between its
+/// predicted ticks, the other one between snapshots. Frames come every ~1 ms (20 per
+/// tick), so a tee walking or swinging on its hook moves a few pixels per frame, while
+/// drawing the current tick's position instead jumps by a whole tick's movement.
+#[test]
+fn rendered_positions_are_smooth() {
+    let Some(exe) = server_binary() else {
+        eprintln!("SKIPPED: no DDNet-Server (set DDNET_SERVER or build the game-server target)");
+        return;
+    };
+    let (server, port) = start_server(&exe, "dm1");
+    let addr = format!("127.0.0.1:{port}").parse().unwrap();
+    let start = Instant::now();
+    let (sa, sb) = (
+        net::connect_socket(addr).unwrap(),
+        net::connect_socket(addr).unwrap(),
+    );
+    let mut a = Client::new(PlayerInfo::default(), "", net::random_bytes);
+    let mut b = Client::new(PlayerInfo::default(), "", net::random_bytes);
+    a.connect(net::now(start));
+    b.connect(net::now(start));
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while Instant::now() < deadline && !(local_x(&a).is_some() && local_x(&b).is_some()) {
+        net::pump(&sa, &mut a, net::now(start)).unwrap();
+        net::pump(&sb, &mut b, net::now(start)).unwrap();
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let map = Map::load(a.map().unwrap().data.clone()).unwrap();
+    let col = Collision::new(&map);
+    let mut pred = Predictor::new(&col);
+    let (ida, idb) = (a.local_id().unwrap(), b.local_id().unwrap());
+    let entered = net::now(start);
+    // per tee: last rendered and last snapshot position, largest step of each, frames
+    let mut track = [(None, None, 0f32, 0f32, 0u32); 2];
+    while net::now(start) - entered < 6 * FREQ {
+        let now = net::now(start);
+        net::scripted_input(&mut a.input, now - entered);
+        net::scripted_input(&mut b.input, now - entered + FREQ);
+        net::pump(&sa, &mut a, now).unwrap();
+        net::pump(&sb, &mut b, now).unwrap();
+        pred.update(&mut a);
+        let rendered = pred.rendered(&a);
+        // a tee that left the snapshot (out of range) starts over when it returns
+        for (k, id) in [ida, idb].into_iter().enumerate() {
+            if !rendered.iter().any(|r| r.id == id) {
+                (track[k].0, track[k].1) = (None, None);
+            }
+        }
+        for r in rendered {
+            let k = if r.id == ida {
+                0
+            } else if r.id == idb {
+                1
+            } else {
+                continue;
+            };
+            assert_eq!(r.predicted, r.id == ida);
+            let (last, last_snap, max, max_snap, frames) = &mut track[k];
+            let snap = (r.cur.x as f32, r.cur.y as f32);
+            let step = |a: (f32, f32), b: (f32, f32)| (a.0 - b.0).hypot(a.1 - b.1);
+            if let (Some(l), Some(ls)) = (*last, *last_snap) {
+                *max = max.max(step(l, (r.pos.x, r.pos.y)));
+                *max_snap = max_snap.max(step(ls, snap));
+                *frames += 1;
+            }
+            (*last, *last_snap) = (Some((r.pos.x, r.pos.y)), Some(snap));
+        }
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    eprintln!(
+        "local (predicted) and other: (max step, max step without interpolation, frames) = {:?}",
+        track.map(|t| (t.2, t.3, t.4))
+    );
+    for (max, max_snap, frames) in track.map(|t| (t.2, t.3, t.4)) {
+        assert!(frames > 2000, "{frames}");
+        // the test can tell: without interpolation steps are whole ticks
+        assert!(max_snap >= 10.0, "{max_snap}");
+        assert!(max <= max_snap / 2.0, "{max} vs {max_snap}");
+    }
+    drop(server);
+}

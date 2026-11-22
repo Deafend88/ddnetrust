@@ -234,3 +234,52 @@ fn custom_colored_tee_on_gpu() {
         "got {got:?}, want {want:?} (texel {t:?})"
     );
 }
+
+/// M6.5: `CClient::Update`'s render fractions, positions mixed like
+/// `UpdateRenderedCharacters` and other players' aim (`GetPlayerTargetAngle`):
+/// bit-identical to `rs_parity interp`.
+#[test]
+fn interpolation_matches_cpp() {
+    use ddnet::net::client::intra_ticks;
+    use ddnet::physics::vmath::{mix, vec2};
+    use ddnet_rs::render::players::other_target_angle;
+
+    let text = golden("interp.txt");
+    let mut wrong = Vec::new();
+    for line in text.lines() {
+        let f: Vec<&str> = line.split(' ').collect();
+        let i = |k: usize| f[k].parse::<i64>().unwrap();
+        let got = match f[0] {
+            "intra" => {
+                let t = intra_ticks(i(1) as i32, i(2) as i32, i(3), i(4));
+                format!(
+                    "{} {} {}",
+                    f[..5].join(" "),
+                    [t.intra, t.since_prev, t.tick_time, t.pred_intra]
+                        .map(bits)
+                        .join(" "),
+                    t.prev_pred_tick
+                )
+            }
+            "pos" => {
+                let p = |a: usize| vec2(i(a) as f32, i(a + 1) as f32);
+                let r = mix(p(1), p(3), float(f[5]));
+                format!("{} {} {}", f[..6].join(" "), bits(r.x), bits(r.y))
+            }
+            "angle" => {
+                let p = |a: usize| vec2(i(a) as f32, i(a + 1) as f32);
+                let target = match i(3) {
+                    0 => None,
+                    1 => Some((None, p(6))),
+                    _ => Some((Some(p(4)), p(6))),
+                };
+                let a = other_target_angle(i(1) as i32, i(2) as i32, target, float(f[8]));
+                format!("{} {}", f[..9].join(" "), bits(a))
+            }
+            _ => panic!("{line}"),
+        };
+        check(&mut wrong, got, line);
+    }
+    assert_eq!(text.lines().count(), 60000);
+    assert!(wrong.is_empty(), "differ:\n{}", wrong.join("\n"));
+}
