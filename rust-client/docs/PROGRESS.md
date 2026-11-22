@@ -122,6 +122,10 @@ Maps: coverage, LearnToPlay, Gold Mine, Tutorial, Tsunami, ctf1, dm1 (read from
 
 M5 is complete. Not ported (see Later): weapons, teams/tuning messages, the dummy.
 
+### M6 — rendering, input, basic UI (planning)
+- Plan written in `docs/PLAN.md` §9 (stack, crate layout, sub-steps 6.1-6.8, verification,
+  risks, four open questions). Waiting for the user's review; no M6 code yet.
+
 ## Later
 - Weapon prediction (`m_PredictWeapons`/AntiPingWeapons: FireWeapon, ninja dash,
   projectiles, lasers, pickups) is out of scope for now.

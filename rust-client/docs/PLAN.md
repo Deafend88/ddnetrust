@@ -79,7 +79,7 @@ Design rules:
 
 Planned dependencies (minimal; each checked via context7 before use):
 `flate2` (datafile zlib + map CRC32 via its `crc32fast`), `getrandom` (tokens, UUIDs).
-M6 adds `winit` + `wgpu` (+ an image decoder). Nothing else unless a milestone proves
+M6 adds `winit`, `wgpu`, `egui` (+ `egui-wgpu`, `egui-winit`) and `png` (§9.1). Nothing else unless a milestone proves
 the need. Checked rung 2: the existing Rust in this repo (`src/base/*.rs`,
 `src/engine/**/*.rs`) is a cxx bridge for console/config; nothing reusable.
 
@@ -195,7 +195,7 @@ never needs a C++ build.
   movement (log every tick where predicted ≠ received core).
 
 ### M6 — rendering, input, UI
-Started only after M1–M5 are green. Separate crate; plan written then.
+See §9 (plan for review, 2026-11-22).
 
 ---
 
@@ -205,6 +205,8 @@ Started only after M1–M5 are green. Separate crate; plan written then.
 |---|---|
 | `src/tools/rs_golden.cpp` + 1 line in `TOOLS_SRC` | M2 fixtures |
 | `src/tools/rs_parity.cpp` + `TOOLS_SRC` line + prediction sources for that tool | M4/M5 fixtures |
+| `rs_parity` modes for M6 (envelopes, anims, camera/mouse math, projectiles), plus `game/map/render_map.cpp`/`animstate.cpp` in that tool's sources if needed | M6 fixtures (§9.4) |
+| A C++ client build (`CLIENT=ON`) in its own build dir, no source change | M6 reference screenshots (§9.4) |
 
 No changes to engine/game code. Each is explained in its commit message.
 
@@ -264,3 +266,203 @@ No changes to engine/game code. Each is explained in its commit message.
 3. **HTTP map download:** deferred; in-band only.
 4. **Git:** repo initialised here; `origin` = github.com/Deafend88/ddnetrust,
    `upstream` = github.com/ddnet/ddnet; work happens on branch `rust-client`.
+
+---
+
+## 9. M6 plan: rendering, input, basic UI (draft for review, 2026-11-22)
+
+Goal: a window that shows a local game the way the C++ client does: map layers,
+tees with skins, hooks and entities, interpolated between ticks like C++, with C++
+camera and mouse behaviour, the two camera messages the server expects, and a
+minimal menu. Not in M6: HUD, chat, scoreboard, nameplates, particles, sounds,
+demos, server browser, skin download, entities overlay, dummy. Still localhost only:
+the connect box accepts only loopback addresses (127.0.0.1 / ::1).
+
+### 9.1 Stack (versions checked 2026-11-22 via context7 and crates.io)
+
+| Need | Choice | Why |
+|---|---|---|
+| Window, input | `winit` 0.30.13 (`ApplicationHandler` + `EventLoop::run_app`) | 0.31 is still beta; egui's integration pins `^0.30.13` |
+| GPU | `wgpu` 30 | Vulkan/DX12/Metal/GL from one API; texture arrays and offscreen targets for tiles and screenshots |
+| UI | `egui` 0.37 + `egui-wgpu` 0.37 + `egui-winit` 0.37 | immediate mode, draws into our own wgpu pass (no `eframe`); pins `wgpu ^30` and `winit ^0.30.13`; needs Rust 1.95 (we have 1.98) |
+| PNG | `png` | skins, game skin and mapres are PNG; one small decoder, no `image` crate |
+| Text | egui's font system with DDNet's own `fonts/*.ttf` from the data dir | no freetype binding; M6 needs text only in menus |
+
+Nothing else. No async runtime: the network pump runs in `about_to_wait` on the
+winit thread, in the same order as `CClient::Run` (pump network, update, render).
+
+### 9.2 Architecture
+
+A second crate, so wgpu/winit never touch the protocol/physics build:
+
+```
+rust-client/
+  ddnet/                 library (+ the small additions below)
+  client/                binary `ddnet-rs`
+    src/
+      main.rs            arguments, event loop
+      app.rs             winit ApplicationHandler: pump -> predict -> render, like CClient::Run
+      storage.rs         C++ CStorage search order (read only)
+      config.rs          our own config file, C++ console syntax subset (`name value`, `bind key cmd`)
+      gfx/
+        mod.rs           device/surface setup, offscreen world target, screenshot readback
+        batch.rs         textured-quad batcher: the IGraphics QuadsBegin/SetColor/QuadsDraw subset
+        texture.rs       2D textures and 2D array textures (tilesets, like TEXLOAD_TO_2D_ARRAY_TEXTURE)
+      assets.rs          skins, game skin, mapres, fonts from storage
+      render/
+        map.rs           game/map/render_map.cpp + render_layer.cpp: groups, tile and quad layers
+        envelope.rs      RenderEvalEnvelope + envelope_state.cpp (time source)
+        tee.rs           render.cpp RenderTee, animstate.cpp, skin colours
+        players.rs       components/players.cpp: interpolation, hook, weapon
+        items.rs         components/items.cpp: projectiles, lasers (incl. doors), pickups, flags
+      camera.rs          components/camera.cpp (zoom, center, deadzone/follow factor)
+      controls.rs        components/controls.cpp (mouse pos, clamp) + binds.cpp
+      ui.rs              egui menus
+    tests/               parity and screenshot tests (§9.4)
+```
+
+Additions to the `ddnet` crate (logic, so it stays testable without a GPU):
+- `net/client.rs`: `IntraGameTick`, `PredIntraGameTick` and `IntraGameTickSincePrev`
+  exactly as `CClient::Update` (client.cpp:2934-2946); previous and current snapshot
+  access; sending `Cl_ShowDistance` and `Cl_CameraInfo` (gameclient.cpp:2313-2392).
+- `predict.rs`: keep every predicted character at `PredGameTick - 1` and `PredGameTick`
+  (C++ `m_aClients[i].m_PrevPredicted`/`m_Predicted`); rendering interpolates between
+  them.
+- Code generation also reads `datasrc/content.py`: sprites (game.png/particles.png
+  cells), animations (base, idle, inair, walk, run, hammer/ninja swing keyframes),
+  weapon render specs. Committed like `generated.rs`.
+
+Room for later effects and a movable HUD, without building them now:
+- The world is drawn into an offscreen texture, then composited to the window, with
+  egui drawn last. Screenshots read the same texture back. A later post-effect is one
+  extra pass between the two; M6 ships none.
+- Rendering is a fixed, ordered list of components in the C++ `m_vpAll` order (map
+  background layers, items, players, map foreground, menus). A later effect or HUD
+  element is one more entry with an on/off config value, default off; HUD entries also
+  get a position in the config. M6 adds no trait or registry for this: the list is a
+  plain sequence in `app.rs`.
+- Config values keep the C++ names and defaults where a C++ setting exists
+  (`inp_mousesens 200`, `cl_mouse_max_distance 400`, `cl_default_zoom 10`,
+  `gfx_vsync 0`, ...), so later options are just more entries.
+
+### 9.3 Sub-steps
+
+**6.1 Window and quad renderer.** winit window, wgpu surface, the batcher (textured,
+coloured quads incl. C++ `QuadsSetSubset`, `QuadsSetRotation` and free-form quads),
+normal alpha blending like C++ `BlendNormal`, the offscreen world target, PNG
+screenshots of it, resize and DPI handling, vsync per `gfx_vsync`.
+
+**6.2 Storage and assets.** `storage.rs` ports the CStorage search order: user dir
+(`%APPDATA%\DDNet`, read only: we never write there), then the data dir (a DDNet
+install's `data/`), then the current dir, as `storage.cfg` does. The data dir comes from
+`--data-dir`, then `DDNET_DATA_DIR`, then auto-detection (next to the exe, Steam's
+default path), and for development the repo's `data/` (the same 20.3 assets). All
+loaded at runtime, nothing copied into the repo: default and user skins (`skins/`,
+`downloadedskins/`), game skin (`assets/game/<cl_asset_game>` or `game.png`), particles,
+emoticons, hud, map images (embedded RGBA or `mapres/<name>.png`), fonts. Missing or
+broken files fall back like C++ (default skin, default game skin) and never panic. Our
+own settings live in `%APPDATA%\DDNet-rs\settings.cfg` (see question 2).
+
+**6.3 Map rendering.** Groups (offset, parallax, clipping, `MapScreenToWorld`), tile
+layers via 2D array textures (index 0 skipped, flip/rotate flags, layer colour, colour
+envelope with offset), quad layers (corner colours, UVs, position envelope with
+rotation, colour envelope), the game group at the C++ position (the game layer itself
+is not drawn, as with the default `cl_overlay_entities 0`), background colour.
+Envelopes: `RenderEvalEnvelope` (step, linear, slow, fast, smooth, bezier) with the C++
+time source (`envelope_state.cpp`: synchronized envelopes from game ticks since round
+start plus intra tick, the others from local time).
+
+**6.4 Tees.** `RenderTee` (body, feet, hands, eyes and emotes, outline pass,
+direction-dependent eye offset), `CAnimState` blending, skin colours
+(`cl_player_use_custom_color`, HSL conversion with `UnclampLighting` like C++), the held
+weapon, hook chain and head (`RenderHook`), and the freeze/ninja visuals the tee
+renderer itself draws (frozen eyes, ninja skin when the server says so).
+
+**6.5 Interpolation.** Other players: `mix(prev, cur, IntraGameTick)` of snapshot
+characters. The local tee and predicted others: between the predicted
+`PredGameTick - 1` and `PredGameTick` with `PredIntraGameTick`, as `CPlayers::OnRender`
+does with prediction on (defaults `cl_predict 1`, `cl_antiping 0`). Ported from
+players.cpp:120-240, including the angle interpolation and its wrap-around fix.
+
+**6.6 Entities.** Projectiles (position from start tick, tuning curvature and speed,
+`CalcPos`, with intra tick), lasers incl. door lasers (`RenderLaser`, doors in their own
+colour), pickups (animated offset), flags. Only what `items.cpp` draws for objects the
+server sends; weapon prediction stays out of scope.
+
+**6.7 Camera, mouse, binds, camera messages.** Mouse: raw motion
+(`DeviceEvent::MouseMotion`) with the cursor hidden and confined in game, the
+`OnCursorMove` scaling (`inp_mousesens / 100`), `ClampMousePos`, `GetMaxMouseDistance`,
+the dyncam settings, and the mouse position as the input target. Camera: centered on
+the interpolated local tee plus the follow-factor/deadzone offset, zoom levels and
+smooth zoom (`cl_default_zoom`, `cl_smooth_zoom_time`), `CalcScreenParams`. Binds: key
+names as `keynames.cpp`, the 58 binds of `CBinds::SetDefaults`, `+left`, `+right`,
+`+jump`, `+hook`, `+fire`, weapon keys and zoom keys; other commands are ignored for now.
+Messages: `Cl_ShowDistance` (from `CalcScreenParams` with the window aspect and zoom)
+and `Cl_CameraInfo` (`round_truncate(Zoom * 1000)`, deadzone, follow factor), sent when
+they change, with the C++ rules for which zoom is reported while zoom smoothing runs.
+`ddnet-headless` sends them too, with a fixed 16:9 aspect.
+
+**6.8 Menus (egui).** Start screen: address field (loopback only), name and skin,
+Connect, Settings, Quit. Settings: player name, skin (from storage), mouse sensitivity,
+dyncam on/off, vsync, data-dir path, binds for the movement keys. In game, Esc opens a
+small menu (Disconnect, Settings, Quit). Saved to our own config.
+
+### 9.4 Verification per sub-step
+
+Two kinds of reference, because pixels can't be bit-identical across GPUs and graphics
+APIs (C++ draws with OpenGL, we draw with DX12/Vulkan):
+
+1. **Numeric parity, 100% required.** The same `rs_parity`/`rs_golden` approach as
+   M2-M5, no GPU: everything that decides what is drawn where.
+2. **Screenshot comparison with a tolerance** against the C++ client built from this
+   repo (`CLIENT=ON`, its own build dir, run from a scratch dir whose `storage.cfg`
+   keeps it off `%APPDATA%\DDNet`, connected to the same local server). Same window
+   size, HUD and names off (`cl_showhud 0`, `cl_nameplates 0`), fixed camera (free-view
+   spectating with `set_view x y`, fixed zoom), screenshots via the C++ `screenshot`
+   command and our readback. Metric: the share of pixels with a channel differing by
+   more than 8/255; a diff image is saved on failure. Target per scene: at least 99.5%
+   matching pixels, tuned on the first real scenes; any threshold change is logged in
+   DECISIONS.md.
+
+| Step | Numeric parity (C++ data, 100%) | Screenshots / live |
+|---|---|---|
+| 6.1 | none | offscreen test pattern read back pixel-exact against expected values |
+| 6.2 | storage search order against the `storage.cpp` rules on temp dirs; map image items (embedded/external, sizes) on all 7 maps against `rs_parity map` data | a missing data dir and broken PNGs give the fallbacks, no panic |
+| 6.3 | `rs_parity envelopes`: every envelope of the 7 maps at many times, all curve types; group screen rects (`MapScreenToWorld`) for set centers, zooms and parallax | fixed views on coverage, Tutorial, Gold Mine, ctf1, dm1 (animated quads sampled at the same tick or masked) |
+| 6.4 | `rs_parity anims`: `CAnimState` for every animation and time; skin colour conversion vectors | standing tees with default and custom-colour skins, each emote, both directions |
+| 6.5 | intra-tick formulas against `CClient::Update` vectors; interpolated position and angle for recorded snapshot pairs against the players.cpp formula | live: a per-frame position log shows no jumps at tick boundaries |
+| 6.6 | `rs_parity projectiles`: `CalcPos` positions per tick and intra tick for all weapons and tunings | a scene with pickups, a door laser and flying projectiles (ctf1, coverage) |
+| 6.7 | `ClampMousePos`, `GetMaxMouseDistance`, `CalcScreenParams`, zoom steps, default binds and key names dumped from C++; `Cl_ShowDistance`/`Cl_CameraInfo` bytes against C++ packing | the server accepts both (no invalid-message log); the same raw mouse input gives the same aim as the C++ client (checked by hand once) |
+| 6.8 | none | manual checklist: connect to 127.0.0.1, change settings, restart (settings kept), disconnect, quit; non-loopback addresses refused |
+
+The existing gates stay: `cargo build`, `clippy -D warnings`, `fmt --check`,
+`cargo test`. Screenshot tests skip themselves when there is no GPU adapter or no C++
+client binary, like the server tests do without a server binary.
+
+### 9.5 Risks
+
+1. **GPU differences.** Texture filtering, sub-pixel rasterization and blending differ
+   between OpenGL and DX12/Vulkan. Numeric parity decides the geometry; screenshots use
+   a tolerance, and tile edges are snapped to pixels wherever C++ snaps them.
+2. **Animated content in screenshots.** Envelopes depend on server tick and intra
+   tick. Compare static scenes, or sample both clients at the same tick; the envelope
+   maths itself is covered by numeric parity.
+3. **Text.** egui text won't match the C++ text renderer pixel for pixel. M6 has text
+   only in menus, which aren't compared.
+4. **SDL vs winit input.** Relative mouse scale and acceleration may differ. Raw motion
+   with the same sensitivity formula, checked against the C++ client by hand once.
+5. **Building the C++ client** (SDL2, freetype, png, Vulkan from `ddnet-libs`) may need
+   CMake options (e.g. `-DVULKAN=OFF`), no code changes.
+
+### 9.6 Questions for review
+
+1. **Data dir.** I found your user dir `%APPDATA%\DDNet` (TClient settings, custom
+   `assets/`), but no installed `DDNet.exe` on C:. Plan: the user dir first (read only),
+   then the data dir from `--data-dir`/`DDNET_DATA_DIR`, falling back to the repo's
+   `data/` (same 20.3 assets). Should a specific install path be the default?
+2. **Settings.** Our own `%APPDATA%\DDNet-rs\settings.cfg`; we never write to
+   `%APPDATA%\DDNet`. Should it also read your `settings_ddnet.cfg` once (read only) to
+   pick up name, skin, binds and mouse sensitivity?
+3. **C++ client build** for reference screenshots (separate build dir, scratch storage,
+   never touching your DDNet folder): OK?
+4. **Screenshot threshold:** start at 99.5% of pixels within 8/255?
