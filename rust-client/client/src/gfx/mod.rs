@@ -1,8 +1,10 @@
-//! GPU side of the renderer: wgpu device, textures, one pipeline per blend mode, the
-//! offscreen world target and screenshot readback.
+//! GPU side of the renderer: wgpu device, textures, pipelines per blend mode for 2D and
+//! 2D-array textures, the offscreen world target and screenshot readback.
 //!
 //! Colours stay in gamma space like the C++ OpenGL backends: render targets and
-//! textures are non-sRGB `Unorm` formats, so blending gives the same numbers.
+//! textures are non-sRGB `Unorm` formats, so blending gives the same numbers. Textures
+//! are sampled like the C++ backends: linear, linear between mipmaps, with the default
+//! LOD bias of `gfx_gl_texture_lod_bias -500` (-0.5).
 
 pub mod batch;
 
@@ -15,21 +17,31 @@ use batch::{Batch, Blend, TextureId, Vertex, Wrap};
 const SHADER: &str = r"
 struct Out {
     @builtin(position) pos: vec4f,
-    @location(0) uv: vec2f,
+    @location(0) uv: vec3f,
     @location(1) color: vec4f,
 }
 
 @vertex
-fn vs(@location(0) pos: vec2f, @location(1) uv: vec2f, @location(2) color: vec4f) -> Out {
+fn vs(@location(0) pos: vec2f, @location(1) uv: vec3f, @location(2) color: vec4f) -> Out {
     return Out(vec4f(pos, 0.0, 1.0), uv, color);
 }
+
+// C++ gfx_gl_texture_lod_bias default -500 (in thousandths)
+const LOD_BIAS: f32 = -0.5;
 
 @group(0) @binding(0) var tex: texture_2d<f32>;
 @group(0) @binding(1) var smp: sampler;
 
 @fragment
 fn fs(in: Out) -> @location(0) vec4f {
-    return textureSample(tex, smp, in.uv) * in.color;
+    return textureSampleBias(tex, smp, in.uv.xy, LOD_BIAS) * in.color;
+}
+
+@group(0) @binding(0) var tex_array: texture_2d_array<f32>;
+
+@fragment
+fn fs_array(in: Out) -> @location(0) vec4f {
+    return textureSampleBias(tex_array, smp, in.uv.xy, i32(in.uv.z + 0.5), LOD_BIAS) * in.color;
 }
 ";
 
@@ -54,6 +66,7 @@ pub fn block_on<F: Future>(fut: F) -> F::Output {
 
 struct TextureEntry {
     texture: wgpu::Texture,
+    array: bool,
     /// Bind groups for `Wrap::Repeat` and `Wrap::Clamp`.
     bind_groups: [wgpu::BindGroup; 2],
 }
@@ -65,13 +78,43 @@ pub struct Size {
     pub height: u32,
 }
 
+/// The mipmap chain of an RGBA8 image, level 0 first: each level averages 2x2 texels
+/// of the one before (C++ lets the GPU build them: `glGenerateMipmap`/linear blits).
+pub fn mipmaps(width: u32, height: u32, rgba: &[u8]) -> Vec<(u32, u32, Vec<u8>)> {
+    let mut levels = vec![(width, height, rgba.to_vec())];
+    while let Some(&(w, h, ref data)) = levels.last()
+        && (w > 1 || h > 1)
+    {
+        let (nw, nh) = ((w / 2).max(1), (h / 2).max(1));
+        let at = |x: u32, y: u32, c: u32| {
+            data[((y.min(h - 1) * w + x.min(w - 1)) * 4 + c) as usize] as u32
+        };
+        let mut next = Vec::with_capacity((nw * nh * 4) as usize);
+        for y in 0..nh {
+            for x in 0..nw {
+                for c in 0..4 {
+                    let (x0, y0) = (x * 2, y * 2);
+                    let sum = at(x0, y0, c)
+                        + at(x0 + 1, y0, c)
+                        + at(x0, y0 + 1, c)
+                        + at(x0 + 1, y0 + 1, c);
+                    next.push(((sum + 2) / 4) as u8);
+                }
+            }
+        }
+        levels.push((nw, nh, next));
+    }
+    levels
+}
+
 pub struct Gfx {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
     /// The format of every render target (window surface and world target).
     pub format: wgpu::TextureFormat,
-    layout: wgpu::BindGroupLayout,
-    pipelines: [wgpu::RenderPipeline; 3],
+    layouts: [wgpu::BindGroupLayout; 2],
+    /// [2D, 2D array][blend none, normal, additive]
+    pipelines: [[wgpu::RenderPipeline; 3]; 2],
     textures: Vec<TextureEntry>,
     white: TextureId,
     vertex_buffer: Option<wgpu::Buffer>,
@@ -101,80 +144,88 @@ impl Gfx {
             label: None,
             source: wgpu::ShaderSource::Wgsl(SHADER.into()),
         });
-        let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: None,
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
+        let layouts = [
+            wgpu::TextureViewDimension::D2,
+            wgpu::TextureViewDimension::D2Array,
+        ]
+        .map(|view_dimension| {
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: None,
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension,
+                            multisampled: false,
+                        },
+                        count: None,
                     },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None,
-                },
-            ],
-        });
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: None,
-            bind_group_layouts: &[Some(&layout)],
-            immediate_size: 0,
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            })
         });
         let blend = |factor| wgpu::BlendComponent {
             src_factor: wgpu::BlendFactor::SrcAlpha,
             dst_factor: factor,
             operation: wgpu::BlendOperation::Add,
         };
-        let pipelines = [
+        let blends = [
             None,
             Some(blend(wgpu::BlendFactor::OneMinusSrcAlpha)),
             Some(blend(wgpu::BlendFactor::One)),
-        ]
-        .map(|b| {
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        ];
+        let pipelines = [(0, "fs"), (1, "fs_array")].map(|(kind, entry)| {
+            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: None,
-                layout: Some(&pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &shader,
-                    entry_point: Some("vs"),
-                    compilation_options: Default::default(),
-                    buffers: &[Some(wgpu::VertexBufferLayout {
-                        array_stride: Vertex::SIZE as u64,
-                        step_mode: wgpu::VertexStepMode::Vertex,
-                        attributes: &wgpu::vertex_attr_array![
-                            0 => Float32x2, 1 => Float32x2, 2 => Unorm8x4
-                        ],
-                    })],
-                },
-                primitive: wgpu::PrimitiveState::default(),
-                depth_stencil: None,
-                multisample: wgpu::MultisampleState::default(),
-                fragment: Some(wgpu::FragmentState {
-                    module: &shader,
-                    entry_point: Some("fs"),
-                    compilation_options: Default::default(),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format,
-                        blend: b.map(|c| wgpu::BlendState { color: c, alpha: c }),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                }),
-                multiview_mask: None,
-                cache: None,
+                bind_group_layouts: &[Some(&layouts[kind])],
+                immediate_size: 0,
+            });
+            blends.map(|b| {
+                device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: None,
+                    layout: Some(&layout),
+                    vertex: wgpu::VertexState {
+                        module: &shader,
+                        entry_point: Some("vs"),
+                        compilation_options: Default::default(),
+                        buffers: &[Some(wgpu::VertexBufferLayout {
+                            array_stride: Vertex::SIZE as u64,
+                            step_mode: wgpu::VertexStepMode::Vertex,
+                            attributes: &wgpu::vertex_attr_array![
+                                0 => Float32x2, 1 => Float32x3, 2 => Float32x4
+                            ],
+                        })],
+                    },
+                    primitive: wgpu::PrimitiveState::default(),
+                    depth_stencil: None,
+                    multisample: wgpu::MultisampleState::default(),
+                    fragment: Some(wgpu::FragmentState {
+                        module: &shader,
+                        entry_point: Some(entry),
+                        compilation_options: Default::default(),
+                        targets: &[Some(wgpu::ColorTargetState {
+                            format,
+                            blend: b.map(|c| wgpu::BlendState { color: c, alpha: c }),
+                            write_mask: wgpu::ColorWrites::ALL,
+                        })],
+                    }),
+                    multiview_mask: None,
+                    cache: None,
+                })
             })
         });
         let mut gfx = Self {
             device,
             queue,
             format,
-            layout,
+            layouts,
             pipelines,
             textures: Vec::new(),
             white: TextureId(0),
@@ -212,16 +263,25 @@ impl Gfx {
             address_mode_v: mode,
             mag_filter: filter,
             min_filter: filter,
+            mipmap_filter: wgpu::MipmapFilterMode::Linear,
             ..Default::default()
         })
     }
 
     fn add_texture(&mut self, texture: wgpu::Texture, filter: wgpu::FilterMode) -> TextureId {
-        let view = texture.create_view(&Default::default());
+        let array = texture.depth_or_array_layers() > 1;
+        let view = texture.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(if array {
+                wgpu::TextureViewDimension::D2Array
+            } else {
+                wgpu::TextureViewDimension::D2
+            }),
+            ..Default::default()
+        });
         let bind_groups = [Wrap::Repeat, Wrap::Clamp].map(|wrap| {
             self.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: None,
-                layout: &self.layout,
+                layout: &self.layouts[array as usize],
                 entries: &[
                     wgpu::BindGroupEntry {
                         binding: 0,
@@ -236,39 +296,81 @@ impl Gfx {
         });
         self.textures.push(TextureEntry {
             texture,
+            array,
             bind_groups,
         });
         TextureId(self.textures.len() - 1)
     }
 
-    /// Uploads an RGBA8 image (linear filtering, like C++ textures without mipmaps).
-    pub fn create_texture(&mut self, width: u32, height: u32, rgba: &[u8]) -> TextureId {
-        let size = wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        };
+    /// Uploads layers of RGBA8 images of one size, with their mipmaps.
+    fn upload_layers(&mut self, width: u32, height: u32, layers: &[&[u8]]) -> TextureId {
+        let chains: Vec<_> = layers.iter().map(|l| mipmaps(width, height, l)).collect();
         let texture = self.device.create_texture(&wgpu::TextureDescriptor {
             label: None,
-            size,
-            mip_level_count: 1,
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: layers.len() as u32,
+            },
+            mip_level_count: chains[0].len() as u32,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8Unorm,
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
             view_formats: &[],
         });
-        self.queue.write_texture(
-            texture.as_image_copy(),
-            rgba,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(4 * width),
-                rows_per_image: None,
-            },
-            size,
-        );
+        for (layer, chain) in chains.iter().enumerate() {
+            for (level, (w, h, data)) in chain.iter().enumerate() {
+                self.queue.write_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: &texture,
+                        mip_level: level as u32,
+                        origin: wgpu::Origin3d {
+                            x: 0,
+                            y: 0,
+                            z: layer as u32,
+                        },
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    data,
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(4 * w),
+                        rows_per_image: None,
+                    },
+                    wgpu::Extent3d {
+                        width: *w,
+                        height: *h,
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
+        }
         self.add_texture(texture, wgpu::FilterMode::Linear)
+    }
+
+    /// Uploads an RGBA8 image with mipmaps (C++ textures without `TEXLOAD_NO_MIPMAPS`).
+    pub fn create_texture(&mut self, width: u32, height: u32, rgba: &[u8]) -> TextureId {
+        self.upload_layers(width, height, &[rgba])
+    }
+
+    /// C++: `TEXLOAD_TO_2D_ARRAY_TEXTURE` (`Texture2DTo3D`): a tileset cut into its 16x16
+    /// tiles, one array layer per tile index. Width and height must divide by 16.
+    pub fn create_tile_array(&mut self, width: u32, height: u32, rgba: &[u8]) -> TextureId {
+        let (tw, th) = (width / 16, height / 16);
+        let tiles: Vec<Vec<u8>> = (0..256)
+            .map(|i| {
+                let (tx, ty) = (i % 16 * tw, i / 16 * th);
+                (0..th)
+                    .flat_map(|y| {
+                        let row = ((ty + y) * width + tx) as usize * 4;
+                        rgba[row..row + tw as usize * 4].iter().copied()
+                    })
+                    .collect()
+            })
+            .collect();
+        let refs: Vec<&[u8]> = tiles.iter().map(|t| &t[..]).collect();
+        self.upload_layers(tw, th, &refs)
     }
 
     /// A render target in `self.format`, sampled 1:1 (nearest) when composited.
@@ -313,8 +415,8 @@ impl Gfx {
             .create_view(&Default::default())
     }
 
-    /// Draws `batch` into `target` and clears it for the next frame.
-    pub fn render(&mut self, batch: &mut Batch, target: &wgpu::TextureView) {
+    /// Draws `batch` into `target` (of `size`) and clears it for the next frame.
+    pub fn render(&mut self, batch: &mut Batch, target: &wgpu::TextureView, size: Size) {
         let mut bytes = Vec::with_capacity(batch.vertices.len() * Vertex::SIZE);
         for v in &batch.vertices {
             v.write(&mut bytes);
@@ -356,14 +458,20 @@ impl Gfx {
                 pass.set_vertex_buffer(0, vb.slice(..));
                 pass.set_index_buffer(ib.slice(..), wgpu::IndexFormat::Uint32);
                 for d in &batch.draws {
-                    let pipeline = match d.blend {
+                    let (x, y, w, h) = clip_rect(d.clip, size);
+                    if w == 0 || h == 0 {
+                        continue; // nothing of it is on screen
+                    }
+                    pass.set_scissor_rect(x, y, w, h);
+                    let blend = match d.blend {
                         Blend::None => 0,
                         Blend::Normal => 1,
                         Blend::Additive => 2,
                     };
                     let tex = &self.textures[d.texture.unwrap_or(self.white).0];
-                    let wrap = (d.wrap == Wrap::Clamp) as usize;
-                    pass.set_pipeline(&self.pipelines[pipeline]);
+                    // C++: 2D-array textures have one fixed clamp-to-edge sampler
+                    let wrap = (tex.array || d.wrap == Wrap::Clamp) as usize;
+                    pass.set_pipeline(&self.pipelines[tex.array as usize][blend]);
                     pass.set_bind_group(0, &tex.bind_groups[wrap], &[]);
                     pass.draw_indexed(d.first * 6..(d.first + d.count) * 6, 0, 0..1);
                 }
@@ -412,8 +520,8 @@ impl Gfx {
         }
     }
 
-    /// Draws the world target 1:1 into `target` (the window).
-    pub fn composite(&mut self, target: &wgpu::TextureView) {
+    /// Draws the world target 1:1 into `target` (the window, of `size`).
+    pub fn composite(&mut self, target: &wgpu::TextureView, size: Size) {
         let mut b = Batch::default();
         b.map_screen(0.0, 0.0, 1.0, 1.0);
         b.texture_set(Some(self.world));
@@ -426,7 +534,7 @@ impl Gfx {
             w: 1.0,
             h: 1.0,
         }]);
-        self.render(&mut b, target);
+        self.render(&mut b, target, size);
     }
 
     /// Reads the world target back as tightly packed RGBA8 rows.
@@ -501,4 +609,24 @@ impl Gfx {
             .and_then(|mut w| w.write_image_data(&rgb))
             .map_err(std::io::Error::other)
     }
+}
+
+/// C++: `CGraphics_Threaded::ClipEnable` clamping (top-left origin, no GL flip), or the
+/// whole target without a clip.
+fn clip_rect(clip: Option<[i32; 4]>, size: Size) -> (u32, u32, u32, u32) {
+    let (sw, sh) = (size.width as i32, size.height as i32);
+    let Some([mut x, mut y, mut w, mut h]) = clip else {
+        return (0, 0, size.width, size.height);
+    };
+    if x < 0 {
+        w += x;
+    }
+    if y < 0 {
+        h += y;
+    }
+    x = x.clamp(0, sw);
+    y = y.clamp(0, sh);
+    w = w.clamp(0, sw - x);
+    h = h.clamp(0, sh - y);
+    (x as u32, y as u32, w as u32, h as u32)
 }

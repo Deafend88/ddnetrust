@@ -170,7 +170,7 @@ M5 is complete. Not ported (see Later): weapons, teams/tuning messages, the dumm
   Debug builds now use `opt-level` 1 (dependencies 2): the asset test went from 41 s to
   7 s and the physics parity tests from 11 s to under 1 s, still 100% identical.
   The window shows the default game skin and tee skin loaded through storage.
-- 6.3 Map rendering (in progress). Done so far: `render/envelope.rs` ports
+- 6.3 Map rendering. Part 1: `render/envelope.rs` ports
   CMapBasedEnvelopePointAccess, FindPointIndex, SolveBezier, RenderEvalEnvelope and
   CEnvelopeState::EnvelopeEval (float/double steps kept); `render/mod.rs` ports
   CalcScreenParams and MapScreenToWorld. Verified: `rs_parity envelopes` (every
@@ -181,6 +181,29 @@ M5 is complete. Not ported (see Later): weapons, teams/tuning messages, the dumm
   `rs_parity screen` (5,000 random cameras/aspects/zooms/parallaxes through the real
   IGraphics::MapScreenToWorld) is bit-identical. 7 of 8 envelope mutations are caught
   (the Bezier-item size check is not reachable: no bundled map has Bezier data).
+  Part 2: `render/map.rs` ports CMapRenderer::Load/Render (background up to the game
+  layer, foreground from it), CRenderLayerGroup (clip rectangle with the C++ rounding,
+  parallax via MapScreenToWorld), CRenderLayerTile (visible tiles, the flip/rotate
+  texture-coordinate table, layer colour times colour envelope, the stretched edge
+  tiles outside the map incl. the C++ gaps for 1-tile-wide/high layers) and
+  CRenderLayerQuads (vertex order 0,1,3,2, 8-bit colours times envelope colour,
+  rotation around point 4, position envelope). `gfx` gained 2D-array textures for
+  tilesets (Texture2DTo3D), mipmaps, the C++ LOD bias (-0.5), float vertex colours and
+  per-draw scissor; tile arrays always use clamp-to-edge like the C++ array sampler
+  (using the wrap state instead caused a visible grid). The client computes
+  IntraGameTick/IntraGameTickSincePrev/PredIntraGameTick like CClient::Update, and
+  `ddnet-rs` connects to a local server and draws the map around the local tee
+  (or `--view`/`--follow`).
+  Verified against the C++ client built from this repo (`build-rs-client`, Vulkan,
+  same GPU) with `scripts/compare_screenshots.ps1`: both clients on one local server
+  at the same moment, 800x600, tee masked. Matching pixels (within 8/255): Gold Mine
+  99.78%, Tsunami 99.64%, LearnToPlay 99.53%, Tutorial 99.50%, dm1 99.06% (99.966%
+  with its tees and pickups masked; the rest is the edge of a moving cloud). Every
+  remaining difference seen in the diff images is a tee, a pickup, a door laser, a
+  turret explosion or animation captured a few ms apart. Not compared yet: ctf1 (the
+  followed C++ tee is out of our snapshot range until 6.7 sends Cl_ShowDistance) and
+  coverage (mostly entities; its map layers match, camera 2 px off until 6.5 adds
+  prediction-based centering).
 
 ## Later
 - Weapon prediction (`m_PredictWeapons`/AntiPingWeapons: FireWeapon, ninja dash,

@@ -1,15 +1,22 @@
-//! `ddnet-rs`: the graphical client. So far (M6.2) a window that shows the game skin
-//! and the default tee skin loaded from the DDNet data, drawn through the offscreen
-//! world target. F12 saves a screenshot into our own directory.
+//! `ddnet-rs`: the graphical client. So far (M6.3) it connects to a local server and
+//! draws the map's layers around the local tee (or a fixed view), through the
+//! offscreen world target. F12 saves a screenshot into our own directory.
 //!
-//! Usage: ddnet-rs [--data-dir PATH] [--vsync]
+//! Usage: ddnet-rs <server ip:port> [--data-dir PATH] [--vsync] [--size WxH] [--view X,Y]
+//!        [--follow CLIENT_ID] [--zoom Z] [--screenshot-after SECONDS]
 
+use std::net::{SocketAddr, UdpSocket};
 use std::sync::Arc;
+use std::time::Instant;
 
+use ddnet::map::Map;
+use ddnet::net;
+use ddnet::net::client::{Client, PlayerInfo, State};
+use ddnet::protocol::generated as g;
 use ddnet_rs::assets;
-use ddnet_rs::gfx::batch::{Batch, QuadItem, TextureId};
+use ddnet_rs::gfx::batch::Batch;
 use ddnet_rs::gfx::{self, Gfx, Size, block_on};
-use ddnet_rs::image::Image;
+use ddnet_rs::render::map::{MapRender, View, hsl_packed_to_rgb};
 use ddnet_rs::storage::{self, Storage};
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, KeyEvent, WindowEvent};
@@ -17,28 +24,55 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
 
+/// C++ `cl_background_color` default (packed HSL).
+const BACKGROUND_COLOR: u32 = 128;
+/// C++ `SERVER_TICK_SPEED`: nanoseconds per tick.
+const NANOS_PER_TICK: i64 = 1_000_000_000 / 50;
+
+struct Options {
+    server: SocketAddr,
+    data_dir: Option<std::path::PathBuf>,
+    /// C++ `gfx_vsync` (default 0).
+    vsync: bool,
+    /// Window size in pixels (default: the window system's).
+    size: Option<(u32, u32)>,
+    /// A fixed camera center instead of the local tee.
+    view: Option<(f32, f32)>,
+    /// Center on this player instead of the local tee (screenshot comparisons).
+    follow: Option<i32>,
+    zoom: f32,
+    /// Save one screenshot this many seconds after the map shows, then quit.
+    screenshot_after: Option<f64>,
+}
+
 struct Running {
     window: Arc<Window>,
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
     gfx: Gfx,
-    /// Loaded images with their size, drawn side by side.
-    shown: Vec<(TextureId, u32, u32)>,
+    map: Option<MapRender>,
+    map_shown_at: Option<Instant>,
 }
 
 struct App {
-    /// C++ `gfx_vsync` (default 0).
-    vsync: bool,
+    options: Options,
     storage: Storage,
+    socket: UdpSocket,
+    client: Client,
+    start: Instant,
     running: Option<Running>,
     error: Option<String>,
 }
 
 impl App {
     fn start(&self, event_loop: &ActiveEventLoop) -> Result<Running, String> {
+        let mut attributes = Window::default_attributes().with_title("DDNet-rs");
+        if let Some((w, h)) = self.options.size {
+            attributes = attributes.with_inner_size(winit::dpi::PhysicalSize::new(w, h));
+        }
         let window = Arc::new(
             event_loop
-                .create_window(Window::default_attributes().with_title("DDNet-rs"))
+                .create_window(attributes)
                 .map_err(|e| format!("window: {e}"))?,
         );
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
@@ -58,110 +92,139 @@ impl App {
             .ok_or("the surface does not fit this adapter")?;
         config.format = gfx::pick_format(&surface.get_capabilities(&adapter).formats)
             .ok_or("no non-sRGB 8-bit surface format")?;
-        config.present_mode = if self.vsync {
+        config.present_mode = if self.options.vsync {
             wgpu::PresentMode::AutoVsync
         } else {
             wgpu::PresentMode::AutoNoVsync
         };
         surface.configure(&device, &config);
-        let mut gfx = Gfx::new(
-            device,
-            queue,
-            config.format,
-            Size {
-                width: config.width,
-                height: config.height,
-            },
-        );
-        let images: Vec<Image> = [
-            assets::load_asset(&self.storage, assets::GAME, "default").image,
-            assets::load_skin(&self.storage, "default"),
-        ]
-        .into_iter()
-        .flatten()
-        .collect();
-        if images.len() < 2 {
-            eprintln!("game.png or skins/default.png missing: check the data dir");
-        }
-        let shown = images
-            .iter()
-            .map(|i| {
-                (
-                    gfx.create_texture(i.width, i.height, &i.to_rgba()),
-                    i.width,
-                    i.height,
-                )
-            })
-            .collect();
+        let gfx = Gfx::new(device, queue, config.format, size_of(&config));
         Ok(Running {
             window,
             surface,
             config,
             gfx,
-            shown,
+            map: None,
+            map_shown_at: None,
         })
     }
-}
 
-impl Running {
-    fn resize(&mut self, width: u32, height: u32) {
-        if width == 0 || height == 0 {
-            return; // minimized
+    /// The camera center: the fixed view, else the followed or local tee in the current
+    /// snapshot.
+    // ponytail: no interpolation yet (6.5 adds it)
+    fn camera(&self) -> Option<(f32, f32)> {
+        if let Some(v) = self.options.view {
+            return Some(v);
         }
-        (self.config.width, self.config.height) = (width, height);
-        self.surface.configure(&self.gfx.device, &self.config);
-        self.gfx.resize(Size { width, height });
+        let id = self.options.follow.or(self.client.local_id())?;
+        let item = self
+            .client
+            .snapshot()
+            .iter()
+            .find(|it| it.type_id == g::NETOBJTYPE_CHARACTER && it.id == id)?;
+        let c = g::ObjCharacter::from_ints(&item.data);
+        Some((c.x as f32, c.y as f32))
     }
 
-    fn frame(&mut self) {
-        let frame = match self.surface.get_current_texture() {
+    /// C++: `CEnvelopeState::Update` while playing: predicted tick and intra tick since
+    /// the round start.
+    fn envelope_time(&self) -> i64 {
+        let Some(info) = self
+            .client
+            .snapshot()
+            .iter()
+            .find(|it| it.type_id == g::NETOBJTYPE_GAMEINFO)
+        else {
+            return 0;
+        };
+        let info = g::ObjGameInfo::from_ints(&info.data);
+        let tick = (self.client.pred_tick() - 1 - info.round_start_tick) as i64;
+        (self.client.pred_intra_tick as f64 * NANOS_PER_TICK as f64) as i64 + tick * NANOS_PER_TICK
+    }
+
+    fn frame(&mut self, event_loop: &ActiveEventLoop) {
+        let now = net::now(self.start);
+        if let Err(e) = net::pump(&self.socket, &mut self.client, now) {
+            self.error = Some(format!("network: {e}"));
+            return event_loop.exit();
+        }
+        if self.client.state() == State::Offline {
+            self.error = Some(format!("disconnected: '{}'", self.client.conn.error()));
+            return event_loop.exit();
+        }
+        let Some(r) = &mut self.running else { return };
+        if r.map.is_none()
+            && self.client.state() == State::Online
+            && let Some(m) = self
+                .client
+                .map()
+                .and_then(|m| Map::load(m.data.clone()).ok())
+        {
+            let images = assets::load_map_images(&self.storage, &m);
+            r.map = Some(MapRender::new(&mut r.gfx, &m, &images));
+            r.map_shown_at = Some(Instant::now());
+        }
+        let camera = self.camera();
+        let envelope_time = self.envelope_time();
+        let r = self.running.as_mut().unwrap();
+        let frame = match r.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(t)
             | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
             wgpu::CurrentSurfaceTexture::Outdated | wgpu::CurrentSurfaceTexture::Lost => {
-                self.surface.configure(&self.gfx.device, &self.config);
+                r.surface.configure(&r.gfx.device, &r.config);
                 return;
             }
             _ => return,
         };
+        let size = size_of(&r.config);
         let mut batch = Batch::default();
-        let (w, h) = (self.config.width as f32, self.config.height as f32);
-        batch.clear(0.5, 0.5, 0.5);
-        batch.map_screen(0.0, 0.0, w, h);
-        let mut x = 0.0;
-        let slot = w / self.shown.len().max(1) as f32;
-        for &(tex, tw, th) in &self.shown {
-            let scale = (slot / tw as f32).min(h / th as f32);
-            batch.texture_set(Some(tex));
-            batch.quads_begin();
-            batch.quads_draw_tl(&[QuadItem {
-                x,
-                y: 0.0,
-                w: tw as f32 * scale,
-                h: th as f32 * scale,
-            }]);
-            x += slot;
+        let [cr, cg, cb] = hsl_packed_to_rgb(BACKGROUND_COLOR);
+        batch.clear(cr, cg, cb);
+        if let (Some(map), Some(center)) = (&r.map, camera) {
+            let view = View {
+                center,
+                zoom: self.options.zoom,
+                width: size.width,
+                height: size.height,
+                envelope_time,
+            };
+            map.render_background(&mut batch, &view);
+            map.render_foreground(&mut batch, &view);
         }
-        let world = self.gfx.world_view();
-        self.gfx.render(&mut batch, &world);
-        self.gfx
-            .composite(&frame.texture.create_view(&Default::default()));
-        self.window.pre_present_notify();
-        self.gfx.queue.present(frame);
+        let world = r.gfx.world_view();
+        r.gfx.render(&mut batch, &world, size);
+        r.gfx
+            .composite(&frame.texture.create_view(&Default::default()), size);
+        r.window.pre_present_notify();
+        r.gfx.queue.present(frame);
+        if let (Some(after), Some(shown)) = (self.options.screenshot_after, r.map_shown_at)
+            && shown.elapsed().as_secs_f64() >= after
+        {
+            screenshot(&r.gfx);
+            event_loop.exit();
+        }
     }
+}
 
-    fn screenshot(&self) {
-        let secs = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_secs());
-        let Some(dir) = storage::save_dir().map(|d| d.join("screenshots")) else {
-            eprintln!("screenshot failed: no directory to save to");
-            return;
-        };
-        let path = dir.join(format!("screenshot_{secs}.png"));
-        match std::fs::create_dir_all(&dir).and_then(|()| self.gfx.screenshot(&path)) {
-            Ok(()) => println!("saved {}", path.display()),
-            Err(e) => eprintln!("screenshot failed: {e}"),
-        }
+fn size_of(config: &wgpu::SurfaceConfiguration) -> Size {
+    Size {
+        width: config.width,
+        height: config.height,
+    }
+}
+
+fn screenshot(gfx: &Gfx) {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    let Some(dir) = storage::save_dir().map(|d| d.join("screenshots")) else {
+        eprintln!("screenshot failed: no directory to save to");
+        return;
+    };
+    let path = dir.join(format!("screenshot_{secs}.png"));
+    match std::fs::create_dir_all(&dir).and_then(|()| gfx.screenshot(&path)) {
+        Ok(()) => println!("saved {}", path.display()),
+        Err(e) => eprintln!("screenshot failed: {e}"),
     }
 }
 
@@ -180,11 +243,23 @@ impl ApplicationHandler for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
-        let Some(r) = &mut self.running else { return };
         match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
-            WindowEvent::Resized(size) => r.resize(size.width, size.height),
-            WindowEvent::RedrawRequested => r.frame(),
+            WindowEvent::CloseRequested => {
+                self.client.disconnect(None, net::now(self.start));
+                let _ = net::pump(&self.socket, &mut self.client, net::now(self.start));
+                event_loop.exit();
+            }
+            WindowEvent::Resized(size) => {
+                if let Some(r) = &mut self.running
+                    && size.width > 0
+                    && size.height > 0
+                {
+                    (r.config.width, r.config.height) = (size.width, size.height);
+                    r.surface.configure(&r.gfx.device, &r.config);
+                    r.gfx.resize(size_of(&r.config));
+                }
+            }
+            WindowEvent::RedrawRequested => self.frame(event_loop),
             WindowEvent::KeyboardInput {
                 event:
                     KeyEvent {
@@ -194,7 +269,11 @@ impl ApplicationHandler for App {
                         ..
                     },
                 ..
-            } => r.screenshot(),
+            } => {
+                if let Some(r) = &self.running {
+                    screenshot(&r.gfx);
+                }
+            }
             _ => {}
         }
     }
@@ -207,14 +286,69 @@ impl ApplicationHandler for App {
     }
 }
 
+fn parse_args() -> Result<Options, String> {
+    let mut args = std::env::args().skip(1);
+    let server: SocketAddr = args
+        .next()
+        .and_then(|a| a.parse().ok())
+        .ok_or("usage: ddnet-rs <server ip:port> [--data-dir PATH] [--vsync] [--size WxH] [--view X,Y] [--follow CLIENT_ID] [--zoom Z] [--screenshot-after SECONDS]")?;
+    if !server.ip().is_loopback() {
+        return Err(format!(
+            "refusing {server}: only local (loopback) servers are allowed for now"
+        ));
+    }
+    let mut o = Options {
+        server,
+        data_dir: None,
+        vsync: false,
+        size: None,
+        view: None,
+        follow: None,
+        zoom: 1.0,
+        screenshot_after: None,
+    };
+    while let Some(flag) = args.next() {
+        let mut value = || args.next().ok_or(format!("{flag} needs a value"));
+        match flag.as_str() {
+            "--data-dir" => o.data_dir = Some(value()?.into()),
+            "--vsync" => o.vsync = true,
+            "--view" => {
+                let v = value()?;
+                let (x, y) = v.split_once(',').ok_or("--view X,Y")?;
+                o.view = Some((
+                    x.parse().map_err(|_| "--view X,Y")?,
+                    y.parse().map_err(|_| "--view X,Y")?,
+                ));
+            }
+            "--zoom" => o.zoom = value()?.parse().map_err(|_| "--zoom Z")?,
+            "--follow" => o.follow = Some(value()?.parse().map_err(|_| "--follow CLIENT_ID")?),
+            "--size" => {
+                let v = value()?;
+                let (w, h) = v.split_once('x').ok_or("--size WxH")?;
+                o.size = Some((
+                    w.parse().map_err(|_| "--size WxH")?,
+                    h.parse().map_err(|_| "--size WxH")?,
+                ));
+            }
+            "--screenshot-after" => {
+                o.screenshot_after =
+                    Some(value()?.parse().map_err(|_| "--screenshot-after SECONDS")?)
+            }
+            _ => return Err(format!("unknown option {flag}")),
+        }
+    }
+    Ok(o)
+}
+
 fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let data_dir = args
-        .iter()
-        .position(|a| a == "--data-dir")
-        .and_then(|i| args.get(i + 1))
-        .map(std::path::PathBuf::from);
-    let storage = match Storage::new(data_dir) {
+    let options = match parse_args() {
+        Ok(o) => o,
+        Err(e) => {
+            eprintln!("{e}");
+            std::process::exit(2);
+        }
+    };
+    let storage = match Storage::new(options.data_dir.clone()) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("storage: {e}");
@@ -227,9 +361,22 @@ fn main() {
     if storage.data_dir.is_none() {
         eprintln!("no DDNet data dir found: pass --data-dir or set DDNET_DATA_DIR");
     }
+    let socket = match net::connect_socket(options.server) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("socket: {e}");
+            std::process::exit(1);
+        }
+    };
+    let start = Instant::now();
+    let mut client = Client::new(PlayerInfo::default(), "", net::random_bytes);
+    client.connect(net::now(start));
     let mut app = App {
-        vsync: args.iter().any(|a| a == "--vsync"),
+        options,
         storage,
+        socket,
+        client,
+        start,
         running: None,
         error: None,
     };
@@ -245,7 +392,7 @@ fn main() {
         eprintln!("event loop: {e}");
     }
     if let Some(e) = app.error {
-        eprintln!("cannot start: {e}");
+        eprintln!("{e}");
         std::process::exit(1);
     }
 }

@@ -206,7 +206,7 @@ See §9 (plan for review, 2026-11-22).
 | `src/tools/rs_golden.cpp` + 1 line in `TOOLS_SRC` | M2 fixtures |
 | `src/tools/rs_parity.cpp` + `TOOLS_SRC` line + prediction sources for that tool | M4/M5 fixtures |
 | `rs_parity` modes for M6 (png, mapimages, envelopes, anims, camera/mouse math, projectiles); `rs_parity` added to the CMake regex of tools that link `engine-gfx` (the PNG loader); `game/map/render_map.cpp`/`animstate.cpp` in its sources if needed | M6 fixtures (§9.4) |
-| A C++ client build (`CLIENT=ON`) in its own build dir, no source change | M6 reference screenshots (§9.4) |
+| A C++ client build (`CLIENT=ON`, `VULKAN=ON`) in `build-rs-client`, no source change; `render_map.cpp` compiled into `rs_parity` | M6 reference screenshots and envelope parity (§9.4) |
 
 No changes to engine/game code. Each is explained in its commit message.
 

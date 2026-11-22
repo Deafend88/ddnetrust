@@ -43,7 +43,14 @@ fn test_pattern_pixels() {
     let mut batch = Batch::default();
     test_pattern(&mut batch, id);
     let world = g.world_view();
-    g.render(&mut batch, &world);
+    g.render(
+        &mut batch,
+        &world,
+        Size {
+            width: W,
+            height: H,
+        },
+    );
     let px = g.read_world();
     assert_eq!(px.len(), (4 * W * H) as usize);
     let at = |x: u32, y: u32| {
@@ -99,7 +106,14 @@ fn resize_and_screenshot() {
     let mut batch = Batch::default();
     batch.clear(1.0, 0.0, 0.0);
     let world = g.world_view();
-    g.render(&mut batch, &world);
+    g.render(
+        &mut batch,
+        &world,
+        Size {
+            width: W,
+            height: H,
+        },
+    );
     let path = std::env::temp_dir().join(format!("ddnet-rs-shot-{}.png", std::process::id()));
     g.screenshot(&path).unwrap();
     let decoder = png::Decoder::new(std::io::BufReader::new(std::fs::File::open(&path).unwrap()));

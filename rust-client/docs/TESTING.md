@@ -153,13 +153,43 @@ Set-Location C:\ddnetrust-master\rust-client
 cargo run --release --bin ddnet-rs
 ```
 
+It connects to a local server like `ddnet-headless`:
+
+```powershell
+cargo run --release --bin ddnet-rs -- 127.0.0.1:8303
+```
+
+and draws the map around your tee (tees, entities and HUD come in later steps).
 Options: `--data-dir PATH` (else `DDNET_DATA_DIR`, else `data\` in the current folder,
 else this repo's `data\`, else next to the exe or Steam's default install) and `--vsync`
 (C++ `gfx_vsync`, off by default). At start it prints its storage paths in search
 order, e.g. `%APPDATA%\DDNet` (your DDNet folder, only read, never written), the data
-dir and the current folder. Right now (step 6.2) the window shows the default game skin
-(`game.png`) and the default tee skin side by side on grey. **F12** saves a screenshot
-to `%APPDATA%\DDNet-rs\screenshots\`. It does not connect to a server yet.
+dir and the current folder. More options: `--size WxH`, `--zoom Z`, `--view X,Y` (fixed
+camera), `--follow ID` (center on another player), `--screenshot-after SECONDS`.
+**F12** saves a screenshot to `%APPDATA%\DDNet-rs\screenshots\`.
+
+## 6. Compare with the C++ client
+
+Build the C++ client once (VS 18 developer shell, repo root; it needs the Vulkan SDK):
+
+```powershell
+cmake -G Ninja -S . -B build-rs-client -DCMAKE_BUILD_TYPE=Release -DCLIENT=ON -DSERVER=OFF -DTOOLS=OFF -DVULKAN=ON -DDOWNLOAD_GTEST=OFF -DVIDEORECORDER=OFF -DUPNP=OFF -DDISCORD=OFF -DSTEAM=OFF -DAUTOUPDATE=OFF
+```
+
+```powershell
+cmake --build build-rs-client --target game-client
+```
+
+Then, with `cargo build -p ddnet-rs --examples` done:
+
+```powershell
+rust-client\scripts\compare_screenshots.ps1 -Map dm1
+```
+
+It starts a local server, the C++ client (scratch folder, never your DDNet folder, its
+web requests blocked by a dead local proxy) and DDNet-rs following the C++ player,
+captures both windows and prints the share of matching pixels; the pictures and a diff
+image land in `%TEMP%\ddnet-rs-compare\`. Two windows open for a few seconds.
 
 The GPU test (`cargo test -p ddnet-rs --test gfx`) checks a renderer test pattern pixel by
 pixel; it reports itself skipped when no graphics adapter is available.

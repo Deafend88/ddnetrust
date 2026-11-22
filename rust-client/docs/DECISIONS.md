@@ -78,6 +78,24 @@ client's files are never touched. Data-dir discovery additionally accepts
 `--data-dir`/`DDNET_DATA_DIR` first and Steam's default install path last; the
 repository's `data/` takes the place of C++'s compiled-in `DATA_DIR`.
 
+## 2026-11-22 — Map rendering: what differs from C++ on purpose
+
+- Map images the C++ client fails to load become its "null texture" (a debug pattern);
+  DDNet-rs draws those layers untextured. Tilesets whose size is not divisible by 16
+  are resized to powers of two by C++ before cutting them into tiles; DDNet-rs draws
+  such tile layers untextured. Neither happens with the bundled maps.
+- Mipmaps are built on the CPU with a 2x2 average (C++: GPU blits); results differ by
+  at most rounding.
+- Envelopes run on the C++ in-game clock (predicted tick and intra tick since the
+  round start); C++ only uses local time for offline backgrounds, which DDNet-rs does
+  not have.
+- Reference screenshots come from the Vulkan backend (the default of DDNet's Windows
+  builds). This repo's C++ client fell back to the legacy OpenGL 1.x path when built
+  without Vulkan, which renders tiles differently; that path is not a reference.
+- Running the stock C++ client for comparisons: even with `cl_show_welcome 1` it asks
+  the master servers and info.ddnet.org on start; the comparison script blocks this
+  with a dead local proxy (seen failing in its log), so it stays local.
+
 ## 2026-11-22 — PNG loading: png-rs set up to behave like libpng
 
 `CImageLoader::LoadPng` uses libpng; DDNet-rs uses the `png` crate with the same

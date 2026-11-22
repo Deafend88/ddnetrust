@@ -225,6 +225,11 @@ pub struct Client {
     game_time: SmoothTime,
     predicted_time: SmoothTime,
     pred_tick: i32,
+    /// C++: `IntraGameTick`, `IntraGameTickSincePrev`, `PredIntraGameTick`: how far the
+    /// render time is between the previous and current (predicted) tick.
+    pub intra_tick: f32,
+    pub intra_tick_since_prev: f32,
+    pub pred_intra_tick: f32,
     inputs: [SentInput; NUM_INPUTS],
     current_input: usize,
     next_ping: i64,
@@ -285,6 +290,9 @@ impl Client {
             game_time: SmoothTime::default(),
             predicted_time: SmoothTime::default(),
             pred_tick: 0,
+            intra_tick: 0.0,
+            intra_tick_since_prev: 0.0,
+            pred_intra_tick: 0.0,
             inputs: [SentInput {
                 tick: -1,
                 data: ObjPlayerInput::default(),
@@ -805,7 +813,19 @@ impl Client {
             self.on_new_snapshot(now);
         }
         if let Some(prev) = self.prev_tick {
-            let new_pred_tick = (pred_now * TICK_SPEED / FREQ) as i32 + 1;
+            // C++ client.cpp:2934: the render fractions between ticks
+            let cur_tick_start = cur as i64 * FREQ / TICK_SPEED;
+            let prev_tick_start = prev as i64 * FREQ / TICK_SPEED;
+            let prev_pred_tick = (pred_now * TICK_SPEED / FREQ) as i32;
+            self.intra_tick =
+                (game_now - prev_tick_start) as f32 / (cur_tick_start - prev_tick_start) as f32;
+            self.intra_tick_since_prev =
+                (game_now - prev_tick_start) as f32 / (FREQ / TICK_SPEED) as f32;
+            let cur_pred_start = (prev_pred_tick + 1) as i64 * FREQ / TICK_SPEED;
+            let prev_pred_start = prev_pred_tick as i64 * FREQ / TICK_SPEED;
+            self.pred_intra_tick =
+                (pred_now - prev_pred_start) as f32 / (cur_pred_start - prev_pred_start) as f32;
+            let new_pred_tick = prev_pred_tick + 1;
             if (new_pred_tick - prev).abs() > self.max_latency_ticks() {
                 // prediction time reset
                 self.predicted_time
