@@ -123,8 +123,8 @@ Maps: coverage, LearnToPlay, Gold Mine, Tutorial, Tsunami, ctf1, dm1 (read from
 M5 is complete. Not ported (see Later): weapons, teams/tuning messages, the dummy.
 
 ### M6 — rendering, input, basic UI (in progress)
-- Plan in `docs/PLAN.md` §9, approved 2026-11-22. The four open questions (§9.6) were
-  not answered; the plan's defaults apply until they are.
+- Plan in `docs/PLAN.md` §9, approved 2026-11-22. The open questions (§9.6) are
+  answered in §9.7.
 - 6.1 Window and quad renderer: new crate `client/` (binary `ddnet-rs`, wgpu 30.0.2,
   winit 0.30.13, png 0.18). `gfx/batch.rs` ports the C++ quad API (MapScreen,
   QuadsBegin, SetColor/SetColor4 with `NormalizeColor` rounding to 8 bits,
@@ -205,7 +205,6 @@ M5 is complete. Not ported (see Later): weapons, teams/tuning messages, the dumm
   coverage (mostly entities; its map layers match, camera 2 px off until 6.5 adds
   prediction-based centering).
 - 6.4 Tees: **not started** (no code, nothing uncommitted; last commit a10a83219).
-  The plan's open questions (PLAN.md §9.6) are still unanswered; the defaults apply.
   Next steps, in order:
   1. Generate `datasrc/content.py` data (sprite sets with their grids, sprites,
      animations with keyframes, weapon specs) into a committed

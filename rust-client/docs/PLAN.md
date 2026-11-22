@@ -466,3 +466,14 @@ client binary, like the server tests do without a server binary.
 3. **C++ client build** for reference screenshots (separate build dir, scratch storage,
    never touching your DDNet folder): OK?
 4. **Screenshot threshold:** start at 99.5% of pixels within 8/255?
+
+### 9.7 Answers (2026-11-22)
+
+1. **Data dir:** keep the proposed order (user dir read only, then `--data-dir` /
+   `DDNET_DATA_DIR`, then the repo's `data/`). No specific install path.
+2. **Settings:** yes, read `%APPDATA%\DDNet\settings_ddnet.cfg` once, read only, for
+   name, skin, binds and mouse sensitivity. Never write to `%APPDATA%\DDNet`.
+3. **C++ client build:** approved (separate build dir, scratch storage); already done
+   in `build-rs-client`.
+4. **Threshold:** 99.5% of pixels within 8/255. A step that needs a different
+   threshold says so to the user with the reason, and logs it in DECISIONS.md.
