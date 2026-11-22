@@ -170,6 +170,17 @@ M5 is complete. Not ported (see Later): weapons, teams/tuning messages, the dumm
   Debug builds now use `opt-level` 1 (dependencies 2): the asset test went from 41 s to
   7 s and the physics parity tests from 11 s to under 1 s, still 100% identical.
   The window shows the default game skin and tee skin loaded through storage.
+- 6.3 Map rendering (in progress). Done so far: `render/envelope.rs` ports
+  CMapBasedEnvelopePointAccess, FindPointIndex, SolveBezier, RenderEvalEnvelope and
+  CEnvelopeState::EnvelopeEval (float/double steps kept); `render/mod.rs` ports
+  CalcScreenParams and MapScreenToWorld. Verified: `rs_parity envelopes` (every
+  envelope of the 7 maps plus the invalid indices around them, 200 samples each,
+  through the real RenderEvalEnvelope; 10,000 results) and `rs_parity
+  envelopes-synthetic` (500 random envelopes with every curve type, unknown ones,
+  equal/decreasing times and Bezier tangents; 20,000 results) are bit-identical;
+  `rs_parity screen` (5,000 random cameras/aspects/zooms/parallaxes through the real
+  IGraphics::MapScreenToWorld) is bit-identical. 7 of 8 envelope mutations are caught
+  (the Bezier-item size check is not reachable: no bundled map has Bezier data).
 
 ## Later
 - Weapon prediction (`m_PredictWeapons`/AntiPingWeapons: FireWeapon, ninja dash,
@@ -226,6 +237,9 @@ Build the `rs_parity` target like `rs_golden`, then per map (repo root):
     python rust-client/scripts/gen_png_corpus.py
     build-rs/rs_parity.exe png rust-client/tests/golden/png.txt rust-client/tests/golden/png data
     build-rs/rs_parity.exe mapimages "data/maps/<name>.map" rust-client/tests/golden/maps/<name>.mapimages.txt
+    build-rs/rs_parity.exe envelopes "data/maps/<name>.map" rust-client/tests/golden/maps/<name>.envelopes.txt
+    build-rs/rs_parity.exe envelopes-synthetic rust-client/tests/golden/envelopes.txt
+    build-rs/rs_parity.exe screen rust-client/tests/golden/screen.txt
 
 All modes are deterministic: the data regenerates byte for byte.
 

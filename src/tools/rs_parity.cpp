@@ -7,6 +7,9 @@
 //        rs_parity world <map file> <output file> [hooktele] [verbose]
 //        rs_parity doors <map file> <output file>
 //        rs_parity mapimages <map file> <output file>
+//        rs_parity envelopes <map file> <output file>
+//        rs_parity envelopes-synthetic <output file>
+//        rs_parity screen <output file>
 //        rs_parity png <output file> <dir>...
 //
 // "map" loads the map with CMap + CLayers and writes every item, every data blob and
@@ -33,7 +36,9 @@
 //
 // "png" loads every PNG below the given directories with the C++ PNG loader and
 // RGBA conversion. "mapimages" runs the map image decisions of CMapImages on the map
-// and on copies with changed image/layer item ints.
+// and on copies with changed image/layer item ints. "envelopes" evaluates the map's
+// envelopes like CEnvelopeState; "envelopes-synthetic" random ones of every curve type.
+// "screen" maps random cameras to world rectangles with IGraphics::MapScreenToWorld.
 
 #include <base/dbg.h>
 #include <base/fs.h>
@@ -46,6 +51,7 @@
 #include <base/vmath.h>
 
 #include <engine/gfx/image_loader.h>
+#include <engine/graphics.h>
 #include <engine/gfx/image_manipulation.h>
 #include <engine/image.h>
 #include <engine/map.h>
@@ -56,6 +62,7 @@
 #include <game/client/prediction/entities/character.h>
 #include <game/client/prediction/gameworld.h>
 #include <game/collision.h>
+#include <game/map/render_map.h>
 #include <game/gamecore.h>
 #include <game/teamscore.h>
 #include <game/layers.h>
@@ -64,6 +71,7 @@
 #include <zlib.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <filesystem>
@@ -1292,6 +1300,200 @@ static int MapImagesMode(const char *pMapFile, const char *pOutFile)
 	return 0;
 }
 
+// CEnvelopeState::EnvelopeEval (envelope_state.cpp) on a point access, copied because
+// CEnvelopeState needs the whole game client; RenderEvalEnvelope is the real one.
+static void EnvelopeStateEval(CMapBasedEnvelopePointAccess &Access, std::chrono::nanoseconds Time, int TimeOffsetMillis, int EnvelopeIndex, ColorRGBA &Result, size_t Channels)
+{
+	if(EnvelopeIndex < 0)
+		return;
+	const std::vector<const CMapItemEnvelope *> &vpEnvelopes = Access.Envelopes();
+	if(EnvelopeIndex >= (int)vpEnvelopes.size())
+		return;
+	const CMapItemEnvelope *pEnvelope = vpEnvelopes[EnvelopeIndex];
+	if(pEnvelope->m_Channels <= 0)
+		return;
+	Channels = std::min({Channels, (size_t)pEnvelope->m_Channels, (size_t)CEnvPoint::MAX_CHANNELS});
+	Access.SetPointsRange(pEnvelope->m_StartPoint, pEnvelope->m_NumPoints);
+	if(Access.NumPoints() == 0)
+		return;
+	CRenderMap::RenderEvalEnvelope(&Access, Time + std::chrono::milliseconds(TimeOffsetMillis), Result, Channels);
+}
+
+static void PrintColor(FILE *f, const ColorRGBA &c)
+{
+	fprintf(f, " %08x %08x %08x %08x\n", FloatBits(c.r), FloatBits(c.g), FloatBits(c.b), FloatBits(c.a));
+}
+
+static long long RandomTime(long long MaxMillis)
+{
+	const long long Range = std::max(MaxMillis, 1LL) * 1000000LL;
+	switch(Rand() % 4)
+	{
+	case 0: return (long long)(Rand() % 100) * 1000000LL; // early, whole ms
+	case 1: return ((long long)Rand() << 20 | Rand()) % (4 * Range) - Range; // incl. negative
+	case 2: return ((long long)Rand() << 24 | Rand()) * 1000LL; // large
+	default: return ((long long)Rand() << 16 | Rand()) % (2 * Range);
+	}
+}
+
+// "envelopes": every envelope of the map (and the invalid indices around them) at many
+// times, offsets and channel counts, as the client evaluates layer and quad envelopes:
+// "<index> <time ns> <offset ms> <channels> <init 0|1> <r> <g> <b> <a>" (float bits).
+static int EnvelopesMode(const char *pMapFile, const char *pOutFile)
+{
+	std::unique_ptr<IStorage> pStorage = CreateLocalStorage();
+	std::unique_ptr<IMap> pMap = CreateMap();
+	CLayers Layers;
+	FILE *f = fopen(pOutFile, "wb");
+	if(!pStorage || !f || !LoadMapAndLayers(pStorage.get(), pMapFile, pMap.get(), &Layers))
+		return -1;
+	CMapBasedEnvelopePointAccess Access(pMap.get());
+	const int Num = (int)Access.Envelopes().size();
+	fprintf(f, "envelopes %d points %d\n", Num, Access.NumPointsMax());
+	for(int Index = -1; Index <= Num; Index++)
+	{
+		long long MaxMillis = 1000;
+		if(Index >= 0 && Index < Num)
+		{
+			Access.SetPointsRange(Access.Envelopes()[Index]->m_StartPoint, Access.Envelopes()[Index]->m_NumPoints);
+			if(Access.NumPoints() > 0)
+				MaxMillis = Access.GetPoint(Access.NumPoints() - 1)->m_Time.GetInternal();
+		}
+		for(int i = 0; i < 200; i++)
+		{
+			const long long Time = RandomTime(MaxMillis);
+			const int Offset = Rand() % 3 == 0 ? 0 : (int)(Rand() % 20001) - 10000;
+			const int Channels = 3 + Rand() % 2;
+			const bool Init = Rand() % 2;
+			ColorRGBA Result = Init ? ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f) : ColorRGBA(0.0f, 0.0f, 0.0f, 0.0f);
+			EnvelopeStateEval(Access, std::chrono::nanoseconds(Time), Offset, Index, Result, Channels);
+			fprintf(f, "%d %lld %d %d %d", Index, Time, Offset, Channels, Init);
+			PrintColor(f, Result);
+		}
+	}
+	fclose(f);
+	return 0;
+}
+
+class CListPointAccess : public IEnvelopePointAccess
+{
+public:
+	std::vector<CEnvPoint> m_vPoints;
+	std::vector<CEnvPointBezier> m_vBeziers; // empty: no bezier data
+	int NumPoints() const override { return (int)m_vPoints.size(); }
+	const CEnvPoint *GetPoint(int Index) const override { return Index >= 0 && Index < NumPoints() ? &m_vPoints[Index] : nullptr; }
+	const CEnvPointBezier *GetBezier(int Index) const override { return Index >= 0 && Index < (int)m_vBeziers.size() ? &m_vBeziers[Index] : nullptr; }
+};
+
+// "envelopes-synthetic": random envelopes through RenderEvalEnvelope: every curve type
+// (and unknown ones), equal and decreasing point times, bezier tangents of all sizes.
+// "env <points> <bezier 0|1>", then "p <time> <curve> <v0..v3> [<16 bezier ints>]",
+// then "e <time ns> <channels> <r> <g> <b> <a>" (float bits, result starts at 0).
+static int EnvelopesSyntheticMode(const char *pOutFile)
+{
+	FILE *f = fopen(pOutFile, "wb");
+	if(!f)
+		return -1;
+	auto Signed = [](int Range) { return (int)(Rand() % (2 * Range + 1)) - Range; };
+	for(int e = 0; e < 500; e++)
+	{
+		CListPointAccess Access;
+		const int Num = 1 + Rand() % 8;
+		const bool HasBezier = Rand() % 3 != 0;
+		int Time = Rand() % 100;
+		for(int p = 0; p < Num; p++)
+		{
+			CEnvPoint Point;
+			Point.m_Time = CFixedTime(Time);
+			Point.m_Curvetype = Rand() % 9 == 0 ? 6 + Rand() % 3 : (Rand() % 3 == 0 ? CURVETYPE_BEZIER : Rand() % 5);
+			for(int &Value : Point.m_aValues)
+				Value = Rand() % 4 == 0 ? Signed(1024) : Signed(300000);
+			Access.m_vPoints.push_back(Point);
+			if(HasBezier)
+			{
+				CEnvPointBezier Bezier;
+				for(int c = 0; c < CEnvPoint::MAX_CHANNELS; c++)
+				{
+					Bezier.m_aInTangentDeltaX[c] = CFixedTime(Signed(Rand() % 2 ? 50 : 3000));
+					Bezier.m_aInTangentDeltaY[c] = Signed(Rand() % 2 ? 2048 : 200000);
+					Bezier.m_aOutTangentDeltaX[c] = CFixedTime(Signed(Rand() % 2 ? 50 : 3000));
+					Bezier.m_aOutTangentDeltaY[c] = Signed(Rand() % 2 ? 2048 : 200000);
+				}
+				Access.m_vBeziers.push_back(Bezier);
+			}
+			const int Step = Rand() % 6;
+			Time += Step == 0 ? 0 : Step == 1 ? -(int)(Rand() % 50) : (int)(Rand() % 3000);
+		}
+		fprintf(f, "env %d %d\n", Num, HasBezier);
+		for(int p = 0; p < Num; p++)
+		{
+			const CEnvPoint &P = Access.m_vPoints[p];
+			fprintf(f, "p %d %d %d %d %d %d", P.m_Time.GetInternal(), P.m_Curvetype, P.m_aValues[0], P.m_aValues[1], P.m_aValues[2], P.m_aValues[3]);
+			if(HasBezier)
+			{
+				const CEnvPointBezier &B = Access.m_vBeziers[p];
+				for(int c = 0; c < 4; c++)
+					fprintf(f, " %d", B.m_aInTangentDeltaX[c].GetInternal());
+				for(int c = 0; c < 4; c++)
+					fprintf(f, " %d", B.m_aInTangentDeltaY[c]);
+				for(int c = 0; c < 4; c++)
+					fprintf(f, " %d", B.m_aOutTangentDeltaX[c].GetInternal());
+				for(int c = 0; c < 4; c++)
+					fprintf(f, " %d", B.m_aOutTangentDeltaY[c]);
+			}
+			fprintf(f, "\n");
+		}
+		const long long MaxMillis = std::max(Access.m_vPoints.back().m_Time.GetInternal(), 1);
+		for(int i = 0; i < 40; i++)
+		{
+			long long Time = RandomTime(MaxMillis);
+			if(i < Num)
+				Time = Access.m_vPoints[i].m_Time.GetInternal() * 1000000LL; // exactly on a point
+			const int Channels = 1 + Rand() % 4;
+			ColorRGBA Result(0.0f, 0.0f, 0.0f, 0.0f);
+			CRenderMap::RenderEvalEnvelope(&Access, std::chrono::nanoseconds(Time), Result, Channels);
+			fprintf(f, "e %lld %d", Time, Channels);
+			PrintColor(f, Result);
+		}
+	}
+	fclose(f);
+	return 0;
+}
+
+// "screen": IGraphics::MapScreenToWorld (engine/graphics.cpp, with CalcScreenParams) for
+// random cameras, aspects, zooms and group parallax/offsets, as CRenderLayerGroup::Render
+// calls it: "<inputs as float bits> <left> <top> <right> <bottom>".
+static int ScreenMode(const char *pOutFile)
+{
+	FILE *f = fopen(pOutFile, "wb");
+	if(!f)
+		return -1;
+	// Both functions only use their arguments, so no real IGraphics object is needed
+	// (IGraphics is abstract; the tool has no graphics backend).
+	alignas(IGraphics) static unsigned char s_aNoGraphics[sizeof(IGraphics)] = {};
+	const IGraphics *pGraphics = reinterpret_cast<const IGraphics *>(s_aNoGraphics);
+	const float aAspects[] = {4.0f / 3.0f, 16.0f / 9.0f, 16.0f / 10.0f, 21.0f / 9.0f, 1.0f, 0.5f, 3.0f};
+	const float aZooms[] = {1.0f, 0.5f, 2.0f, 0.9f, 1.1f};
+	for(int i = 0; i < 5000; i++)
+	{
+		const float Aspect = Rand() % 2 ? aAspects[Rand() % 7] : (float)(1 + Rand() % 4000) / (float)(1 + Rand() % 4000);
+		const float Zoom = Rand() % 2 ? aZooms[Rand() % 5] : (1 + Rand() % 2000) / 100.0f;
+		const float CenterX = (float)((int)(Rand() % 200001) - 100000) + (Rand() % 1000) / 1000.0f;
+		const float CenterY = (float)((int)(Rand() % 200001) - 100000) + (Rand() % 1000) / 1000.0f;
+		const int ParallaxX = Rand() % 3 == 0 ? 100 : (int)(Rand() % 501) - 200;
+		const int ParallaxY = Rand() % 3 == 0 ? 100 : (int)(Rand() % 501) - 200;
+		const float ParallaxZoom = (float)std::clamp(std::max(ParallaxX, ParallaxY), 0, 100);
+		const int OffsetX = Rand() % 2 ? 0 : (int)(Rand() % 10001) - 5000;
+		const int OffsetY = Rand() % 2 ? 0 : (int)(Rand() % 10001) - 5000;
+		const CScreenRect Rect = pGraphics->MapScreenToWorld(CenterX, CenterY, ParallaxX, ParallaxY, ParallaxZoom, OffsetX, OffsetY, Aspect, Zoom);
+		fprintf(f, "%08x %08x %08x %08x %d %d %d %d %08x %08x %08x %08x\n", FloatBits(Aspect), FloatBits(Zoom), FloatBits(CenterX), FloatBits(CenterY),
+			ParallaxX, ParallaxY, OffsetX, OffsetY,
+			FloatBits(Rect.m_TopLeft.x), FloatBits(Rect.m_TopLeft.y), FloatBits(Rect.m_BottomRight.x), FloatBits(Rect.m_BottomRight.y));
+	}
+	fclose(f);
+	return 0;
+}
+
 int main(int argc, const char **argv)
 {
 	CCmdlineFix CmdlineFix(&argc, &argv);
@@ -1300,6 +1502,12 @@ int main(int argc, const char **argv)
 		return MapMode(argv[2], argv[3], argv[4]);
 	if(argc >= 4 && str_comp(argv[1], "png") == 0)
 		return PngMode(argv[2], argc - 3, argv + 3);
+	if(argc == 4 && str_comp(argv[1], "envelopes") == 0)
+		return EnvelopesMode(argv[2], argv[3]);
+	if(argc == 3 && str_comp(argv[1], "screen") == 0)
+		return ScreenMode(argv[2]);
+	if(argc == 3 && str_comp(argv[1], "envelopes-synthetic") == 0)
+		return EnvelopesSyntheticMode(argv[2]);
 	if(argc == 4 && str_comp(argv[1], "mapimages") == 0)
 		return MapImagesMode(argv[2], argv[3]);
 	if(argc == 4 && str_comp(argv[1], "doors") == 0)
@@ -1318,6 +1526,6 @@ int main(int argc, const char **argv)
 			return CoreMode(argv[2], argv[3], HookTele, Verbose);
 		return CollisionMode(argv[2], argv[3], HookTele, Verbose);
 	}
-	log_error(TOOL_NAME, "Usage: %s map <map file> <output file> <scratch dir> | collision|core|world <map file> <output file> [hooktele] [verbose] | doors|mapimages <map file> <output file> | png <output file> <dir>...", argc > 0 ? argv[0] : TOOL_NAME);
+	log_error(TOOL_NAME, "Usage: %s map <map file> <output file> <scratch dir> | collision|core|world <map file> <output file> [hooktele] [verbose] | doors|mapimages|envelopes <map file> <output file> | envelopes-synthetic|screen <output file> | png <output file> <dir>...", argc > 0 ? argv[0] : TOOL_NAME);
 	return -1;
 }
