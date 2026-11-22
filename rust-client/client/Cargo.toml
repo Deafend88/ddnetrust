@@ -1,0 +1,13 @@
+[package]
+name = "ddnet-rs"
+version = "0.1.0"
+edition = "2024"
+license = "Zlib"
+description = "DDNet client with rendering, built on the ddnet crate"
+publish = false
+
+[dependencies]
+ddnet = { path = "../ddnet" }
+png = "0.18"
+wgpu = "30.0.2"
+winit = "0.30.13"

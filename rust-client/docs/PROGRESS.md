@@ -122,9 +122,28 @@ Maps: coverage, LearnToPlay, Gold Mine, Tutorial, Tsunami, ctf1, dm1 (read from
 
 M5 is complete. Not ported (see Later): weapons, teams/tuning messages, the dummy.
 
-### M6 — rendering, input, basic UI (planning)
-- Plan written in `docs/PLAN.md` §9 (stack, crate layout, sub-steps 6.1-6.8, verification,
-  risks, four open questions). Waiting for the user's review; no M6 code yet.
+### M6 — rendering, input, basic UI (in progress)
+- Plan in `docs/PLAN.md` §9, approved 2026-11-22. The four open questions (§9.6) were
+  not answered; the plan's defaults apply until they are.
+- 6.1 Window and quad renderer: new crate `client/` (binary `ddnet-rs`, wgpu 30.0.2,
+  winit 0.30.13, png 0.18). `gfx/batch.rs` ports the C++ quad API (MapScreen,
+  QuadsBegin, SetColor/SetColor4 with `NormalizeColor` rounding to 8 bits,
+  QuadsSetSubset/SetSubsetFree, QuadsSetRotation around the quad center, QuadsDraw/
+  DrawTL/DrawFreeform with the C++ vertex and corner-slot order incl. the freeform
+  quirk, blend none/normal/additive, wrap repeat/clamp, Clear with alpha 0).
+  `gfx/mod.rs`: wgpu device, one pipeline per blend mode with the GL blend factors,
+  non-sRGB targets and textures so blending stays in gamma space like OpenGL, the
+  offscreen world target composited 1:1 to the window, resize, `gfx_vsync`, and
+  screenshots read back from the world target (RGB PNG, F12). Own `block_on` instead
+  of a dependency.
+  Verified: `tests/gfx.rs` draws a 64x32 test pattern on the GPU (all three blend
+  modes, a 1:1 texture, a subset, repeat and clamp, a rotated quad, a freeform quad,
+  corner colours) and every pixel matches the value the C++ GL backend computes for
+  the same calls (gradient: corners); 8 hand-made mutations (blend factor, clear alpha,
+  colour rounding, freeform order, subset/colour slots, y axis, wrap) are all caught.
+  Screenshot round trip and resize tested. The window opens, renders and closes
+  cleanly; what it looks like on screen was not checked by eye here (no C++ client yet
+  to compare against; that comes with 6.3).
 
 ## Later
 - Weapon prediction (`m_PredictWeapons`/AntiPingWeapons: FireWeapon, ninja dash,

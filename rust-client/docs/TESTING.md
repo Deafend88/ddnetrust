@@ -145,3 +145,19 @@ Notes:
   `127.0.0.1:8304` in steps 3 and 4.
 - Start `ddnet-headless` after the C++ client joins if you want to see the "rust tee"
   enter; it can run any number of times against the same server.
+
+## 5. The graphical client (M6, work in progress)
+
+```powershell
+Set-Location C:\ddnetrust-master\rust-client
+cargo run --release --bin ddnet-rs
+```
+
+Add `-- --vsync` to turn vsync on (C++ `gfx_vsync`, off by default). Right now (step
+6.1) the window shows the renderer's test pattern stretched to the window: a blue
+background, red/green blend squares, small textured squares, a yellow bar, a magenta
+square and a red/green/black/white gradient. **F12** saves a screenshot to
+`screenshots\` in the current folder. It does not connect to a server yet.
+
+The GPU test (`cargo test -p ddnet-rs --test gfx`) checks the same pattern pixel by
+pixel; it reports itself skipped when no graphics adapter is available.
