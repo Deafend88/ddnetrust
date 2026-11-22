@@ -228,6 +228,10 @@ impl App {
         if let (Some(after), Some(shown)) = (self.options.screenshot_after, r.map_shown_at)
             && shown.elapsed().as_secs_f64() >= after
         {
+            // for reproducing the view with --view
+            if let Some((x, y)) = camera {
+                println!("camera center {x} {y}");
+            }
             screenshot(&r.gfx);
             event_loop.exit();
         }

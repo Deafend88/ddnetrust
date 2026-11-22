@@ -267,9 +267,20 @@ M5 is complete. Not ported (see Later): weapons, teams/tuning messages, the dumm
   map issue, see Next).
   Not compared by screenshot: moving tees and hooks (the two windows are captured a few
   ms apart; the C++ client also ignores `+hook` on its command line).
+- 6.3 follow-up, coverage tile borders: not a renderer bug. On coverage the C++ tee
+  keeps moving after spawning (it slides, later swings on an endless hook), so the two
+  clients, captured a few ms apart and centering on predicted vs interpolated
+  positions, look at views a fraction of a pixel apart; tile edges then differ. Checked
+  with a fixed reference: one C++ capture, and `examples/maprender.rs` (new: renders a
+  map at a given center on the GPU without a server; `ddnet-rs --screenshot-after`
+  now prints its camera center) at candidate centers. At the C++ view (577.7, 1105)
+  the dense tiles match 99.68% and the whole picture 99.974% with only the entities
+  (6.6) and the tee masked (96.9% unmasked); at the integer center 578 it is 85.8%.
+  On the way, ruled out: LOD bias (-0.7 to 0), mip filters (box is best; floor,
+  nearest, tent and shifted boxes are worse), PrintWindow capture (identical to our
+  readback), display scaling (96 DPI), map group parallax.
 - Next: 6.6 entities (projectiles, lasers incl. doors, pickups, flags), then 6.7
-  (mouse, camera messages: lets dm1/ctf1 and left-facing tees be compared). Open
-  follow-up from 6.3: tile border sampling on coverage.
+  (mouse, camera messages: lets dm1/ctf1 and left-facing tees be compared).
 
 ## Later
 - Weapon prediction (`m_PredictWeapons`/AntiPingWeapons: FireWeapon, ninja dash,
