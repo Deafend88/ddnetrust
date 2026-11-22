@@ -2,6 +2,7 @@
 //! and the physics layer selection of `CLayers::Init` (`src/game/layers.cpp`).
 
 pub mod datafile;
+pub mod images;
 
 use std::collections::{HashMap, HashSet};
 
@@ -109,6 +110,9 @@ pub struct Map {
     pub front: Option<Layer>,
     pub switch: Option<Layer>,
     pub tune: Option<Layer>,
+    /// (data index, width, height) of the tile layers `CLayers::InitTilemapSkip` writes
+    /// skip counts into, in layer order.
+    skip_layers: Vec<(i32, usize, usize)>,
 }
 
 /// C++: `IntsToStr` (gamecore.cpp:92): `None` if the name is not valid UTF-8.
@@ -342,12 +346,22 @@ impl Map {
             front: None,
             switch: None,
             tune: None,
+            skip_layers: Vec::new(),
         };
         for &(start, num) in &group_layers {
             for layer in layers.start + start..layers.start + start + num {
                 let t = &map.datafile.items[layer].data;
                 if t[1] != LAYERTYPE_TILES {
                     continue;
+                }
+                const NOT_SKIPPED: i32 = TILESLAYERFLAG_TELE
+                    | TILESLAYERFLAG_SPEEDUP
+                    | TILESLAYERFLAG_FRONT
+                    | TILESLAYERFLAG_SWITCH
+                    | TILESLAYERFLAG_TUNE;
+                if t[T_FLAGS] & NOT_SKIPPED == 0 {
+                    let (w, h) = (t[T_WIDTH] as usize, t[T_HEIGHT] as usize);
+                    map.skip_layers.push((t[T_DATA], w, h));
                 }
                 let (kind, slot) = physics_slot(t[T_FLAGS]);
                 let layer = Layer {
@@ -372,6 +386,32 @@ impl Map {
             return Err("game layer data is invalid".into());
         }
         Ok(map)
+    }
+
+    /// Data blob `index` as the C++ client sees it: `data` plus the skip counts that
+    /// `CLayers::InitTilemapSkip` (layers.cpp:103) writes into the `m_Skip` byte of
+    /// game and design tile layers at map load (quirks kept: tile 0 of a row is never
+    /// written, runs stop at 255).
+    pub fn client_data(&self, index: i32) -> Option<Vec<u8>> {
+        let mut data = self.data(index)?;
+        for &(_, w, h) in self.skip_layers.iter().filter(|l| l.0 == index) {
+            if data.len() < w * h * 4 {
+                continue; // cannot happen: Map::load checks tile data sizes
+            }
+            for y in 0..h {
+                let row = &mut data[y * w * 4..(y + 1) * w * 4];
+                let mut x = 1;
+                while x < w {
+                    let mut skipped = 1;
+                    while x + skipped < w && skipped < 255 && row[(x + skipped) * 4] == 0 {
+                        skipped += 1;
+                    }
+                    row[x * 4 + 2] = (skipped - 1) as u8;
+                    x += skipped;
+                }
+            }
+        }
+        Some(data)
     }
 
     /// Data blob `index`, decompressed and, for tile layers, validated or unpacked;

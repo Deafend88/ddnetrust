@@ -1,0 +1,993 @@
+run 0
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 1
+set 28 13 20
+set 5 4 0
+set 24 6 20
+image 0 0 unused
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/bg_cloud1.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 2
+set 7 4 6
+set 25 6 65536
+set 31 13 7
+image 0 2 external mapres/bg_cloud1.png
+image 1 0 unused
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 3
+set 5 0 2147483647
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 truncated
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 4
+set 6 5 7
+set 2 5 33
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 5
+set 6 1 62
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 6
+set 2 4 3
+set 26 6 7
+set 4 3 20
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/grass_doodads.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 0 unused
+image 6 2 external mapres/sun.png
+run 7
+set 2 4 0
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 8
+set 4 1 6
+set 6 2 2147483647
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 9
+set 2 2 21
+set 3 3 20
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 10
+set 22 6 2147483647
+set 3 2 5
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 11
+set 24 6 7
+set 5 1 2
+image 0 0 unused
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 12
+set 26 6 65536
+set 6 5 65536
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 0 unused
+image 6 2 external mapres/sun.png
+run 13
+set 7 1 2
+set 21 6 20
+set 6 5 7
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 14
+set 3 5 20
+set 27 6 1
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 0 unused
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 15
+set 4 0 2147483647
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 truncated
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 16
+set 1 4 5
+set 4 4 7
+set 31 13 1
+image 0 2 external mapres/mountains.png
+image 1 3 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 noname
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 17
+set 32 13 61
+set 3 2 43
+set 25 6 1
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 18
+set 5 0 -1
+set 7 1 5
+set 33 13 2
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 3 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 19
+set 7 0 65536
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 truncated
+run 20
+set 6 1 20
+set 4 1 0
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 21
+set 23 6 21
+set 29 13 1
+image 0 2 external mapres/bg_cloud1.png
+image 1 3 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 0 unused
+run 22
+set 2 3 65536
+set 2 1 1
+set 3 3 2147483647
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 23
+set 25 6 21
+set 5 1 82
+image 0 2 external mapres/bg_cloud1.png
+image 1 0 unused
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 24
+set 2 2 1
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 25
+set 27 6 20
+set 30 13 2147483647
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 0 unused
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 26
+set 5 4 5
+set 7 1 20
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/mountains.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 27
+set 21 6 65536
+set 5 0 2
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 truncated
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 28
+set 25 6 21
+image 0 2 external mapres/bg_cloud1.png
+image 1 0 unused
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 29
+set 6 3 6
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 30
+set 4 5 6
+set 5 3 6
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 31
+set 7 5 1
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 32
+set 3 0 65536
+set 23 6 20
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 truncated
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 0 unused
+run 33
+set 4 0 20
+set 23 6 -1
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 truncated
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 0 unused
+run 34
+set 6 1 20
+set 5 5 3
+set 2 0 3
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 truncated
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 35
+set 2 1 6
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 36
+set 4 0 0
+set 26 6 65536
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 0 unused
+image 6 2 external mapres/sun.png
+run 37
+set 34 13 -1
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 38
+set 31 13 20
+set 32 13 5
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 3 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 39
+set 4 2 6
+set 30 13 6
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 3 external mapres/sun.png
+run 40
+set 4 0 1
+set 1 2 20
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 41
+set 23 6 21
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 0 unused
+run 42
+set 6 3 20
+set 5 2 6
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 43
+set 2 3 1
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 44
+set 29 13 6
+set 21 6 21
+set 24 6 1
+image 0 0 unused
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 3 external mapres/sun.png
+run 45
+set 28 13 7
+set 4 0 20
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 truncated
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 46
+set 23 6 -1
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 0 unused
+run 47
+set 33 13 2147483647
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 48
+set 5 2 3
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 49
+set 23 6 2
+set 33 13 7
+set 6 1 21
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 0 unused
+run 50
+set 3 5 6
+set 4 0 2147483647
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 truncated
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 51
+set 5 4 5
+set 30 13 2
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 3 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/mountains.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 52
+set 32 13 20
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 53
+set 1 0 21
+image 0 2 truncated
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 54
+set 34 13 1
+image 0 2 external mapres/bg_cloud1.png
+image 1 3 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 55
+set 7 2 2
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 56
+set 29 13 5
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 3 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 57
+set 24 6 65536
+set 7 3 0
+image 0 0 unused
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 nodata
+run 58
+set 4 2 7
+set 6 0 1
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 59
+set 5 3 2
+set 23 6 65536
+set 31 13 0
+image 0 3 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 0 unused
+run 60
+set 26 6 0
+set 6 0 7
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 0 unused
+image 6 2 external mapres/sun.png
+run 61
+set 34 13 2147483647
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 62
+set 6 2 2
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 63
+set 6 0 6
+set 32 13 1
+image 0 2 external mapres/bg_cloud1.png
+image 1 3 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 truncated
+image 6 2 external mapres/sun.png
+run 64
+set 4 0 7
+set 1 4 21
+image 0 2 noname
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 truncated
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 65
+set 26 6 21
+set 3 1 5
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 0 unused
+image 6 2 external mapres/sun.png
+run 66
+set 5 4 90
+set 2 4 20
+set 1 4 44
+image 0 2 noname
+image 1 2 noname
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 noname
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 67
+set 6 4 86
+set 23 6 20
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 noname
+image 6 0 unused
+run 68
+set 5 1 21
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 69
+set 2 0 6
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 truncated
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 70
+set 24 6 5
+image 0 0 unused
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 71
+set 3 2 5
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 72
+set 6 1 0
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 73
+set 2 2 91
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 74
+set 22 6 65536
+set 6 1 -1
+set 5 0 2147483647
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 truncated
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 75
+set 32 13 -1
+set 7 2 7
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 76
+set 22 6 5
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 77
+set 34 13 3
+set 6 4 3
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/grass_doodads.png
+image 6 2 external mapres/sun.png
+run 78
+set 7 5 20
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 79
+set 22 6 5
+set 29 13 20
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 80
+set 6 3 -1
+set 1 2 3
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 81
+set 24 6 1
+set 6 3 21
+image 0 0 unused
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 82
+set 25 6 5
+set 5 4 5
+set 4 0 2147483647
+image 0 2 external mapres/bg_cloud1.png
+image 1 0 unused
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 truncated
+image 4 1 external mapres/mountains.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 83
+set 7 1 57
+set 3 5 2
+set 7 4 0
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/bg_cloud1.png
+run 84
+set 3 5 -1
+set 4 0 65536
+set 3 1 2
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 truncated
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 85
+set 5 5 6
+set 2 1 20
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 86
+set 5 0 85
+set 5 5 3
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 truncated
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 87
+set 2 5 2
+set 5 5 6
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 88
+set 32 13 65536
+set 30 13 7
+set 30 13 1
+image 0 2 external mapres/bg_cloud1.png
+image 1 3 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 89
+set 2 4 21
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 noname
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 90
+set 6 4 2
+set 5 0 2147483647
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 truncated
+image 5 2 external mapres/bg_cloud3.png
+image 6 2 external mapres/sun.png
+run 91
+set 6 3 65536
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 92
+set 29 13 2147483647
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 93
+set 2 3 5
+set 4 5 7
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 94
+set 5 0 7
+set 6 5 2147483647
+set 28 13 21
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 truncated
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 95
+set 26 6 -1
+set 4 3 6
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 0 unused
+image 6 2 external mapres/sun.png
+run 96
+set 33 13 5
+set 5 3 -1
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 3 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 97
+set 2 4 1
+set 2 0 20
+set 2 2 25
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 truncated
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 98
+set 26 6 2147483647
+set 33 13 2147483647
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 0 unused
+image 6 2 external mapres/sun.png
+run 99
+set 2 4 2147483647
+set 6 5 5
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 noname
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png
+run 100
+set 34 13 20
+image 0 2 external mapres/bg_cloud1.png
+image 1 2 external mapres/bg_cloud2.png
+image 2 2 external mapres/bg_cloud3.png
+image 3 1 external mapres/grass_doodads.png
+image 4 1 external mapres/grass_main.png
+image 5 2 external mapres/mountains.png
+image 6 2 external mapres/sun.png

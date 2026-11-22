@@ -1,0 +1,4326 @@
+run 0
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 1
+set 96 6 152
+set 41 4 0
+set 113 6 152
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 0 unused
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/unique2, Alisa.png
+run 2
+set 2 4 39
+set 115 6 65536
+set 104 6 40
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 0 unused
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 3
+set 13 0 2147483647
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 truncated
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 4
+set 4 5 40
+set 31 5 33
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 9d480e13
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 5
+set 18 1 62
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 62 328 d8021202
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 6
+set 25 4 3
+set 108 6 40
+set 8 3 152
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 external mapres/clouds1.png
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 0 unused
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 7
+set 14 4 0
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 8
+set 10 1 39
+set 2 2 2147483647
+image 0 2 nodata
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 9
+set 7 2 153
+set 30 3 152
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 153 13a6f316
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 external mapres/sgn_mp_hook.png
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 10
+set 134 6 2147483647
+set 11 2 5
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 11
+set 134 6 40
+set 27 1 2
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 2 1024 9865b533
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 12
+set 90 6 65536
+set 41 5 65536
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 13
+set 41 1 2
+set 70 6 152
+set 40 5 40
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 nodata
+image 39 2 external mapres/stars.png
+run 14
+set 20 5 152
+set 135 13 1
+image 0 2 embedded 192 192 027fdfdb
+image 1 3 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 nodata
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 15
+set 12 0 2147483647
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 truncated
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 16
+set 20 4 5
+set 30 4 40
+set 79 13 1
+image 0 2 embedded 192 192 027fdfdb
+image 1 3 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 17
+set 92 13 61
+set 27 2 43
+set 115 6 1
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 43 4de9e1fd
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 18
+set 14 0 -1
+set 24 1 5
+set 113 6 2
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 5 698 455fc46c
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 19
+set 7 0 65536
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 truncated
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 20
+set 25 1 152
+set 3 1 0
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 152 634 0ea46c4d
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 21
+set 67 6 153
+set 115 6 1
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 22
+set 7 3 65536
+set 41 1 1
+set 24 3 2147483647
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 external mapres/clouds.png
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 external mapres/sgn_hook_move_right.png
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 23
+set 85 13 153
+set 24 1 82
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 82 698 f15b8107
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 24
+set 10 2 1
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 25
+set 101 6 152
+set 90 6 2147483647
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 0 unused
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 26
+set 35 4 5
+set 22 1 152
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 152 376 084ef4dd
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 27
+set 113 6 65536
+set 15 0 2
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 truncated
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 28
+set 133 13 153
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 29
+set 35 3 39
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 external mapres/sgn_speed_airjump.png
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 30
+set 3 5 39
+set 4 3 39
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 31
+set 5 5 1
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 32
+set 41 0 65536
+set 106 6 152
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 0 unused
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 truncated
+run 33
+set 8 0 152
+set 92 13 -1
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 truncated
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 34
+set 29 1 152
+set 17 5 3
+set 27 0 3
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 nodata
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 truncated
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 152 168 e9618031
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 35
+set 3 1 39
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 36
+set 16 0 0
+set 67 6 65536
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 37
+set 85 13 -1
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 38
+set 126 13 152
+set 71 6 5
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 0 unused
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 39
+set 12 2 39
+set 89 13 39
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 39 09ecbe66
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 3 external mapres/stars.png
+run 40
+set 27 0 1
+set 40 2 152
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 nodata
+image 39 2 external mapres/stars.png
+run 41
+set 99 6 153
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 0 unused
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 42
+set 2 3 152
+set 31 2 39
+image 0 2 external mapres/airjump_particle.png
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 39 e3c72cfb
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 43
+set 32 3 1
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 external mapres/sgn_rocket_jump_hints.png
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 44
+set 69 6 39
+set 97 6 21
+set 115 6 1
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 0 unused
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 0 unused
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 45
+set 136 13 40
+set 15 0 152
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 truncated
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 46
+set 109 6 -1
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 0 unused
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 47
+set 91 6 2147483647
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 1 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 48
+set 11 2 3
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 49
+set 119 6 2
+set 100 6 40
+set 17 1 153
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 153 525 66fde4bf
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 0 unused
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 50
+set 28 5 39
+set 20 0 2147483647
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 truncated
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 nodata
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 51
+set 38 4 5
+set 68 6 2
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 0 unused
+run 52
+set 120 13 20
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 3 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 53
+set 30 0 153
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 truncated
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 54
+set 117 6 1
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 55
+set 18 2 2
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 2 4f4456a6
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 56
+set 108 6 5
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 0 unused
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 57
+set 91 6 65536
+set 8 3 0
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 1 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 58
+set 23 2 40
+set 13 0 1
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 40 131c8d9a
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 59
+set 12 3 2
+set 104 6 65536
+set 116 6 0
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 external mapres/grass_main_grey.png
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 0 unused
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 60
+set 72 6 0
+set 27 0 40
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 0 unused
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 truncated
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 61
+set 120 13 2147483647
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 62
+set 7 2 2
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 2 6aa7929e
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 63
+set 16 0 39
+set 118 6 1
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 truncated
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 64
+set 28 0 40
+set 17 4 153
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 truncated
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 65
+set 83 13 153
+set 17 1 5
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 0 unused
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 5 525 8efa1797
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 66
+set 33 4 90
+set 17 4 152
+set 34 4 44
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 67
+set 37 4 86
+set 72 6 152
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 0 unused
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 68
+set 31 1 153
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 153 262 ff0d2ea9
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 69
+set 22 0 39
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 truncated
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 70
+set 67 6 5
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 71
+set 9 2 5
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 5 e6bc8360
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 72
+set 26 1 0
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 dims
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 73
+set 21 2 91
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 91 392b3d28
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 74
+set 68 6 65536
+set 26 1 -1
+set 37 0 2147483647
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 dims
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 truncated
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 0 unused
+run 75
+set 128 13 -1
+set 35 2 40
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 40 5b429f39
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 76
+set 68 6 5
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 0 unused
+run 77
+set 92 13 3
+set 25 4 3
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 3 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 78
+set 32 5 152
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 nodata
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 79
+set 105 6 5
+set 116 6 152
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 0 unused
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 80
+set 37 3 -1
+set 41 2 3
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 external mapres/sgn_swing_trajectory2.png
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 81
+set 95 6 1
+set 26 3 153
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 0 unused
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 external mapres/sgn_keyboard.png
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 82
+set 135 13 5
+set 13 4 5
+set 41 0 2147483647
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 3 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 truncated
+run 83
+set 35 1 57
+set 23 5 2
+set 41 4 0
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 nodata
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 57 617 9b782506
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/unique2, Alisa.png
+run 84
+set 25 5 -1
+set 34 0 65536
+set 26 1 2
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 nodata
+image 24 2 embedded 2 481 68036fcc
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 truncated
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 85
+set 31 5 39
+set 34 1 152
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 908e541b
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 152 142 7c3b01fa
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 86
+set 21 0 85
+set 3 5 3
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 truncated
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 87
+set 16 5 2
+set 23 5 39
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 nodata
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 dad27292
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 88
+set 84 13 65536
+set 127 13 40
+set 130 13 1
+image 0 2 embedded 192 192 027fdfdb
+image 1 3 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 89
+set 16 4 153
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 90
+set 29 4 2
+set 14 0 2147483647
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 truncated
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 91
+set 41 3 65536
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 92
+set 76 13 2147483647
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 93
+set 32 3 5
+set 2 5 40
+image 0 2 nodata
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 external mapres/sgn_rocket_jump_hints.png
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 94
+set 29 0 40
+set 23 5 2147483647
+set 108 6 153
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 nodata
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 truncated
+image 28 0 unused
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 95
+set 130 13 -1
+set 8 3 39
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 external mapres/clouds1.png
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 96
+set 98 6 5
+set 8 3 -1
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 external mapres/clouds1.png
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 0 unused
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 97
+set 20 4 1
+set 3 0 152
+set 25 2 25
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 truncated
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 25 43896d96
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 98
+set 110 6 2147483647
+set 77 13 2147483647
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 0 unused
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 99
+set 11 4 2147483647
+set 18 5 5
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 noname
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 2 embedded 677 525 981f4ad6
+image 16 2 nodata
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png
+run 100
+set 95 6 152
+image 0 2 embedded 192 192 027fdfdb
+image 1 2 external mapres/bg_cloud1.png
+image 2 2 external mapres/bg_cloud2.png
+image 3 2 external mapres/bg_cloud3.png
+image 4 1 embedded 1024 1024 79270aaf
+image 5 2 embedded 1500 550 01075057
+image 6 2 embedded 1500 500 8d4729be
+image 7 1 embedded 1024 1024 f8296424
+image 8 1 external mapres/generic_unhookable.png
+image 9 1 external mapres/grass_doodads.png
+image 10 1 embedded 1024 1024 fd1dd493
+image 11 1 embedded 1024 1024 86359445
+image 12 2 embedded 256 256 d0a0af4c
+image 13 1 embedded 1024 1024 fe3b1daa
+image 14 1 embedded 1024 1024 9b351694
+image 15 0 unused
+image 16 2 embedded 429 328 d797ee7d
+image 17 2 embedded 260 305 a83e3ef1
+image 18 2 embedded 350 398 ad625868
+image 19 2 embedded 350 398 ae7debb1
+image 20 2 embedded 381 376 b9ef14eb
+image 21 2 embedded 291 409 85e9a5f3
+image 22 2 embedded 511 698 eb9803ab
+image 23 2 embedded 557 634 d4dcdda0
+image 24 2 embedded 1107 481 26dcc0d3
+image 25 3 embedded 1024 1024 bd5658f6
+image 26 3 embedded 1024 1024 fc352694
+image 27 2 embedded 621 168 19daee36
+image 28 2 embedded 89 356 c9dcb164
+image 29 2 embedded 314 262 b4c59306
+image 30 2 embedded 438 1781 8dbc05a8
+image 31 2 embedded 443 741 d6202652
+image 32 2 embedded 164 142 80cff82e
+image 33 2 embedded 1817 617 3c929cb8
+image 34 2 embedded 2350 644 3104d0da
+image 35 2 embedded 1148 565 5d18039f
+image 36 2 embedded 362 779 5576cb4d
+image 37 3 embedded 1024 1024 58a56958
+image 38 2 embedded 146 134 42bb26f6
+image 39 2 external mapres/stars.png

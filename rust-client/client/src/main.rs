@@ -1,12 +1,16 @@
-//! `ddnet-rs`: the graphical client. M6.1: a window that draws the renderer's test
-//! pattern through the offscreen world target. F12 saves a screenshot.
+//! `ddnet-rs`: the graphical client. So far (M6.2) a window that shows the game skin
+//! and the default tee skin loaded from the DDNet data, drawn through the offscreen
+//! world target. F12 saves a screenshot into our own directory.
 //!
-//! Usage: ddnet-rs [--vsync]
+//! Usage: ddnet-rs [--data-dir PATH] [--vsync]
 
 use std::sync::Arc;
 
-use ddnet_rs::gfx::batch::Batch;
+use ddnet_rs::assets;
+use ddnet_rs::gfx::batch::{Batch, QuadItem, TextureId};
 use ddnet_rs::gfx::{self, Gfx, Size, block_on};
+use ddnet_rs::image::Image;
+use ddnet_rs::storage::{self, Storage};
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, KeyEvent, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
@@ -18,13 +22,14 @@ struct Running {
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
     gfx: Gfx,
-    pattern: gfx::batch::TextureId,
+    /// Loaded images with their size, drawn side by side.
+    shown: Vec<(TextureId, u32, u32)>,
 }
 
-#[derive(Default)]
 struct App {
     /// C++ `gfx_vsync` (default 0).
     vsync: bool,
+    storage: Storage,
     running: Option<Running>,
     error: Option<String>,
 }
@@ -68,13 +73,32 @@ impl App {
                 height: config.height,
             },
         );
-        let pattern = gfx.create_texture(4, 4, &gfx::pattern_texture());
+        let images: Vec<Image> = [
+            assets::load_asset(&self.storage, assets::GAME, "default").image,
+            assets::load_skin(&self.storage, "default"),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        if images.len() < 2 {
+            eprintln!("game.png or skins/default.png missing: check the data dir");
+        }
+        let shown = images
+            .iter()
+            .map(|i| {
+                (
+                    gfx.create_texture(i.width, i.height, &i.to_rgba()),
+                    i.width,
+                    i.height,
+                )
+            })
+            .collect();
         Ok(Running {
             window,
             surface,
             config,
             gfx,
-            pattern,
+            shown,
         })
     }
 }
@@ -100,7 +124,23 @@ impl Running {
             _ => return,
         };
         let mut batch = Batch::default();
-        gfx::test_pattern(&mut batch, self.pattern);
+        let (w, h) = (self.config.width as f32, self.config.height as f32);
+        batch.clear(0.5, 0.5, 0.5);
+        batch.map_screen(0.0, 0.0, w, h);
+        let mut x = 0.0;
+        let slot = w / self.shown.len().max(1) as f32;
+        for &(tex, tw, th) in &self.shown {
+            let scale = (slot / tw as f32).min(h / th as f32);
+            batch.texture_set(Some(tex));
+            batch.quads_begin();
+            batch.quads_draw_tl(&[QuadItem {
+                x,
+                y: 0.0,
+                w: tw as f32 * scale,
+                h: th as f32 * scale,
+            }]);
+            x += slot;
+        }
         let world = self.gfx.world_view();
         self.gfx.render(&mut batch, &world);
         self.gfx
@@ -113,10 +153,12 @@ impl Running {
         let secs = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_or(0, |d| d.as_secs());
-        // ponytail: saved in the working directory until 6.2 adds our own storage dir
-        let dir = std::path::Path::new("screenshots");
+        let Some(dir) = storage::save_dir().map(|d| d.join("screenshots")) else {
+            eprintln!("screenshot failed: no directory to save to");
+            return;
+        };
         let path = dir.join(format!("screenshot_{secs}.png"));
-        match std::fs::create_dir_all(dir).and_then(|()| self.gfx.screenshot(&path)) {
+        match std::fs::create_dir_all(&dir).and_then(|()| self.gfx.screenshot(&path)) {
             Ok(()) => println!("saved {}", path.display()),
             Err(e) => eprintln!("screenshot failed: {e}"),
         }
@@ -166,9 +208,30 @@ impl ApplicationHandler for App {
 }
 
 fn main() {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let data_dir = args
+        .iter()
+        .position(|a| a == "--data-dir")
+        .and_then(|i| args.get(i + 1))
+        .map(std::path::PathBuf::from);
+    let storage = match Storage::new(data_dir) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("storage: {e}");
+            std::process::exit(1);
+        }
+    };
+    for p in &storage.paths {
+        println!("storage path: '{}'", p.display());
+    }
+    if storage.data_dir.is_none() {
+        eprintln!("no DDNet data dir found: pass --data-dir or set DDNET_DATA_DIR");
+    }
     let mut app = App {
-        vsync: std::env::args().skip(1).any(|a| a == "--vsync"),
-        ..App::default()
+        vsync: args.iter().any(|a| a == "--vsync"),
+        storage,
+        running: None,
+        error: None,
     };
     let event_loop = match EventLoop::new() {
         Ok(l) => l,

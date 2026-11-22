@@ -982,7 +982,7 @@ fn crc32(data: &[u8]) -> u32 {
 }
 
 /// C++: `str_valid_filename` (str.cpp:196).
-fn valid_filename(name: &str) -> bool {
+pub fn valid_filename(name: &str) -> bool {
     if name.is_empty() {
         return false;
     }

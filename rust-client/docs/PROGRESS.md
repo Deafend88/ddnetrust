@@ -144,6 +144,32 @@ M5 is complete. Not ported (see Later): weapons, teams/tuning messages, the dumm
   Screenshot round trip and resize tested. The window opens, renders and closes
   cleanly; what it looks like on screen was not checked by eye here (no C++ client yet
   to compare against; that comes with 6.3).
+- 6.2 Storage and assets: `client/src/storage.rs` ports CStorage read-only (the
+  `storage.cfg` add_path rules incl. CLineReader details, default paths `$USERDIR`
+  then `$DATADIR` then `$CURRENTDIR`, data-dir discovery with `--data-dir`/
+  `DDNET_DATA_DIR` first and this repo's `data/` as the compiled-in dir, the OpenFile
+  path guard incl. the `mapres/../skins/` exception, de-duplicated listing). We never
+  write to `%APPDATA%\DDNet`; screenshots go to `%APPDATA%\DDNet-rs\screenshots`.
+  `image.rs` ports CImageLoader::LoadPng (memory and file variants: the file one
+  rejects gray images) and ConvertToRgba (gray becomes white with alpha). `assets.rs`:
+  the C++ fallback chain of game/particles/emoticons/hud/extras (name, name as a
+  directory, default, plus the default image as fallback), skin listing and names
+  (CSkin::IsValidName, `.png` files only), skins from `skins/` or already downloaded
+  ones, and map images. `ddnet/src/map/images.rs` ports the OnMapLoadImpl decisions
+  and GetDataString; `Map::client_data` ports CLayers::InitTilemapSkip, which the C++
+  client runs at map load and which changes the `m_Skip` byte of game/design tile data
+  (found because a map image pointing at tile data hashed differently).
+  Verified: `rs_parity png` (rs_parity now also links engine-gfx) on 64 crafted PNGs
+  (every colour type and bit depth, tRNS, Adam7, broken files from
+  `scripts/gen_png_corpus.py`) and all 546 PNGs in `data/`: same success, size,
+  format, pixels and RGBA conversion as C++ for all 610. `rs_parity mapimages`: the
+  map image decisions on all 7 maps, unchanged and with 100 runs of changed image and
+  layer item ints each (3,000+ image results): identical. Storage, asset chain and
+  skin rules tested on temp dirs; every image the 7 maps use loads from the repo's
+  `data/`, and without a data dir nothing panics. Deviations in DECISIONS.md.
+  Debug builds now use `opt-level` 1 (dependencies 2): the asset test went from 41 s to
+  7 s and the physics parity tests from 11 s to under 1 s, still 100% identical.
+  The window shows the default game skin and tee skin loaded through storage.
 
 ## Later
 - Weapon prediction (`m_PredictWeapons`/AntiPingWeapons: FireWeapon, ninja dash,
@@ -195,8 +221,13 @@ Build the `rs_parity` target like `rs_golden`, then per map (repo root):
 (hooktele only for coverage and LearnToPlay; add `verbose` to see every query value).
 `core`, `world` and `doors` work like `collision` (`<name>.core.txt`, `<name>.world.txt`,
 `<name>.doors.txt`; `-hooktele` variants of core and world for coverage and LearnToPlay;
-`doors` takes no flags). All modes are deterministic: the data regenerates byte for
-byte.
+`doors` takes no flags). M6.2 data (repo root):
+
+    python rust-client/scripts/gen_png_corpus.py
+    build-rs/rs_parity.exe png rust-client/tests/golden/png.txt rust-client/tests/golden/png data
+    build-rs/rs_parity.exe mapimages "data/maps/<name>.map" rust-client/tests/golden/maps/<name>.mapimages.txt
+
+All modes are deterministic: the data regenerates byte for byte.
 
 ## Regenerate protocol code
     python rust-client/scripts/gen_protocol.py   # needs rustfmt on PATH

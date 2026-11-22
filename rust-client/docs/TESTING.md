@@ -153,11 +153,13 @@ Set-Location C:\ddnetrust-master\rust-client
 cargo run --release --bin ddnet-rs
 ```
 
-Add `-- --vsync` to turn vsync on (C++ `gfx_vsync`, off by default). Right now (step
-6.1) the window shows the renderer's test pattern stretched to the window: a blue
-background, red/green blend squares, small textured squares, a yellow bar, a magenta
-square and a red/green/black/white gradient. **F12** saves a screenshot to
-`screenshots\` in the current folder. It does not connect to a server yet.
+Options: `--data-dir PATH` (else `DDNET_DATA_DIR`, else `data\` in the current folder,
+else this repo's `data\`, else next to the exe or Steam's default install) and `--vsync`
+(C++ `gfx_vsync`, off by default). At start it prints its storage paths in search
+order, e.g. `%APPDATA%\DDNet` (your DDNet folder, only read, never written), the data
+dir and the current folder. Right now (step 6.2) the window shows the default game skin
+(`game.png`) and the default tee skin side by side on grey. **F12** saves a screenshot
+to `%APPDATA%\DDNet-rs\screenshots\`. It does not connect to a server yet.
 
-The GPU test (`cargo test -p ddnet-rs --test gfx`) checks the same pattern pixel by
+The GPU test (`cargo test -p ddnet-rs --test gfx`) checks a renderer test pattern pixel by
 pixel; it reports itself skipped when no graphics adapter is available.

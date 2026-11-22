@@ -6,6 +6,8 @@
 //        rs_parity core <map file> <output file> [hooktele] [verbose]
 //        rs_parity world <map file> <output file> [hooktele] [verbose]
 //        rs_parity doors <map file> <output file>
+//        rs_parity mapimages <map file> <output file>
+//        rs_parity png <output file> <dir>...
 //
 // "map" loads the map with CMap + CLayers and writes every item, every data blob and
 // the physics layers, then loads mutated copies of the file (truncated, bit flips,
@@ -28,6 +30,10 @@
 // tiles and odd lasers a server could send, into CGameWorld snapshot by snapshot (NetObjBegin/NetObjAdd/NetObjEnd as in
 // CGameClient::UpdatePrediction), with items leaving, returning and moving, and writes
 // the collision door grid after each one.
+//
+// "png" loads every PNG below the given directories with the C++ PNG loader and
+// RGBA conversion. "mapimages" runs the map image decisions of CMapImages on the map
+// and on copies with changed image/layer item ints.
 
 #include <base/dbg.h>
 #include <base/fs.h>
@@ -39,6 +45,9 @@
 #include <base/str.h>
 #include <base/vmath.h>
 
+#include <engine/gfx/image_loader.h>
+#include <engine/gfx/image_manipulation.h>
+#include <engine/image.h>
 #include <engine/map.h>
 #include <engine/shared/config.h>
 #include <engine/shared/uuid_manager.h>
@@ -57,9 +66,11 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
 #include <functional>
 #include <map>
 #include <string>
+#include <tuple>
 #include <vector>
 
 static constexpr const char *const TOOL_NAME = "rs_parity";
@@ -1096,12 +1107,201 @@ static int DoorsMode(const char *pMapFile, const char *pOutFile)
 	return 0;
 }
 
+// "png": every *.png below the given directories (sorted relative paths) through
+// CImageLoader::LoadPng (from memory, as the file overload does after reading) and
+// ConvertToRgbaAlloc:
+// "<dir index> <path> fail" | "<dir index> <path> <w> <h> <format> <pnglite flags> <crc data> <crc rgba>"
+static int PngMode(const char *pOutFile, int NumDirs, const char **ppDirs)
+{
+	FILE *f = fopen(pOutFile, "wb");
+	if(!f)
+		return -1;
+	for(int d = 0; d < NumDirs; d++)
+	{
+		std::vector<std::string> vFiles;
+		for(const auto &Entry : std::filesystem::recursive_directory_iterator(ppDirs[d]))
+			if(Entry.is_regular_file() && Entry.path().extension() == ".png")
+				vFiles.push_back(std::filesystem::relative(Entry.path(), ppDirs[d]).generic_string());
+		std::sort(vFiles.begin(), vFiles.end());
+		for(const std::string &Name : vFiles)
+		{
+			const std::string Path = std::string(ppDirs[d]) + "/" + Name;
+			IOHANDLE File = io_open(Path.c_str(), IOFLAG_READ);
+			void *pFileData = nullptr;
+			unsigned FileDataSize = 0;
+			const bool Read = File && io_read_all(File, &pFileData, &FileDataSize);
+			if(File)
+				io_close(File);
+			CImageInfo Image;
+			int Incompatible = 0;
+			bool Loaded = false;
+			if(Read)
+			{
+				CByteBufferReader Reader(static_cast<const uint8_t *>(pFileData), FileDataSize);
+				Loaded = CImageLoader::LoadPng(Reader, Name.c_str(), Image, Incompatible);
+			}
+			free(pFileData);
+			if(!Loaded)
+			{
+				fprintf(f, "%d %s fail\n", d, Name.c_str());
+				continue;
+			}
+			uint8_t *pRgba;
+			ConvertToRgbaAlloc(pRgba, Image);
+			fprintf(f, "%d %s %d %d %d %d %08x %08x\n", d, Name.c_str(), (int)Image.m_Width, (int)Image.m_Height, (int)Image.m_Format,
+				Incompatible, Crc(Image.m_pData, Image.DataSize()), Crc(pRgba, Image.m_Width * Image.m_Height * 4));
+			free(pRgba);
+			Image.Free();
+		}
+	}
+	fclose(f);
+	return 0;
+}
+
+// "mapimages": the map image decisions of CMapImages::OnMapLoadImpl (mapimages.cpp:59)
+// on the real map, then on 100 copies with image and layer item ints changed in memory.
+// Per run "run <n>" and the changes "set <item> <int> <value>", then per image one of
+// unused | noname | type | external <path> | dims | embedded <w> <h> <crc> | nodata |
+// truncated (an item too short for the ints read; C++ would read past it).
+static void DumpMapImages(FILE *f, IMap *pMap, CLayers *pLayers)
+{
+	int Start, Count;
+	pMap->GetType(MAPITEMTYPE_IMAGE, &Start, &Count);
+	Count = std::clamp<int>(Count, 0, MAX_MAPIMAGES);
+	unsigned char aUsed[MAX_MAPIMAGES] = {0};
+	for(int g = 0; g < pLayers->NumGroups(); g++)
+	{
+		const CMapItemGroup *pGroup = pLayers->GetGroup(g);
+		if(!pGroup)
+			continue;
+		for(int l = 0; l < pGroup->m_NumLayers; l++)
+		{
+			const CMapItemLayer *pLayer = pLayers->GetLayer(pGroup->m_StartLayer + l);
+			if(!pLayer)
+				continue;
+			if(pLayer->m_Type == LAYERTYPE_TILES)
+			{
+				const int Image = reinterpret_cast<const CMapItemLayerTilemap *>(pLayer)->m_Image;
+				if(Image >= 0 && Image < Count)
+					aUsed[Image] |= 1;
+			}
+			else if(pLayer->m_Type == LAYERTYPE_QUADS)
+			{
+				const int Image = reinterpret_cast<const CMapItemLayerQuads *>(pLayer)->m_Image;
+				if(Image >= 0 && Image < Count)
+					aUsed[Image] |= 2;
+			}
+		}
+	}
+	for(int i = 0; i < Count; i++)
+	{
+		fprintf(f, "image %d %d ", i, aUsed[i]);
+		if(aUsed[i] == 0)
+		{
+			fprintf(f, "unused\n");
+			continue;
+		}
+		const CMapItemImage_v2 *pImg = static_cast<const CMapItemImage_v2 *>(pMap->GetItem(Start + i));
+		const int Size = pMap->GetItemSize(Start + i);
+		if(Size < (int)sizeof(CMapItemImage_v1) || (pImg->m_Version > 1 && Size < (int)sizeof(CMapItemImage_v2)))
+		{
+			fprintf(f, "truncated\n");
+			continue;
+		}
+		const char *pName = pMap->GetDataString(pImg->m_ImageName);
+		if(pName == nullptr || pName[0] == '\0')
+		{
+			if(pImg->m_External)
+			{
+				fprintf(f, "noname\n");
+				continue;
+			}
+			pName = "(error)";
+		}
+		if(pImg->m_Version > 1 && pImg->m_MustBe1 != 1)
+		{
+			fprintf(f, "type\n");
+			continue;
+		}
+		if(pImg->m_External)
+		{
+			fprintf(f, "external mapres/%s.png\n", pName);
+			continue;
+		}
+		if(pImg->m_Width <= 0 || pImg->m_Height <= 0)
+		{
+			fprintf(f, "dims\n");
+			continue;
+		}
+		const size_t DataSize = (size_t)pImg->m_Width * pImg->m_Height * 4;
+		const void *pData = pMap->GetData(pImg->m_ImageData);
+		if(pData && (size_t)pMap->GetDataSize(pImg->m_ImageData) >= DataSize)
+			fprintf(f, "embedded %d %d %08x\n", pImg->m_Width, pImg->m_Height, Crc(pData, DataSize));
+		else
+			fprintf(f, "nodata\n");
+	}
+}
+
+static int MapImagesMode(const char *pMapFile, const char *pOutFile)
+{
+	std::unique_ptr<IStorage> pStorage = CreateLocalStorage();
+	std::unique_ptr<IMap> pMap = CreateMap();
+	CLayers Layers;
+	FILE *f = fopen(pOutFile, "wb");
+	if(!pStorage || !f || !LoadMapAndLayers(pStorage.get(), pMapFile, pMap.get(), &Layers))
+		return -1;
+	int ImageStart, ImageCount, LayerStart, LayerCount;
+	pMap->GetType(MAPITEMTYPE_IMAGE, &ImageStart, &ImageCount);
+	pMap->GetType(MAPITEMTYPE_LAYER, &LayerStart, &LayerCount);
+	for(int Run = 0; Run <= 100; Run++)
+	{
+		fprintf(f, "run %d\n", Run);
+		std::vector<std::tuple<int, int, int>> vSaved; // item, int, old value
+		for(int k = 0; Run > 0 && k < 1 + (int)(Rand() % 3); k++)
+		{
+			int Item, Int;
+			if((ImageCount > 0 && Rand() % 3 != 0) || LayerCount == 0)
+			{
+				if(ImageCount == 0)
+					break;
+				Item = ImageStart + Rand() % ImageCount;
+				if(pMap->GetItemSize(Item) < 4)
+					continue;
+				Int = Rand() % std::min(7, pMap->GetItemSize(Item) / 4);
+			}
+			else
+			{
+				Item = LayerStart + Rand() % LayerCount;
+				const int Type = static_cast<const CMapItemLayer *>(pMap->GetItem(Item))->m_Type;
+				Int = Type == LAYERTYPE_TILES ? 13 : Type == LAYERTYPE_QUADS ? 6 : 1;
+				if(Int * 4 >= pMap->GetItemSize(Item))
+					continue;
+			}
+			const int aValues[] = {-1, 0, 1, 2, 3, 5, ImageCount, ImageCount - 1, (int)pMap->NumData() - 1, (int)pMap->NumData(), 0x7fffffff, 1 << 16, (int)(Rand() % 100)};
+			const int Value = aValues[Rand() % (sizeof(aValues) / sizeof(aValues[0]))];
+			int *pInts = static_cast<int *>(pMap->GetItem(Item));
+			vSaved.emplace_back(Item, Int, pInts[Int]);
+			pInts[Int] = Value;
+			fprintf(f, "set %d %d %d\n", Item, Int, Value);
+		}
+		DumpMapImages(f, pMap.get(), &Layers);
+		for(auto It = vSaved.rbegin(); It != vSaved.rend(); ++It)
+			static_cast<int *>(pMap->GetItem(std::get<0>(*It)))[std::get<1>(*It)] = std::get<2>(*It);
+	}
+	fclose(f);
+	return 0;
+}
+
 int main(int argc, const char **argv)
 {
 	CCmdlineFix CmdlineFix(&argc, &argv);
 	log_set_global_logger_default();
 	if(argc == 5 && str_comp(argv[1], "map") == 0)
 		return MapMode(argv[2], argv[3], argv[4]);
+	if(argc >= 4 && str_comp(argv[1], "png") == 0)
+		return PngMode(argv[2], argc - 3, argv + 3);
+	if(argc == 4 && str_comp(argv[1], "mapimages") == 0)
+		return MapImagesMode(argv[2], argv[3]);
 	if(argc == 4 && str_comp(argv[1], "doors") == 0)
 		return DoorsMode(argv[2], argv[3]);
 	if(argc >= 4 && (str_comp(argv[1], "collision") == 0 || str_comp(argv[1], "core") == 0 || str_comp(argv[1], "world") == 0))
@@ -1118,6 +1318,6 @@ int main(int argc, const char **argv)
 			return CoreMode(argv[2], argv[3], HookTele, Verbose);
 		return CollisionMode(argv[2], argv[3], HookTele, Verbose);
 	}
-	log_error(TOOL_NAME, "Usage: %s map <map file> <output file> <scratch dir> | collision|core|world <map file> <output file> [hooktele] [verbose] | doors <map file> <output file>", argc > 0 ? argv[0] : TOOL_NAME);
+	log_error(TOOL_NAME, "Usage: %s map <map file> <output file> <scratch dir> | collision|core|world <map file> <output file> [hooktele] [verbose] | doors|mapimages <map file> <output file> | png <output file> <dir>...", argc > 0 ? argv[0] : TOOL_NAME);
 	return -1;
 }

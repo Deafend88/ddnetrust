@@ -56,3 +56,36 @@ verifies the CRC32, i.e. it behaves like a C++ client talking to a server that s
 no `map-details`. C++ keeps appending `MAP_DATA` chunks to the file without a limit;
 Rust disconnects when the data would exceed the size announced in `MAP_CHANGE`, so
 a server cannot make it use unbounded memory.
+
+## 2026-11-22 — Map image and quad layer items that are too short
+
+C++ `CMapImages::OnMapLoadImpl` reads `CMapItemImage_v2::m_MustBe1` (int 6) of every
+image with version > 1, and `CMapItemLayerQuads::m_Image` (int 6) of every quad layer,
+but `CMap::Load` never checks that those items are that long, so a crafted map makes
+the C++ client read past the item (into the next item's memory). Rust cannot
+reproduce reading foreign memory: a too-short image item is not loaded
+(`MapImage::Truncated`) and a too-short quad layer uses no image. No real map has
+such items; the parity data marks these cases as `truncated` on both sides.
+
+## 2026-11-22 — Storage: the C++ user directory is read, never written
+
+C++ `CStorage` uses `$USERDIR` (`%APPDATA%\DDNet`) as its save path and creates its
+folders there at start-up. DDNet-rs searches the same paths in the same order
+(`storage.cfg` or `$USERDIR`, `$DATADIR`, `$CURRENTDIR`, same data-dir discovery, same
+refusal of `../`, absolute and drive paths) but only reads them; what it writes
+(screenshots, later settings) goes to its own `DDNet-rs` directory, so the real DDNet
+client's files are never touched. Data-dir discovery additionally accepts
+`--data-dir`/`DDNET_DATA_DIR` first and Steam's default install path last; the
+repository's `data/` takes the place of C++'s compiled-in `DATA_DIR`.
+
+## 2026-11-22 — PNG loading: png-rs set up to behave like libpng
+
+`CImageLoader::LoadPng` uses libpng; DDNet-rs uses the `png` crate with the same
+transformations and these adjustments, each checked against the C++ loader on 64
+crafted files and the 546 PNGs in `data/` (`rs_parity png`): Adler-32 checking on
+(libpng checks it, png-rs does not by default); libpng's default 1,000,000 pixel
+width/height limit; and an `IEND` chunk appended to the input, because libpng stops
+after the image data and accepts files without `IEND`, while png-rs reads the next
+chunk header. The pnglite compatibility flags C++ computes only feed a warning and are
+not reproduced. C++ truncates `mapres/<name>.png` at 511 bytes; Rust does not, which
+only matters for names so long that neither file can exist.

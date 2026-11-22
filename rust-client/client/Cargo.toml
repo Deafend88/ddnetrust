@@ -11,3 +11,6 @@ ddnet = { path = "../ddnet" }
 png = "0.18"
 wgpu = "30.0.2"
 winit = "0.30.13"
+
+[dev-dependencies]
+flate2 = "1.1.11"

@@ -332,7 +332,7 @@ pub(crate) fn utf8_encode(chr: i32) -> ([u8; 4], usize) {
 }
 
 /// C++: `str_utf8_check` (str.cpp:1241).
-pub(crate) fn utf8_check(s: &[u8]) -> bool {
+pub fn utf8_check(s: &[u8]) -> bool {
     let mut pos = 0;
     loop {
         match utf8_decode(s, &mut pos) {

@@ -352,6 +352,7 @@ name = "ddnet-rs"
 version = "0.1.0"
 dependencies = [
  "ddnet",
+ "flate2",
  "png",
  "wgpu",
  "winit",

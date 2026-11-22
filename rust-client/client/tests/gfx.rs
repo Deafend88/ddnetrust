@@ -3,8 +3,8 @@
 //! vertex colours, `glBlendFunc` factors, 1:1 texel sampling, quad rotation and
 //! freeform corner order), except the colour gradient, whose corners are checked.
 
-use ddnet_rs::gfx::batch::Batch;
-use ddnet_rs::gfx::{self, Gfx, Size};
+use ddnet_rs::gfx::batch::{Batch, Blend, FreeformItem, QuadItem, TextureId, Wrap};
+use ddnet_rs::gfx::{Gfx, Size};
 
 const W: u32 = 64;
 const H: u32 = 32;
@@ -38,10 +38,10 @@ fn test_pattern_pixels() {
         eprintln!("SKIPPED: no graphics adapter");
         return;
     };
-    let tex = gfx::pattern_texture();
+    let tex = pattern_texture();
     let id = g.create_texture(4, 4, &tex);
     let mut batch = Batch::default();
-    gfx::test_pattern(&mut batch, id);
+    test_pattern(&mut batch, id);
     let world = g.world_view();
     g.render(&mut batch, &world);
     let px = g.read_world();
@@ -116,4 +116,63 @@ fn resize_and_screenshot() {
             .all(|p| p == [255, 0, 0])
     );
     let _ = std::fs::remove_file(path);
+}
+
+/// A 4x4 RGBA texture with a different opaque colour per texel (row-major).
+fn pattern_texture() -> Vec<u8> {
+    (0..16u8)
+        .flat_map(|i| [i * 16, 255 - i * 16, (i % 4) * 80, 255])
+        .collect()
+}
+
+/// The 6.1 test scene in a 64x32 screen: blend modes, a 1:1 texture, a texture subset,
+/// repeat and clamp wrapping, rotation, a freeform quad and corner colours.
+fn test_pattern(b: &mut Batch, texture: TextureId) {
+    let q = |x: f32, y: f32, w: f32, h: f32| QuadItem { x, y, w, h };
+    b.clear(0.0, 0.0, 1.0);
+    b.map_screen(0.0, 0.0, 64.0, 32.0);
+    b.quads_begin();
+    for (i, blend) in [Blend::None, Blend::Normal, Blend::Additive]
+        .into_iter()
+        .enumerate()
+    {
+        b.blend(blend);
+        b.set_color(if i == 2 {
+            [0.0, 1.0, 0.0, 0.5]
+        } else {
+            [1.0, 0.0, 0.0, 0.5]
+        });
+        b.quads_draw_tl(&[q(8.0 * i as f32, 0.0, 8.0, 8.0)]);
+    }
+    b.blend(Blend::None);
+    b.texture_set(Some(texture));
+    b.quads_begin();
+    b.quads_draw_tl(&[q(24.0, 0.0, 4.0, 4.0)]);
+    b.set_subset(0.5, 0.0, 1.0, 0.5);
+    b.quads_draw_tl(&[q(28.0, 0.0, 2.0, 2.0)]);
+    for (i, wrap) in [Wrap::Repeat, Wrap::Clamp].into_iter().enumerate() {
+        b.wrap(wrap);
+        b.set_subset(0.0, 0.0, 2.0, 2.0);
+        b.quads_draw_tl(&[q(48.0, 8.0 + 8.0 * i as f32, 8.0, 8.0)]);
+    }
+    b.texture_set(None);
+    b.quads_begin();
+    b.set_color([1.0, 1.0, 0.0, 1.0]);
+    b.set_rotation(std::f32::consts::FRAC_PI_2);
+    b.quads_draw(&[q(36.0, 8.0, 8.0, 2.0)]);
+    b.quads_begin();
+    b.set_color([1.0, 0.0, 1.0, 1.0]);
+    b.quads_draw_freeform(&[FreeformItem([
+        [40.0, 0.0],
+        [48.0, 0.0],
+        [40.0, 8.0],
+        [48.0, 8.0],
+    ])]);
+    b.set_color4(
+        [1.0, 0.0, 0.0, 1.0],
+        [0.0, 1.0, 0.0, 1.0],
+        [0.0, 0.0, 0.0, 1.0],
+        [1.0, 1.0, 1.0, 1.0],
+    );
+    b.quads_draw_tl(&[q(0.0, 16.0, 16.0, 16.0)]);
 }
