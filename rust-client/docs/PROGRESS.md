@@ -122,7 +122,7 @@ Maps: coverage, LearnToPlay, Gold Mine, Tutorial, Tsunami, ctf1, dm1 (read from
 
 M5 is complete. Not ported (see Later): weapons, teams/tuning messages, the dummy.
 
-### M6 — rendering, input, basic UI (in progress)
+### M6 — rendering, input, basic UI (in progress: 6.1-6.6 done, 6.7 next)
 - Plan in `docs/PLAN.md` §9, approved 2026-11-22. The open questions (§9.6) are
   answered in §9.7.
 - 6.1 Window and quad renderer: new crate `client/` (binary `ddnet-rs`, wgpu 30.0.2,
@@ -316,7 +316,54 @@ M5 is complete. Not ported (see Later): weapons, teams/tuning messages, the dumm
   Not verified live: flags (this repo's server has no CTF game type), dragger, freeze
   and gun lasers (none in view at the subject's spawn), projectile tune zones (no
   `Sv_TuneParams` yet).
-- Next: 6.7 (mouse, binds, camera messages, settings_ddnet.cfg read once), then 6.8.
+#### M6 status (2026-11-23)
+Done and pushed: 6.1-6.6 (last commit b718a73fd, M6.6 entities). The working tree was
+clean at that point; everything listed above as verified is committed.
+
+Open items from 6.6 (not checked live, code ported line by line):
+- Flags: this repo's DDNet-Server only runs the "ddnet" game type, which never sends
+  flags. Needs a server that does (not this repo's) or a test that feeds flag objects.
+- Dragger, freeze and gun lasers: none were in view at the `-Subject` spawn on
+  coverage. Next try: `-Subject` runs on maps/spawns where they are on screen, or a
+  fixed-view check once 6.7 can point the camera anywhere.
+- Projectiles (and laser widths) in tune zones: every zone uses the default tuning
+  until `Sv_TuneParams` and the tune zone messages are handled.
+- Not in M6 at all: particles (trails, explosions, powerup shine), muzzle flashes,
+  emoticon messages, the hook collision line.
+
+#### 6.7 next steps (PLAN §9.3 6.7, §9.7 answer 2), in order
+1. Settings: read `%APPDATA%\DDNet\settings_ddnet.cfg` once, read only, for
+   `player_name`, `player_skin`, `player_use_custom_color`, `player_color_body`,
+   `player_color_feet`, `inp_mousesens` and the `bind` lines (C++ console syntax,
+   quoted strings); our own `%APPDATA%\DDNet-rs\settings.cfg` overrides it. Never
+   write to `%APPDATA%\DDNet`. Send name/skin/colours in StartInfo.
+2. Key names and default binds: port `src/engine/client/keynames.h` and
+   `CBinds::SetDefaults` (binds.cpp:269); `rs_parity` dumps both for a 100% check.
+   Handle `+left`, `+right`, `+jump`, `+hook`, `+fire`, weapon keys and zoom keys;
+   ignore other commands for now.
+3. Mouse: raw motion (`DeviceEvent::MouseMotion`), cursor hidden and confined in game;
+   `CControls::OnCursorMove` (controls.cpp:442) scaling by `inp_mousesens / 100`,
+   `ClampMousePos` (:487), `GetMaxMouseDistance` (:519), dyncam settings; the mouse
+   position becomes the input target (`SnapInput`, :241). `rs_parity` vectors for the
+   clamp and distance functions.
+4. Camera: `CCamera::UpdateCamera`/`OnRender` (camera.cpp:114, :289): center on the
+   local tee plus the deadzone/follow-factor offset, `cl_default_zoom`, zoom steps,
+   `ChangeZoom` smoothing (:81, `cl_smooth_zoom_time`). Numeric parity for zoom steps
+   and smoothing.
+5. Camera messages: `Cl_ShowDistance` and `Cl_CameraInfo` as gameclient.cpp:2313-2392
+   (which zoom is reported while smoothing, sent only on change); also from
+   `ddnet-headless` with a fixed 16:9 aspect. Check the bytes against C++ packing and
+   that the server accepts both (no invalid-message log).
+6. Verify: a left-facing tee screenshot (still open from 6.4: aim the subject with
+   `ddnet-headless` or our own mouse), dm1/ctf1 comparisons without
+   `sv_show_all_default 1` (camera messages make the server send what we show), and
+   the same raw mouse input giving the same aim as the C++ client (by hand, once).
+
+Screenshot workflow reminders: run a plain `cargo build` before
+`scripts/compare_screenshots.ps1` (integration-test builds overwrite
+`target/debug/ddnet-rs.exe`); use `-Subject` and `-ServerArgs "sv_show_all_default 1"`
+for scenes that do not stay still; `examples/maprender.rs` renders a map at a given
+center for fixed-view checks; mask pickups (they bob on each client's own clock).
 
 ## Later
 - Weapon prediction (`m_PredictWeapons`/AntiPingWeapons: FireWeapon, ninja dash,
