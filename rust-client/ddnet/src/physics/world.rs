@@ -18,8 +18,7 @@ use super::teams::{MAX_CLIENTS, NUM_DDRACE_TEAMS, TeamsCore};
 use super::tuning::{Param, Tuning};
 use super::vmath::{Vec2, distance, dot, normalize, trunc_i32, vec2};
 use crate::protocol::generated::{
-    self as g, ObjCharacter, ObjCharacterCore, ObjDDNetCharacter, ObjDDNetLaser, ObjEntityEx,
-    ObjLaser, ObjPlayerInput,
+    self as g, ObjCharacter, ObjCharacterCore, ObjDDNetCharacter, ObjEntityEx, ObjPlayerInput,
 };
 
 const TILE_UNFREEZE: i32 = 11;
@@ -1150,40 +1149,9 @@ impl<'a> GameWorld<'a> {
         data: &[i32],
         ex: Option<&ObjEntityEx>,
     ) {
-        let ddnet = type_id == g::NETOBJTYPE_DDNETLASER;
-        let (from, to, owner, mut type_, mut number, predict) = if ddnet {
-            let l = ObjDDNetLaser::from_ints(data);
-            (
-                vec2(l.from_x as f32, l.from_y as f32),
-                vec2(l.to_x as f32, l.to_y as f32),
-                l.owner,
-                l.type_,
-                l.switch_number,
-                l.flags & g::LASERFLAG_NO_PREDICT == 0,
-            )
-        } else {
-            let l = ObjLaser::from_ints(data);
-            (
-                vec2(l.from_x as f32, l.from_y as f32),
-                vec2(l.x as f32, l.y as f32),
-                -1,
-                -1,
-                0,
-                true,
-            )
-        };
-        if let Some(ex) = ex
-            && !(ddnet && number >= 0)
-        {
-            number = ex.switch_number;
-            type_ = match ex.entity_class {
-                g::ENTITYCLASS_LIGHT => g::LASERTYPE_FREEZE,
-                g::ENTITYCLASS_GUN_NORMAL..=g::ENTITYCLASS_GUN_UNFREEZE => g::LASERTYPE_GUN,
-                g::ENTITYCLASS_DRAGGER_WEAK..=g::ENTITYCLASS_DRAGGER_STRONG => g::LASERTYPE_DRAGGER,
-                g::ENTITYCLASS_DOOR => g::LASERTYPE_DOOR,
-                _ => type_,
-            };
-        }
+        let l = crate::items::extract_laser(type_id, data, None, ex);
+        let (from, to, owner, type_, number, predict) =
+            (l.from, l.to, l.owner, l.type_, l.switch_number, l.predict);
         // C++: IsLocalTeam (no local player: as in net_char_add)
         let local_team =
             owner < 0 || self.local_id < 0 || self.teams.can_collide(self.local_id, owner);

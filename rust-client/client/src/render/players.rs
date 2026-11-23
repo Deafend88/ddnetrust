@@ -21,10 +21,10 @@ use super::anim::AnimState;
 use super::content::{
     ANIM_BASE, ANIM_HAMMER_SWING, ANIM_IDLE, ANIM_INAIR, ANIM_NINJA_SWING, ANIM_RUN_LEFT,
     ANIM_RUN_RIGHT, ANIM_SIT_LEFT, ANIM_SIT_RIGHT, ANIM_WALK, ANIMATIONS, SPRITE_DOTDOT,
-    SPRITE_OOP, SPRITE_ZZZ, WEAPONS,
+    SPRITE_HOOK_CHAIN, SPRITE_HOOK_HEAD, SPRITE_OOP, SPRITE_ZZZ, WEAPONS,
 };
 use super::tee::{
-    GameSkin, QUAD_EMOTICONS, QUAD_HOOK_CHAIN, QUAD_HOOK_HEAD, Quads, Skin, TEE_NO_WEAPON,
+    QUAD_EMOTICONS, QUAD_HOOK_CHAIN, QUAD_HOOK_HEAD, Quads, Skin, Sprites, TEE_NO_WEAPON,
     TeeRenderInfo, render_hand, render_tee,
 };
 use crate::assets;
@@ -99,7 +99,7 @@ pub fn other_target_angle(
 
 pub struct Players {
     quads: Quads,
-    game_skin: GameSkin,
+    sprites: Sprites,
     skins: Skins,
 }
 
@@ -122,16 +122,16 @@ struct Drawn {
 impl Players {
     pub fn new(gfx: &mut Gfx, storage: &Storage) -> Self {
         // C++ cl_asset_game and cl_asset_emoticons "default"
-        let game_skin = GameSkin::upload(
-            gfx,
-            assets::load_asset(storage, assets::GAME, "default"),
-            assets::load_asset(storage, assets::EMOTICONS, "default"),
-        );
         Self {
             quads: Quads::default(),
-            game_skin,
+            sprites: Sprites::load(gfx, storage),
             skins: Skins::default(),
         }
+    }
+
+    /// The game, particles, emoticons and extras sprites (shared with `Items`).
+    pub fn sprites(&self) -> &Sprites {
+        &self.sprites
     }
 
     /// C++: `CPlayers::OnRender`, with the screen set to the world (game group).
@@ -311,13 +311,13 @@ impl Players {
         }
         let d = distance(pos, hook_pos);
         let dir = normalize(pos - hook_pos);
-        batch.texture_set(self.game_skin.hook_head);
+        batch.texture_set(self.sprites.get(SPRITE_HOOK_HEAD));
         batch.set_rotation(angle(dir) + PI);
         batch.set_color([1.0, 1.0, 1.0, alpha]);
         let head = &self.quads.weapon[QUAD_HOOK_HEAD];
         batch.container_quad(head, hook_pos.x, hook_pos.y, 1.0, 1.0);
         // C++: RenderQuadContainerAsSpriteMultiple, at most 1024 links
-        batch.texture_set(self.game_skin.hook_chain);
+        batch.texture_set(self.sprites.get(SPRITE_HOOK_CHAIN));
         let chain = &self.quads.weapon[QUAD_HOOK_CHAIN];
         let mut f = 24.0;
         let mut count = 0;
@@ -456,7 +456,7 @@ impl Players {
             batch.set_color([1.0, 1.0, 1.0, alpha]);
             let weapon = player.weapon.clamp(0, 5) as usize;
             let spec = &WEAPONS[weapon];
-            batch.texture_set(self.game_skin.weapons[weapon]);
+            batch.texture_set(self.sprites.get(spec.sprite_body));
             let quad = &self.quads.weapon[weapon * 2 + usize::from(dir.x < 0.0)];
             let is_sit = inactive && !in_air && stationary;
             let attach = &state.attach;
@@ -553,7 +553,7 @@ impl Players {
             (p.afk, SPRITE_ZZZ - SPRITE_OOP),
         ] {
             if show {
-                batch.texture_set(self.game_skin.emoticons[emoticon]);
+                batch.texture_set(self.sprites.get(SPRITE_OOP + emoticon));
                 batch.set_color([1.0, 1.0, 1.0, alpha]);
                 let q = &self.quads.weapon[QUAD_EMOTICONS + emoticon];
                 batch.container_quad(q, position.x + 24.0, position.y - 40.0, 1.0, 1.0);

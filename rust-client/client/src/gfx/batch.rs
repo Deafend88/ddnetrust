@@ -52,6 +52,8 @@ pub struct Draw {
     pub wrap: Wrap,
     /// C++ `ClipEnable(x, y, w, h)` in target pixels, before clamping.
     pub clip: Option<[i32; 4]>,
+    /// Map border tiles: the C++ `tile_border` shader (2D-array textures only).
+    pub border: bool,
     pub first: u32,
     pub count: u32,
 }
@@ -123,6 +125,7 @@ pub struct Batch {
     blend: Blend,
     wrap: Wrap,
     clip: Option<[i32; 4]>,
+    border: bool,
     rotation: f32,
     /// C++: `m_aTexture`: [0] top-left, [1] top-right, [2] bottom-right, [3] bottom-left
     /// for `QuadsSetSubset`; `QuadsSetSubsetFree` fills them in freeform corner order.
@@ -144,6 +147,7 @@ impl Default for Batch {
             blend: Blend::Normal,
             wrap: Wrap::Repeat,
             clip: None,
+            border: false,
             rotation: 0.0,
             uv: [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
             colors: [[1.0; 4]; 4],
@@ -185,6 +189,11 @@ impl Batch {
 
     pub fn clip_disable(&mut self) {
         self.clip = None;
+    }
+
+    /// Draws the next quads as C++ `RenderBorderTiles` (repeating texture coordinates).
+    pub fn set_border(&mut self, border: bool) {
+        self.border = border;
     }
 
     /// The current `MapScreen` rectangle (left, top, right, bottom).
@@ -324,10 +333,11 @@ impl Batch {
             });
         }
         let quad = self.vertices.len() as u32 / 4 - 1;
-        let state = (self.texture, self.blend, self.wrap, self.clip);
+        let state = (self.texture, self.blend, self.wrap, self.clip, self.border);
         match self.draws.last_mut() {
             Some(d)
-                if (d.texture, d.blend, d.wrap, d.clip) == state && d.first + d.count == quad =>
+                if (d.texture, d.blend, d.wrap, d.clip, d.border) == state
+                    && d.first + d.count == quad =>
             {
                 d.count += 1
             }
@@ -336,6 +346,7 @@ impl Batch {
                 blend: state.1,
                 wrap: state.2,
                 clip: state.3,
+                border: state.4,
                 first: quad,
                 count: 1,
             }),

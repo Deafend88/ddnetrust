@@ -279,8 +279,44 @@ M5 is complete. Not ported (see Later): weapons, teams/tuning messages, the dumm
   On the way, ruled out: LOD bias (-0.7 to 0), mip filters (box is best; floor,
   nearest, tent and shifted boxes are worse), PrintWindow capture (identical to our
   readback), display scaling (96 DPI), map group parallax.
-- Next: 6.6 entities (projectiles, lasers incl. doors, pickups, flags), then 6.7
-  (mouse, camera messages: lets dm1/ctf1 and left-facing tees be compared).
+- 6.6 Entities: `ddnet/src/items.rs` ports ExtractProjectileInfo (vanilla, legacy
+  DDRace and DDNet objects), ExtractPickupInfo, ExtractLaserInfo (the door code now uses
+  it too), CalcPos and SnapCollectEntities' order (by id, with the EntityEx of the same
+  id). `client/src/render/items.rs` ports CItems for `cl_antiping 0`: projectiles (time
+  from PrevGameTick and GameTickTime, CalcPos, rotation along the flight, grenade spin),
+  pickups (interpolated, flips/rotation, the ninja offset, the bobbing), lasers with
+  the C++ default colours (rifle/shotgun/door/freeze/dragger/gun, bounce-delay width,
+  door bricks, dragger pulleys and orbs, freeze hexagon and snowflake, splat heads),
+  the switch blinking (`Predictor::switch_inactive`: switch state team, super) and
+  flags (at the carrier, no interpolation across capture/return). `tee.rs` `Sprites`
+  replaces `GameSkin`: every sprite of the game, particles, emoticons and extras images
+  by C++ sprite id (zero-size sprites have no texture, as in C++).
+  Found and fixed on the way (a 6.3 bug): the map's border tiles (outside the map)
+  use the C++ `tile_border` fragment shader, which wraps the coordinates (`fract`) and
+  picks the mip level from the unwrapped ones; we had stretched the edge texels.
+  Verified: `rs_parity items` on coverage (12,000 projectile/pickup/laser objects of
+  every kind, with and without EntityEx and tune zones, through the real C++
+  extractors, plus CalcPos at random times and tunings) is bit-identical
+  (`tests/parity.rs`); 8 of 9 mutations caught, the other gives identical floats.
+  Screenshots, with two new tools: the server option `sv_show_all_default 1` (the
+  server sends everything to every client, so the other client's surroundings are in
+  our snapshots) and `compare_screenshots.ps1 -Subject "<ddnet-headless args>"` (a
+  ddnet-headless tee joins first, the C++ client spectates it with
+  `cl_run_on_join spec subject`, DDNet-rs follows it: both cameras on the same tee even
+  where the C++ tee would move; `ddnet-headless --fire 1` makes it shoot). Masked only:
+  the tees, and pickups, whose bobbing runs on each client's own clock (C++ s_Time):
+  ctf1 100.000% (armor and freeze pickups), dm1 99.980% (heart, shield, weapon
+  pickups), coverage 99.998% (door lasers and their heads, the left map border;
+  unmasked 98.2%, the rest being particles, which C++ draws and M6 does not). The gun
+  bullet draws like C++ (checked by eye; bullets live ~0.1 s, so a capture rarely has
+  one in both pictures). No regressions: Gold Mine 99.67%, LearnToPlay 99.73%, Tsunami
+  99.95%, Tutorial 99.47% (its keyboard quad edges, as since 6.3).
+  Also fixed in the compare script: with exactly one `-CppArgs` entry PowerShell
+  concatenated it with the connect argument (why `+hook` failed before).
+  Not verified live: flags (this repo's server has no CTF game type), dragger, freeze
+  and gun lasers (none in view at the subject's spawn), projectile tune zones (no
+  `Sv_TuneParams` yet).
+- Next: 6.7 (mouse, binds, camera messages, settings_ddnet.cfg read once), then 6.8.
 
 ## Later
 - Weapon prediction (`m_PredictWeapons`/AntiPingWeapons: FireWeapon, ninja dash,
@@ -332,7 +368,7 @@ Build the `rs_parity` target like `rs_golden`, then per map (repo root):
 (hooktele only for coverage and LearnToPlay; add `verbose` to see every query value).
 `core`, `world` and `doors` work like `collision` (`<name>.core.txt`, `<name>.world.txt`,
 `<name>.doors.txt`; `-hooktele` variants of core and world for coverage and LearnToPlay;
-`doors` takes no flags). M6.2-M6.5 data (repo root):
+`doors` takes no flags). M6.2-M6.6 data (repo root):
 
     python rust-client/scripts/gen_png_corpus.py
     build-rs/rs_parity.exe png rust-client/tests/golden/png.txt rust-client/tests/golden/png data
@@ -344,6 +380,7 @@ Build the `rs_parity` target like `rs_golden`, then per map (repo root):
     build-rs/rs_parity.exe colors rust-client/tests/golden/colors.txt
     build-rs/rs_parity.exe skins rust-client/tests/golden/skins.txt data/skins
     build-rs/rs_parity.exe interp rust-client/tests/golden/interp.txt
+    build-rs/rs_parity.exe items data/maps/coverage.map rust-client/tests/golden/items.txt
 
 All modes are deterministic: the data regenerates byte for byte.
 

@@ -6,17 +6,18 @@ use ddnet::physics::vmath::{PI, Vec2, angle, vec2};
 
 use super::anim::AnimState;
 use super::content::{
-    SPRITE_HOOK_CHAIN, SPRITE_HOOK_HEAD, SPRITE_OOP, SPRITE_TEE_BODY, SPRITE_TEE_BODY_OUTLINE,
-    SPRITE_TEE_EYE_ANGRY, SPRITE_TEE_EYE_HAPPY, SPRITE_TEE_EYE_NORMAL, SPRITE_TEE_EYE_PAIN,
-    SPRITE_TEE_EYE_SURPRISE, SPRITE_TEE_FOOT, SPRITE_TEE_FOOT_OUTLINE, SPRITE_TEE_HAND,
-    SPRITE_TEE_HAND_OUTLINE, SPRITES, SPRITESETS, WEAPONS,
+    SPRITE_TEE_BODY, SPRITE_TEE_BODY_OUTLINE, SPRITE_TEE_EYE_ANGRY, SPRITE_TEE_EYE_HAPPY,
+    SPRITE_TEE_EYE_NORMAL, SPRITE_TEE_EYE_PAIN, SPRITE_TEE_EYE_SURPRISE, SPRITE_TEE_FOOT,
+    SPRITE_TEE_FOOT_OUTLINE, SPRITE_TEE_HAND, SPRITE_TEE_HAND_OUTLINE, SPRITES, SPRITESETS,
+    WEAPONS,
 };
 use super::map::{hsl_to_rgb, unpack_hsl};
-use crate::assets::Asset;
+use crate::assets;
 use crate::gfx::Gfx;
 use crate::gfx::batch::{Batch, ContainerQuad, TextureId};
 use crate::image::{Format, Image};
 use crate::skin::{Metric, SkinData, sprite_image};
+use crate::storage::Storage;
 use ddnet::protocol::generated as g;
 
 /// C++ tee render flags (render.h).
@@ -72,56 +73,49 @@ impl Skin {
     }
 }
 
-/// C++: the sprite loading of `LoadGameSkin`, `LoadEmoticonsSkin`, ... (assets.cpp):
-/// the image must divide into the sprites' grid (resized if not) and be RGBA, else no
-/// sprite is loaded (C++ then draws those untextured).
-fn sprite_textures<const N: usize>(
-    gfx: &mut Gfx,
-    asset: Asset,
-    sprites: [usize; N],
-) -> [Option<TextureId>; N] {
-    let set = &SPRITESETS[SPRITES[sprites[0]].set];
-    let image = asset.image.and_then(|mut i| {
-        (i.check_divisibility(set.gridx as u32, set.gridy as u32, true) && i.format == Format::Rgba)
-            .then_some(i)
-    });
-    sprites.map(|sprite| {
-        let s = sprite_image(image.as_ref()?, asset.fallback.as_ref(), &SPRITES[sprite]);
-        Some(gfx.create_texture(s.width, s.height, &s.to_rgba()))
-    })
-}
+/// The sprites of the game, particles, emoticons and extras images by C++ sprite id
+/// (C++ `m_GameSkin`, `m_ParticlesSkin`, `m_EmoticonsSkin`, `m_ExtrasSkin`, all
+/// "default"). C++ `LoadGameSkin` etc. (assets.cpp): an image must divide into its
+/// sprite grid (resized if not) and be RGBA, else none of its sprites load (C++ then
+/// draws them untextured, like `None` here). Zero-size sprites (the hammer and ninja
+/// projectiles) have no texture, as in C++.
+pub struct Sprites(Vec<Option<TextureId>>);
 
-/// The game-skin and emoticon sprites the players use (C++ `m_GameSkin`,
-/// `m_EmoticonsSkin`).
-pub struct GameSkin {
-    pub weapons: [Option<TextureId>; 6],
-    pub hook_chain: Option<TextureId>,
-    pub hook_head: Option<TextureId>,
-    pub emoticons: [Option<TextureId>; 16],
-}
-
-impl GameSkin {
-    pub fn upload(gfx: &mut Gfx, game: Asset, emoticons: Asset) -> Self {
-        let [w0, w1, w2, w3, w4, w5, hook_chain, hook_head] = sprite_textures(
-            gfx,
-            game,
-            [
-                WEAPONS[0].sprite_body,
-                WEAPONS[1].sprite_body,
-                WEAPONS[2].sprite_body,
-                WEAPONS[3].sprite_body,
-                WEAPONS[4].sprite_body,
-                WEAPONS[5].sprite_body,
-                SPRITE_HOOK_CHAIN,
-                SPRITE_HOOK_HEAD,
-            ],
-        );
-        Self {
-            weapons: [w0, w1, w2, w3, w4, w5],
-            hook_chain,
-            hook_head,
-            emoticons: sprite_textures(gfx, emoticons, std::array::from_fn(|i| SPRITE_OOP + i)),
+impl Sprites {
+    pub fn load(gfx: &mut Gfx, storage: &Storage) -> Self {
+        let mut textures = vec![None; SPRITES.len()];
+        for kind in [
+            assets::GAME,
+            assets::PARTICLES,
+            assets::EMOTICONS,
+            assets::EXTRAS,
+        ] {
+            let set_index = SPRITESETS.iter().position(|s| s.name == kind.0).unwrap();
+            let set = &SPRITESETS[set_index];
+            let asset = assets::load_asset(storage, kind, "default");
+            let Some(image) = asset.image.and_then(|mut i| {
+                (i.check_divisibility(set.gridx as u32, set.gridy as u32, true)
+                    && i.format == Format::Rgba)
+                    .then_some(i)
+            }) else {
+                continue;
+            };
+            for (id, sprite) in SPRITES
+                .iter()
+                .enumerate()
+                .filter(|(_, s)| s.set == set_index)
+            {
+                let s = sprite_image(&image, asset.fallback.as_ref(), sprite);
+                if s.width > 0 && s.height > 0 {
+                    textures[id] = Some(gfx.create_texture(s.width, s.height, &s.to_rgba()));
+                }
+            }
         }
+        Self(textures)
+    }
+
+    pub fn get(&self, sprite: usize) -> Option<TextureId> {
+        self.0[sprite]
     }
 }
 

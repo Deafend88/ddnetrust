@@ -43,6 +43,15 @@ fn fs(in: Out) -> @location(0) vec4f {
 fn fs_array(in: Out) -> @location(0) vec4f {
     return textureSampleBias(tex_array, smp, in.uv.xy, i32(in.uv.z + 0.5), LOD_BIAS) * in.color;
 }
+
+// C++ tile_border.frag: the coordinates wrap (fract), the mipmap level comes from the
+// unwrapped ones; C++ has the LOD bias in its sampler, which scales the gradients here
+@fragment
+fn fs_array_border(in: Out) -> @location(0) vec4f {
+    let g = exp2(LOD_BIAS);
+    let uv = in.uv.xy;
+    return textureSampleGrad(tex_array, smp, fract(uv), i32(in.uv.z + 0.5), dpdx(uv) * g, dpdy(uv) * g) * in.color;
+}
 ";
 
 /// Runs a future to completion on this thread (wgpu's adapter/device requests).
@@ -113,8 +122,8 @@ pub struct Gfx {
     /// The format of every render target (window surface and world target).
     pub format: wgpu::TextureFormat,
     layouts: [wgpu::BindGroupLayout; 2],
-    /// [2D, 2D array][blend none, normal, additive]
-    pipelines: [[wgpu::RenderPipeline; 3]; 2],
+    /// [2D, 2D array, 2D array map border][blend none, normal, additive]
+    pipelines: [[wgpu::RenderPipeline; 3]; 3],
     textures: Vec<TextureEntry>,
     white: TextureId,
     vertex_buffer: Option<wgpu::Buffer>,
@@ -181,46 +190,47 @@ impl Gfx {
             Some(blend(wgpu::BlendFactor::OneMinusSrcAlpha)),
             Some(blend(wgpu::BlendFactor::One)),
         ];
-        let pipelines = [(0, "fs"), (1, "fs_array")].map(|(kind, entry)| {
-            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: None,
-                bind_group_layouts: &[Some(&layouts[kind])],
-                immediate_size: 0,
-            });
-            blends.map(|b| {
-                device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        let pipelines =
+            [(0, "fs"), (1, "fs_array"), (1, "fs_array_border")].map(|(kind, entry)| {
+                let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: None,
-                    layout: Some(&layout),
-                    vertex: wgpu::VertexState {
-                        module: &shader,
-                        entry_point: Some("vs"),
-                        compilation_options: Default::default(),
-                        buffers: &[Some(wgpu::VertexBufferLayout {
-                            array_stride: Vertex::SIZE as u64,
-                            step_mode: wgpu::VertexStepMode::Vertex,
-                            attributes: &wgpu::vertex_attr_array![
-                                0 => Float32x2, 1 => Float32x3, 2 => Float32x4
-                            ],
-                        })],
-                    },
-                    primitive: wgpu::PrimitiveState::default(),
-                    depth_stencil: None,
-                    multisample: wgpu::MultisampleState::default(),
-                    fragment: Some(wgpu::FragmentState {
-                        module: &shader,
-                        entry_point: Some(entry),
-                        compilation_options: Default::default(),
-                        targets: &[Some(wgpu::ColorTargetState {
-                            format,
-                            blend: b.map(|c| wgpu::BlendState { color: c, alpha: c }),
-                            write_mask: wgpu::ColorWrites::ALL,
-                        })],
-                    }),
-                    multiview_mask: None,
-                    cache: None,
+                    bind_group_layouts: &[Some(&layouts[kind])],
+                    immediate_size: 0,
+                });
+                blends.map(|b| {
+                    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                        label: None,
+                        layout: Some(&layout),
+                        vertex: wgpu::VertexState {
+                            module: &shader,
+                            entry_point: Some("vs"),
+                            compilation_options: Default::default(),
+                            buffers: &[Some(wgpu::VertexBufferLayout {
+                                array_stride: Vertex::SIZE as u64,
+                                step_mode: wgpu::VertexStepMode::Vertex,
+                                attributes: &wgpu::vertex_attr_array![
+                                    0 => Float32x2, 1 => Float32x3, 2 => Float32x4
+                                ],
+                            })],
+                        },
+                        primitive: wgpu::PrimitiveState::default(),
+                        depth_stencil: None,
+                        multisample: wgpu::MultisampleState::default(),
+                        fragment: Some(wgpu::FragmentState {
+                            module: &shader,
+                            entry_point: Some(entry),
+                            compilation_options: Default::default(),
+                            targets: &[Some(wgpu::ColorTargetState {
+                                format,
+                                blend: b.map(|c| wgpu::BlendState { color: c, alpha: c }),
+                                write_mask: wgpu::ColorWrites::ALL,
+                            })],
+                        }),
+                        multiview_mask: None,
+                        cache: None,
+                    })
                 })
-            })
-        });
+            });
         let mut gfx = Self {
             device,
             queue,
@@ -471,7 +481,12 @@ impl Gfx {
                     let tex = &self.textures[d.texture.unwrap_or(self.white).0];
                     // C++: 2D-array textures have one fixed clamp-to-edge sampler
                     let wrap = (tex.array || d.wrap == Wrap::Clamp) as usize;
-                    pass.set_pipeline(&self.pipelines[tex.array as usize][blend]);
+                    let kind = if tex.array && d.border {
+                        2
+                    } else {
+                        tex.array as usize
+                    };
+                    pass.set_pipeline(&self.pipelines[kind][blend]);
                     pass.set_bind_group(0, &tex.bind_groups[wrap], &[]);
                     pass.draw_indexed(d.first * 6..(d.first + d.count) * 6, 0, 0..1);
                 }

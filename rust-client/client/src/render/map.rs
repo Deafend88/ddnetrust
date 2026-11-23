@@ -68,7 +68,7 @@ fn tile_quad(x: i32, y: i32, offset: (i32, i32), index: u8, flags: u8) -> TileQu
 
 /// C++: the `tile_border` shader: a border tile stretched by `scale` (in tiles) and
 /// moved by `offset` (in tiles); texture coordinates are scaled too (swapped for
-/// rotated tiles) and the clamping sampler repeats the tile's edge texels.
+/// rotated tiles), and the fragment shader wraps them (`fract`), so the tile repeats.
 fn border_quad(q: &TileQuad, offset: (f32, f32), scale: (f32, f32)) -> TileQuad {
     let tex_scale = if q.rotated { (scale.1, scale.0) } else { scale };
     TileQuad {
@@ -236,7 +236,6 @@ impl MapRender {
         let color: [f32; 4] = std::array::from_fn(|i| t.color[i] * env[i]);
         let colors = [color; 4];
         let [l, top, r, b] = batch.screen();
-        let mut draw = |q: &TileQuad| batch.quad_raw(q.pos, q.uv, colors);
         let x0 = (l / 32.0).floor() as i32;
         let y0 = (top / 32.0).floor() as i32;
         let x1 = (r / 32.0).ceil() as i32;
@@ -250,14 +249,18 @@ impl MapRender {
             for x in cx0..cx1 {
                 let (index, flags) = tile(x, y);
                 if index > 0 {
-                    draw(&tile_quad(x, y, (0, 0), index, flags));
+                    let q = tile_quad(x, y, (0, 0), index, flags);
+                    batch.quad_raw(q.pos, q.uv, colors);
                 }
             }
         }
         if !(x1 > t.width || y1 > t.height || x0 < 0 || y0 < 0) {
             return;
         }
-        // C++: RenderTileBorder: the edge tiles stretched over what lies outside the map
+        // C++: RenderTileBorder: the edge tiles stretched over what lies outside the map,
+        // drawn with the repeating `tile_border` shader
+        batch.set_border(true);
+        let mut draw = |q: &TileQuad| batch.quad_raw(q.pos, q.uv, colors);
         let (w, h) = (t.width, t.height);
         let mut edge =
             |x: i32, y: i32, at: (i32, i32), offset: (i32, i32), o: (f32, f32), s: (f32, f32)| {
@@ -343,6 +346,7 @@ impl MapRender {
                 }
             }
         }
+        batch.set_border(false);
     }
 
     /// C++: `CRenderLayerQuads::RenderQuadLayer` and the `quad` shader.

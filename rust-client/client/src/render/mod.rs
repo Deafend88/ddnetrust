@@ -3,6 +3,7 @@
 pub mod anim;
 pub mod content;
 pub mod envelope;
+pub mod items;
 pub mod map;
 pub mod players;
 pub mod tee;

@@ -136,3 +136,17 @@ only matters for names so long that neither file can exist.
   is the same condition after the first prediction.
 - Antiping (`cl_antiping 1`: other players predicted and smoothed) is not ported; its
   default is off.
+
+## 2026-11-23 — Entities: what differs from C++ on purpose
+
+- Pickup bobbing and grenade spin run on a local clock in C++ (`s_Time`, from the
+  first time they are drawn); ours runs from client start. Two clients never agree on
+  it, so screenshot comparisons mask pickups.
+- Every tune zone uses the default tuning until `Sv_TuneParams`/tune zone messages are
+  handled (projectile curvature and speed, laser width timing).
+- The antiping branches of CItems (predicted projectiles, lasers, pickups and smoke
+  trail reconstruction) are not ported: they need `cl_antiping 1` and weapon
+  prediction.
+- SnapCollectEntities sorts with `std::sort` (unstable); ours is stable. Servers give
+  every entity its own snapshot id, so the order is the same.
+- Particles (bullet and smoke trails, powerup shine, explosions) are not drawn.

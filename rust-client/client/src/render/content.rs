@@ -46,6 +46,7 @@ pub struct Animation {
 pub struct WeaponSpec {
     pub name: &'static str,
     pub sprite_body: usize,
+    pub sprite_proj: usize,
     pub visual_size: i32,
     pub offsetx: f32,
     pub offsety: f32,
@@ -1961,6 +1962,7 @@ pub const WEAPONS: [WeaponSpec; 6] = [
     WeaponSpec {
         name: "hammer",
         sprite_body: SPRITE_WEAPON_HAMMER_BODY,
+        sprite_proj: SPRITE_WEAPON_HAMMER_PROJ,
         visual_size: 96,
         offsetx: 4.000000,
         offsety: -20.000000,
@@ -1968,6 +1970,7 @@ pub const WEAPONS: [WeaponSpec; 6] = [
     WeaponSpec {
         name: "gun",
         sprite_body: SPRITE_WEAPON_GUN_BODY,
+        sprite_proj: SPRITE_WEAPON_GUN_PROJ,
         visual_size: 64,
         offsetx: 32.000000,
         offsety: 4.000000,
@@ -1975,6 +1978,7 @@ pub const WEAPONS: [WeaponSpec; 6] = [
     WeaponSpec {
         name: "shotgun",
         sprite_body: SPRITE_WEAPON_SHOTGUN_BODY,
+        sprite_proj: SPRITE_WEAPON_SHOTGUN_PROJ,
         visual_size: 96,
         offsetx: 24.000000,
         offsety: -2.000000,
@@ -1982,6 +1986,7 @@ pub const WEAPONS: [WeaponSpec; 6] = [
     WeaponSpec {
         name: "grenade",
         sprite_body: SPRITE_WEAPON_GRENADE_BODY,
+        sprite_proj: SPRITE_WEAPON_GRENADE_PROJ,
         visual_size: 96,
         offsetx: 24.000000,
         offsety: -2.000000,
@@ -1989,6 +1994,7 @@ pub const WEAPONS: [WeaponSpec; 6] = [
     WeaponSpec {
         name: "laser",
         sprite_body: SPRITE_WEAPON_LASER_BODY,
+        sprite_proj: SPRITE_WEAPON_LASER_PROJ,
         visual_size: 92,
         offsetx: 24.000000,
         offsety: -2.000000,
@@ -1996,6 +2002,7 @@ pub const WEAPONS: [WeaponSpec; 6] = [
     WeaponSpec {
         name: "ninja",
         sprite_body: SPRITE_WEAPON_NINJA_BODY,
+        sprite_proj: SPRITE_WEAPON_NINJA_PROJ,
         visual_size: 96,
         offsetx: 0.000000,
         offsety: 0.000000,

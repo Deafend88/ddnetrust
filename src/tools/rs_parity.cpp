@@ -14,6 +14,7 @@
 //        rs_parity anims <output file>
 //        rs_parity colors <output file>
 //        rs_parity interp <output file>
+//        rs_parity items <map file> <output file>
 //        rs_parity skins <output file> <skins dir>
 //
 // "map" loads the map with CMap + CLayers and writes every item, every data blob and
@@ -46,6 +47,7 @@
 // "anims" blends CAnimState like CPlayers::RenderPlayer, "colors" converts tee colours,
 // "skins" prepares skin images like CSkins::LoadSkinData. "interp" computes the render
 // fractions between ticks, interpolated positions and other players' aim angles.
+// "items" extracts projectiles, pickups and lasers from snapshot objects like CItems.
 
 #include <base/color.h>
 #include <base/dbg.h>
@@ -69,6 +71,9 @@
 #include <engine/storage.h>
 
 #include <game/client/animstate.h>
+#include <game/client/laser_data.h>
+#include <game/client/pickup_data.h>
+#include <game/client/projectile_data.h>
 #include <game/client/prediction/entities/character.h>
 #include <game/client/prediction/gameworld.h>
 #include <game/collision.h>
@@ -1930,6 +1935,113 @@ static int InterpMode(const char *pOutFile)
 	return 0;
 }
 
+// "items": snapshot entities through the real ExtractProjectileInfo, ExtractPickupInfo and
+// ExtractLaserInfo (with and without EntityEx, with and without tune zones on the map)
+// and projectile positions through CalcPos at random times and tunings. Lines: "<kind>
+// <object type name> <ints...> ex <has> <3 ints> tz <0|1> => <results>", floats by their bits.
+static int ItemsMode(const char *pMapFile, const char *pOutFile)
+{
+	std::unique_ptr<IStorage> pStorage = CreateLocalStorage();
+	std::unique_ptr<IMap> pMap = CreateMap();
+	CLayers Layers;
+	FILE *f = fopen(pOutFile, "wb");
+	if(!pStorage || !f || !LoadMapAndLayers(pStorage.get(), pMapFile, pMap.get(), &Layers))
+		return -1;
+	CCollision Collision;
+	Collision.Init(&Layers);
+	static CTuningParams s_aItemTuning[TuneZone::NUM];
+	CGameWorld World;
+	World.Init(&Collision, s_aItemTuning, nullptr);
+	const int MapW = Collision.GetWidth() * 32, MapH = Collision.GetHeight() * 32;
+	auto RandInt = [] { return Rand() % 4 == 0 ? (int)(Rand() % 21) - 10 : (int)(Rand() << 8 ^ Rand()); };
+	auto PrintInts = [&](const char *pKind, int Type, const int *pInts, int Num, const CNetObj_EntityEx *pEx, bool Tune) {
+		// type names: the extended types' numbers are not part of the protocol
+		const char *pType = Type == NETOBJTYPE_PROJECTILE ? "projectile" : Type == NETOBJTYPE_DDRACEPROJECTILE ? "ddraceprojectile" : Type == NETOBJTYPE_DDNETPROJECTILE ? "ddnetprojectile" : Type == NETOBJTYPE_PICKUP ? "pickup" : Type == NETOBJTYPE_DDNETPICKUP ? "ddnetpickup" : Type == NETOBJTYPE_LASER ? "laser" : "ddnetlaser";
+		fprintf(f, "%s %s", pKind, pType);
+		for(int i = 0; i < Num; i++)
+			fprintf(f, " %d", pInts[i]);
+		fprintf(f, " ex %d %d %d %d tz %d =>", pEx != nullptr, pEx ? pEx->m_SwitchNumber : 0, pEx ? pEx->m_Layer : 0, pEx ? pEx->m_EntityClass : 0, Tune);
+	};
+	for(int i = 0; i < 12000; i++)
+	{
+		const bool Tune = Rand() % 2;
+		World.m_WorldConfig.m_UseTuneZones = Tune;
+		CNetObj_EntityEx Ex = {(int)(Rand() % 4 == 0 ? RandInt() : Rand() % 20), (int)(Rand() % 4), (int)(Rand() % 12)};
+		const CNetObj_EntityEx *pEx = Rand() % 2 ? &Ex : nullptr;
+		int aInts[10];
+		for(int &v : aInts)
+			v = RandInt();
+		const int Kind = i % 3;
+		if(Kind == 0)
+		{
+			const int aTypes[] = {NETOBJTYPE_PROJECTILE, NETOBJTYPE_DDRACEPROJECTILE, NETOBJTYPE_DDNETPROJECTILE};
+			const int Type = aTypes[Rand() % 3];
+			// positions on the map (hundredths for the DDNet/DDRace objects), sane velocities
+			const bool Hundredths = Type != NETOBJTYPE_PROJECTILE || Rand() % 2;
+			aInts[0] = (int)(Rand() % (MapW + 200)) - 100;
+			aInts[1] = (int)(Rand() % (MapH + 200)) - 100;
+			if(Hundredths)
+			{
+				aInts[0] *= 100;
+				aInts[1] *= 100;
+			}
+			if(Rand() % 2)
+			{
+				aInts[2] = (int)(Rand() % 4001) - 2000;
+				aInts[3] = (int)(Rand() % 4001) - 2000;
+			}
+			if(Type == NETOBJTYPE_PROJECTILE && Rand() % 2)
+				aInts[3] = (int)(Rand() % 0x4000) | LEGACYPROJECTILEFLAG_IS_DDNET; // legacy extra info
+			if(Type == NETOBJTYPE_DDRACEPROJECTILE)
+				aInts[2] = (int)(Rand() % 6283186) - 3141593; // angle in millionths
+			aInts[4] = Rand() % 2 ? (int)(Rand() % 6) : aInts[4];
+			aInts[5] = (int)(Rand() % 100000);
+			if(Type == NETOBJTYPE_DDNETPROJECTILE)
+			{
+				aInts[6] = Rand() % 2 ? (int)(Rand() % 130) - 1 : aInts[6];
+				aInts[9] = (int)(Rand() % 64);
+			}
+			const int Num = Type == NETOBJTYPE_DDNETPROJECTILE ? 10 : 6;
+			PrintInts("proj", Type, aInts, Num, pEx, Tune);
+			const CProjectileData D = ExtractProjectileInfo(Type, aInts, &World, pEx);
+			fprintf(f, " %08x %08x %08x %08x %d %d %d %d %d %d %d %d %d", FloatBits(D.m_StartPos.x), FloatBits(D.m_StartPos.y), FloatBits(D.m_StartVel.x), FloatBits(D.m_StartVel.y),
+				D.m_Type, D.m_StartTick, D.m_ExtraInfo, D.m_Owner, D.m_Explosive, D.m_Bouncing, D.m_Freeze, D.m_SwitchNumber, D.m_TuneZone);
+			// C++ RenderProjectile: CalcPos at a time and the time 1 ms before
+			const float Curvature = Rand() % 3 ? (float)(Rand() % 1000) / 100.0f : 1.25f;
+			const float Speed = Rand() % 3 ? (float)(Rand() % 400000) / 100.0f : 2200.0f;
+			const float Ct = (Rand() % 3000) / 1000.0f + (Rand() % 1000) / 1000000.0f;
+			const vec2 Pos = CalcPos(D.m_StartPos, D.m_StartVel, Curvature, Speed, Ct);
+			const vec2 Prev = CalcPos(D.m_StartPos, D.m_StartVel, Curvature, Speed, Ct - 0.001f);
+			fprintf(f, " calc %08x %08x %08x %08x %08x %08x %08x\n", FloatBits(Curvature), FloatBits(Speed), FloatBits(Ct), FloatBits(Pos.x), FloatBits(Pos.y), FloatBits(Prev.x), FloatBits(Prev.y));
+		}
+		else if(Kind == 1)
+		{
+			const int Type = Rand() % 2 ? NETOBJTYPE_PICKUP : NETOBJTYPE_DDNETPICKUP;
+			const int Num = Type == NETOBJTYPE_DDNETPICKUP ? 6 : 4;
+			PrintInts("pickup", Type, aInts, Num, pEx, Tune);
+			const CPickupData D = ExtractPickupInfo(Type, aInts, pEx);
+			fprintf(f, " %08x %08x %d %d %d %d\n", FloatBits(D.m_Pos.x), FloatBits(D.m_Pos.y), D.m_Type, D.m_Subtype, D.m_SwitchNumber, D.m_Flags);
+		}
+		else
+		{
+			const int Type = Rand() % 2 ? NETOBJTYPE_LASER : NETOBJTYPE_DDNETLASER;
+			// "from" on the map for tune zones
+			const int FromX = 2, FromY = 3; // m_FromX/m_FromY in both objects
+			aInts[FromX] = (int)(Rand() % (MapW + 200)) - 100;
+			aInts[FromY] = (int)(Rand() % (MapH + 200)) - 100;
+			if(Type == NETOBJTYPE_DDNETLASER && Rand() % 2)
+				aInts[7] = (int)(Rand() % 5) - 2;
+			const int Num = Type == NETOBJTYPE_DDNETLASER ? 10 : 5;
+			PrintInts("laser", Type, aInts, Num, pEx, Tune);
+			const CLaserData D = ExtractLaserInfo(Type, aInts, &World, pEx);
+			fprintf(f, " %08x %08x %08x %08x %d %d %d %d %d %d %d %d\n", FloatBits(D.m_From.x), FloatBits(D.m_From.y), FloatBits(D.m_To.x), FloatBits(D.m_To.y),
+				D.m_StartTick, D.m_ExtraInfo, D.m_Owner, D.m_Type, D.m_SwitchNumber, D.m_Subtype, D.m_TuneZone, D.m_Predict);
+		}
+	}
+	fclose(f);
+	return 0;
+}
+
 int main(int argc, const char **argv)
 {
 	CCmdlineFix CmdlineFix(&argc, &argv);
@@ -1948,6 +2060,8 @@ int main(int argc, const char **argv)
 		return ColorsMode(argv[2]);
 	if(argc == 3 && str_comp(argv[1], "interp") == 0)
 		return InterpMode(argv[2]);
+	if(argc == 4 && str_comp(argv[1], "items") == 0)
+		return ItemsMode(argv[2], argv[3]);
 	if(argc == 4 && str_comp(argv[1], "skins") == 0)
 		return SkinsMode(argv[2], argv[3]);
 	if(argc == 3 && str_comp(argv[1], "envelopes-synthetic") == 0)
@@ -1970,6 +2084,6 @@ int main(int argc, const char **argv)
 			return CoreMode(argv[2], argv[3], HookTele, Verbose);
 		return CollisionMode(argv[2], argv[3], HookTele, Verbose);
 	}
-	log_error(TOOL_NAME, "Usage: %s map <map file> <output file> <scratch dir> | collision|core|world <map file> <output file> [hooktele] [verbose] | doors|mapimages|envelopes <map file> <output file> | envelopes-synthetic|screen|anims|colors|interp <output file> | png <output file> <dir>... | skins <output file> <dir>", argc > 0 ? argv[0] : TOOL_NAME);
+	log_error(TOOL_NAME, "Usage: %s map <map file> <output file> <scratch dir> | collision|core|world <map file> <output file> [hooktele] [verbose] | doors|mapimages|envelopes|items <map file> <output file> | envelopes-synthetic|screen|anims|colors|interp <output file> | png <output file> <dir>... | skins <output file> <dir>", argc > 0 ? argv[0] : TOOL_NAME);
 	return -1;
 }

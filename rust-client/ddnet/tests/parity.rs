@@ -906,3 +906,107 @@ fn doors() {
         assert_eq!(snaps, 60, "{name}");
     }
 }
+
+/// M6.6: snapshot entities through `ExtractProjectileInfo`, `ExtractPickupInfo` and
+/// `ExtractLaserInfo`, and `CalcPos`: bit-identical to `rs_parity items` on coverage
+/// (with and without EntityEx, with and without tune zones).
+#[test]
+fn items_match_cpp() {
+    use ddnet::items::{calc_pos, extract_laser, extract_pickup, extract_projectile};
+    use g::ObjEntityEx;
+
+    let map = Map::load(std::fs::read(repo_file("data/maps/coverage.map")).unwrap()).unwrap();
+    let col = Collision::new(&map);
+    let text = std::fs::read_to_string(repo_file("rust-client/tests/golden/items.txt")).unwrap();
+    let b = |f: f32| format!("{:08x}", f.to_bits());
+    let fl = |s: &str| f32::from_bits(u32::from_str_radix(s, 16).unwrap());
+    let mut n = 0;
+    for line in text.lines() {
+        let (input, want) = line.split_once(" => ").unwrap();
+        let f: Vec<&str> = input.split(' ').collect();
+        let type_id = match f[1] {
+            "projectile" => g::NETOBJTYPE_PROJECTILE,
+            "ddraceprojectile" => g::NETOBJTYPE_DDRACEPROJECTILE,
+            "ddnetprojectile" => g::NETOBJTYPE_DDNETPROJECTILE,
+            "pickup" => g::NETOBJTYPE_PICKUP,
+            "ddnetpickup" => g::NETOBJTYPE_DDNETPICKUP,
+            "laser" => g::NETOBJTYPE_LASER,
+            _ => g::NETOBJTYPE_DDNETLASER,
+        };
+        let ex_at = f.iter().position(|&s| s == "ex").unwrap();
+        let ints: Vec<i32> = f[2..ex_at].iter().map(|v| v.parse().unwrap()).collect();
+        let e: Vec<i32> = f[ex_at + 1..ex_at + 5]
+            .iter()
+            .map(|v| v.parse().unwrap())
+            .collect();
+        let ex = (e[0] != 0).then(|| ObjEntityEx::from_ints(&e[1..]));
+        let tunes = (f[ex_at + 6] == "1").then_some(&col);
+        let got = match f[0] {
+            "proj" => {
+                let d = extract_projectile(type_id, &ints, tunes, ex.as_ref());
+                let w: Vec<&str> = want.split(' ').collect();
+                let calc = w.iter().position(|&s| s == "calc").unwrap();
+                let (curv, speed, ct) = (fl(w[calc + 1]), fl(w[calc + 2]), fl(w[calc + 3]));
+                let pos = calc_pos(d.start_pos, d.start_vel, curv, speed, ct);
+                let prev = calc_pos(d.start_pos, d.start_vel, curv, speed, ct - 0.001);
+                format!(
+                    "{} {} {} {} {} {} {} {} {} {} {} {} {} calc {} {} {} {} {} {} {}",
+                    b(d.start_pos.x),
+                    b(d.start_pos.y),
+                    b(d.start_vel.x),
+                    b(d.start_vel.y),
+                    d.type_,
+                    d.start_tick,
+                    d.extra_info as i32,
+                    d.owner,
+                    d.explosive as i32,
+                    d.bouncing,
+                    d.freeze as i32,
+                    d.switch_number,
+                    d.tune_zone,
+                    w[calc + 1],
+                    w[calc + 2],
+                    w[calc + 3],
+                    b(pos.x),
+                    b(pos.y),
+                    b(prev.x),
+                    b(prev.y)
+                )
+            }
+            "pickup" => {
+                let d = extract_pickup(type_id, &ints, ex.as_ref());
+                format!(
+                    "{} {} {} {} {} {}",
+                    b(d.pos.x),
+                    b(d.pos.y),
+                    d.type_,
+                    d.subtype,
+                    d.switch_number,
+                    d.flags
+                )
+            }
+            "laser" => {
+                let d = extract_laser(type_id, &ints, tunes, ex.as_ref());
+                format!(
+                    "{} {} {} {} {} {} {} {} {} {} {} {}",
+                    b(d.from.x),
+                    b(d.from.y),
+                    b(d.to.x),
+                    b(d.to.y),
+                    d.start_tick,
+                    d.extra_info as i32,
+                    d.owner,
+                    d.type_,
+                    d.switch_number,
+                    d.subtype,
+                    d.tune_zone,
+                    d.predict as i32
+                )
+            }
+            _ => panic!("{line}"),
+        };
+        assert_eq!(got, want, "{input}");
+        n += 1;
+    }
+    assert_eq!(n, 12000);
+}

@@ -91,6 +91,8 @@ pub struct Predictor<'a> {
     predicted_core: Option<CharacterCore>,
     /// C++: `Predict()`: a local character to predict, not spectating, world not paused.
     predicting: bool,
+    /// C++: `m_aSwitchStateTeam`: the team of the only switch state object, else -1.
+    switch_state_team: i32,
     predicted_tick: i32,
     /// The latest prediction of the local character for each tick.
     history: BTreeMap<i32, ObjCharacterCore>,
@@ -108,9 +110,7 @@ fn write_core(c: &mut ObjCharacter, core: &CharacterCore) {
 
 /// Pads a snapshot item to `n` ints (shorter items come from older servers).
 fn ints(item: &Item, n: usize) -> Vec<i32> {
-    let mut v = item.data.clone();
-    v.resize(v.len().max(n), 0);
-    v
+    crate::items::pad(&item.data, n)
 }
 
 fn find(items: &[Item], type_id: i32, id: i32) -> Option<&Item> {
@@ -139,6 +139,7 @@ impl<'a> Predictor<'a> {
             prev_predicted_core: None,
             predicted_core: None,
             predicting: false,
+            switch_state_team: -1,
             predicted_tick: -1,
             history: BTreeMap::new(),
             stats: Stats::default(),
@@ -280,6 +281,8 @@ impl<'a> Predictor<'a> {
             65
         };
 
+        self.switch_state_team = -1;
+        let mut got_switch_state_team = false;
         for it in items
             .iter()
             .filter(|it| it.type_id == g::NETOBJTYPE_SWITCHSTATE)
@@ -288,6 +291,12 @@ impl<'a> Predictor<'a> {
                 continue;
             }
             self.read_switch_state(it);
+            self.switch_state_team = if got_switch_state_team {
+                -1
+            } else {
+                it.id.clamp(TEAM_FLOCK, NUM_DDRACE_TEAMS as i32 - 1)
+            };
+            got_switch_state_team = true;
         }
 
         let c = &mut self.world.config;
@@ -493,8 +502,29 @@ impl<'a> Predictor<'a> {
         self.predicted_core.as_ref().map(|c| c.freeze_end)
     }
 
+    /// C++: `m_GameWorld.m_WorldConfig.m_UseTuneZones`.
+    pub fn use_tune_zones(&self) -> bool {
+        self.world.config.use_tune_zones
+    }
+
+    /// C++: the switch test of `CItems::OnRender`: switch `number` exists and is off for
+    /// `SwitchStateTeam()` (the switch state object's team, else the local player's).
+    pub fn switch_inactive(&self, number: i32) -> bool {
+        let team = if self.switch_state_team >= 0 {
+            self.switch_state_team
+        } else if self.local_id < 0 {
+            0
+        } else {
+            self.teams.team(self.local_id)
+        };
+        let switchers = &self.world.core.switchers;
+        number > 0
+            && (number as usize) < switchers.len()
+            && !switchers[number as usize].status[team as usize]
+    }
+
     /// C++: `CGameClient::IsOtherTeam` for a playing (not spectating) local player.
-    fn is_other_team(&self, id: i32) -> bool {
+    pub fn is_other_team(&self, id: i32) -> bool {
         let local = self.local_id;
         if local < 0 || id < 0 {
             return false;

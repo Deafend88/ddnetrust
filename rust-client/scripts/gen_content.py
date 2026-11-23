@@ -79,6 +79,7 @@ def main():
 		"pub struct WeaponSpec {",
 		"    pub name: &'static str,",
 		"    pub sprite_body: usize,",
+		"    pub sprite_proj: usize,",
 		"    pub visual_size: i32,",
 		"    pub offsetx: f32,",
 		"    pub offsety: f32,",
@@ -111,7 +112,7 @@ def main():
 	weapons = c.weapons.id.items
 	out.append(f"pub const WEAPONS: [WeaponSpec; {len(weapons)}] = [")
 	for w in weapons:
-		out.append(f'    WeaponSpec {{ name: "{w.name.value}", sprite_body: SPRITE_{w.sprite_body.target.name.value.upper()}, visual_size: {w.visual_size.value}, offsetx: {f32(w.offsetx.value)}, offsety: {f32(w.offsety.value)} }},')
+		out.append(f'    WeaponSpec {{ name: "{w.name.value}", sprite_body: SPRITE_{w.sprite_body.target.name.value.upper()}, sprite_proj: SPRITE_{w.sprite_proj.target.name.value.upper()}, visual_size: {w.visual_size.value}, offsetx: {f32(w.offsetx.value)}, offsety: {f32(w.offsety.value)} }},')
 	out.append("];")
 	with open(OUT, "w", newline="\n") as f:
 		f.write("\n".join(out) + "\n")

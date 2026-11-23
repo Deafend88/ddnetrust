@@ -18,6 +18,7 @@ use ddnet::protocol::generated as g;
 use ddnet_rs::assets;
 use ddnet_rs::gfx::batch::Batch;
 use ddnet_rs::gfx::{self, Gfx, Size, block_on};
+use ddnet_rs::render::items::{self, Items};
 use ddnet_rs::render::map::{MapRender, View, hsl_packed_to_rgb};
 use ddnet_rs::render::players::Players;
 use ddnet_rs::storage::{self, Storage};
@@ -56,6 +57,7 @@ struct Running {
     map: Option<(MapRender, &'static Collision)>,
     predictor: Option<Predictor<'static>>,
     players: Players,
+    items: Items,
     map_shown_at: Option<Instant>,
 }
 
@@ -115,6 +117,7 @@ impl App {
             map: None,
             predictor: None,
             players,
+            items: Items::default(),
             map_shown_at: None,
         })
     }
@@ -208,6 +211,18 @@ impl App {
                 envelope_time,
             };
             map.render_background(&mut batch, &view);
+            if let Some(predictor) = &r.predictor {
+                r.items.render(
+                    &mut batch,
+                    &items::Frame {
+                        client: &self.client,
+                        predictor,
+                        rendered: &rendered,
+                        collision,
+                        sprites: r.players.sprites(),
+                    },
+                );
+            }
             r.players.render(
                 &mut r.gfx,
                 &self.storage,
