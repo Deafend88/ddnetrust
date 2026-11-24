@@ -97,6 +97,27 @@ pub fn other_target_angle(
     }
 }
 
+/// C++: `CPlayers::GetPlayerTargetAngle` (players.cpp:97), without the dummy and the
+/// spectator/demo checks (not ported).
+pub fn target_angle(client: &Client, r: &Rendered, local: Option<i32>) -> f32 {
+    if Some(r.id) == local {
+        // what would be sent to the server from our current input
+        let i = &client.input;
+        let mut dir = normalize(vec2(i.target_x as f32, i.target_y as f32));
+        if dir == vec2(0.0, 0.0) {
+            dir = vec2(1.0, 0.0);
+        }
+        return angle(dir);
+    }
+    // using unpredicted angle when rendering other players in-game
+    // C++ m_HasExtendedDisplayInfo: the DDNet target, and the previous one
+    let xy = |d: g::ObjDDNetCharacter| vec2(d.target_x as f32, d.target_y as f32);
+    let target = (r.ext)
+        .filter(|d| d.jumped_total != -1)
+        .map(|d| (r.prev_ext.map(xy), xy(d)));
+    other_target_angle(r.prev.angle, r.cur.angle, target, client.intra_tick)
+}
+
 pub struct Players {
     quads: Quads,
     sprites: Sprites,
@@ -343,26 +364,6 @@ impl Players {
         );
     }
 
-    /// C++: `CPlayers::GetPlayerTargetAngle` (players.cpp:97), without the dummy.
-    fn target_angle(client: &Client, p: &Drawn, local: Option<i32>) -> f32 {
-        if Some(p.r.id) == local {
-            // what would be sent to the server from our current input
-            let i = &client.input;
-            let mut dir = normalize(vec2(i.target_x as f32, i.target_y as f32));
-            if dir == vec2(0.0, 0.0) {
-                dir = vec2(1.0, 0.0);
-            }
-            return angle(dir);
-        }
-        // using unpredicted angle when rendering other players in-game
-        // C++ m_HasExtendedDisplayInfo: the DDNet target, and the previous one
-        let xy = |d: g::ObjDDNetCharacter| vec2(d.target_x as f32, d.target_y as f32);
-        let target = (p.r.ext)
-            .filter(|d| d.jumped_total != -1)
-            .map(|d| (p.r.prev_ext.map(xy), xy(d)));
-        other_target_angle(p.r.prev.angle, p.r.cur.angle, target, client.intra_tick)
-    }
-
     /// C++: `CPlayers::RenderPlayer` (players.cpp:565).
     fn render_player(
         &self,
@@ -394,7 +395,7 @@ impl Players {
         let last_attack_time = attack_time; // not paused
         let attack_ticks_passed = attack_time * TICK_SPEED;
 
-        let angle_ = Self::target_angle(client, p, local);
+        let angle_ = target_angle(client, &p.r, local);
         let dir = direction(angle_);
         let vel = mix(
             vec2(prev.vel_x as f32 / 256.0, prev.vel_y as f32 / 256.0),

@@ -29,6 +29,7 @@ use ddnet_rs::gfx::batch::Batch;
 use ddnet_rs::gfx::{self, Gfx, Size, block_on};
 use ddnet_rs::hud::{self, HudData, Widget};
 use ddnet_rs::hud_editor::Editor;
+use ddnet_rs::movement::Movement;
 use ddnet_rs::render::items::{self, Items};
 use ddnet_rs::render::map::{MapRender, View, hsl_packed_to_rgb};
 use ddnet_rs::render::players::Players;
@@ -871,7 +872,7 @@ fn main() {
     let vsync = options.vsync || settings.config.gfx_vsync != 0;
     let mut app = App {
         menu: Menu::new(options.server, &storage),
-        hud: vec![Box::new(Watermark)],
+        hud: vec![Box::new(Watermark), Box::new(Movement)],
         editor: Editor::default(),
         frame_time_average: 0.0001,
         options,

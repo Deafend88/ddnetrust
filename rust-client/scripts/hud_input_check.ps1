@@ -1,5 +1,5 @@
 # M7.5 HUD on/off input check (PLAN 7.3): the inputs the server receives are the same
-# with every watermark item on and with the HUD off. Each run starts
+# with every widget and watermark item on and with the HUD off. Each run starts
 # build-rs/DDNet-Server.exe (127.0.0.1:8305, dm1, scratch dir %TEMP%\ddnet-rs-input\server,
 # sv_tee_historian 1) and target/debug/ddnet-rs.exe with APPDATA in the scratch dir, sends
 # the same keys to our window only (right, jump, left, hook... as posted messages), then
@@ -49,7 +49,7 @@ function Run($name, $hudLines, $skipJump) {
   & "$root\rust-client\target\debug\examples\teehistorian_inputs.exe" $file.FullName
 }
 
-$all = 'hud_set "watermark" "server" "1"', 'hud_set "watermark" "time" "1"', 'hud_set "watermark" "uid" "1"', 'hud_set "watermark" "tps" "1"'
+$all = 'hud_widget "movement" bottom_right -16 -16 1', 'hud_set "watermark" "speed" "1"', 'hud_set "watermark" "server" "1"', 'hud_set "watermark" "time" "1"', 'hud_set "watermark" "uid" "1"', 'hud_set "watermark" "tps" "1"'
 $on = Run "on" $all $false
 $off = Run "off" 'hud_widget "watermark" top_left 16 16 0' $Mutate
 "HUD on: $($on.Count) input changes"; $on

@@ -13,6 +13,7 @@ pub mod hud_editor;
 pub mod icons;
 pub mod image;
 pub mod keynames;
+pub mod movement;
 pub mod render;
 pub mod skin;
 pub mod storage;

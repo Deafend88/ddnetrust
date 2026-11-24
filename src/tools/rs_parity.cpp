@@ -17,6 +17,7 @@
 //        rs_parity items <map file> <output file>
 //        rs_parity skins <output file> <skins dir>
 //        rs_parity camera <output file>
+//        rs_parity movement <output file>
 //
 // "map" loads the map with CMap + CLayers and writes every item, every data blob and
 // the physics layers, then loads mutated copies of the file (truncated, bit flips,
@@ -103,6 +104,7 @@
 static constexpr const char *const TOOL_NAME = "rs_parity";
 
 int CameraMode(const char *pOutFile); // rs_parity_camera.cpp
+int MovementMode(const char *pOutFile); // rs_parity_hud.cpp
 
 typedef std::vector<unsigned char> Bytes;
 
@@ -2063,6 +2065,8 @@ int main(int argc, const char **argv)
 		return ColorsMode(argv[2]);
 	if(argc == 3 && str_comp(argv[1], "interp") == 0)
 		return InterpMode(argv[2]);
+	if(argc == 3 && str_comp(argv[1], "movement") == 0)
+		return MovementMode(argv[2]);
 	if(argc == 3 && str_comp(argv[1], "camera") == 0)
 		return CameraMode(argv[2]);
 	if(argc == 4 && str_comp(argv[1], "items") == 0)
@@ -2089,6 +2093,6 @@ int main(int argc, const char **argv)
 			return CoreMode(argv[2], argv[3], HookTele, Verbose);
 		return CollisionMode(argv[2], argv[3], HookTele, Verbose);
 	}
-	log_error(TOOL_NAME, "Usage: %s map <map file> <output file> <scratch dir> | collision|core|world <map file> <output file> [hooktele] [verbose] | doors|mapimages|envelopes|items <map file> <output file> | envelopes-synthetic|screen|anims|colors|interp <output file> | png <output file> <dir>... | skins <output file> <dir>", argc > 0 ? argv[0] : TOOL_NAME);
+	log_error(TOOL_NAME, "Usage: %s map <map file> <output file> <scratch dir> | collision|core|world <map file> <output file> [hooktele] [verbose] | doors|mapimages|envelopes|items <map file> <output file> | envelopes-synthetic|screen|anims|colors|interp|camera|movement <output file> | png <output file> <dir>... | skins <output file> <dir>", argc > 0 ? argv[0] : TOOL_NAME);
 	return -1;
 }

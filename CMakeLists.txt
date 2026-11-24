@@ -3372,6 +3372,10 @@ if(TOOLS)
         # the camera and mouse components, run outside a CGameClient (rs_parity_camera.cpp)
         list(APPEND EXTRA_TOOL_SRC "src/tools/rs_parity_camera.cpp" "src/game/client/component.cpp"
           "src/game/client/components/camera.cpp" "src/game/client/components/controls.cpp")
+        # the HUD's movement information and the players' aim (rs_parity_hud.cpp)
+        list(APPEND EXTRA_TOOL_SRC "src/tools/rs_parity_hud.cpp" "src/game/client/components/hud.cpp"
+          "src/game/client/components/players.cpp" "src/game/client/skin.cpp"
+          "${PROJECT_BINARY_DIR}/src/generated/client_data7.cpp" "${PROJECT_BINARY_DIR}/src/generated/client_data7.h")
         list(APPEND EXTRA_TOOL_SRC "${PROJECT_BINARY_DIR}/src/generated/client_data.cpp"
           "${PROJECT_BINARY_DIR}/src/generated/client_data.h")
       endif()

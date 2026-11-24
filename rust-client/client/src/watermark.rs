@@ -14,11 +14,12 @@ use crate::widgets as w;
 
 /// Stat keys in their default order, whether each shows by default (SPEC §1) and the
 /// name in the editor.
-pub const ITEMS: [(&str, bool, &str); 7] = [
+pub const ITEMS: [(&str, bool, &str); 8] = [
     ("user", true, "Name"),
     ("server", false, "Server address"),
     ("ping", true, "Ping"),
     ("fps", true, "Framerate"),
+    ("speed", false, "Speed"),
     ("time", false, "Local time"),
     ("uid", false, "Client ID"),
     ("tps", false, "Tick rate"),
@@ -45,13 +46,18 @@ pub fn draw(ui: &mut Ui, glass: Glass, compact: bool, stats: &[Stat]) {
                 );
             }
         });
-        for (i, (glyph, value, unit)) in stats.iter().enumerate() {
-            if i > 0 {
-                w::dot(ui);
-            }
-            w::stat(ui, glyph, value, *unit);
-        }
+        self::stats(ui, stats);
     });
+}
+
+/// Stats separated by dots (the watermark's row; also the movement widget's).
+pub fn stats(ui: &mut Ui, stats: &[Stat]) {
+    for (i, (glyph, value, unit)) in stats.iter().enumerate() {
+        if i > 0 {
+            w::dot(ui);
+        }
+        w::stat(ui, glyph, value, *unit);
+    }
 }
 
 /// The keys in the configured order: known keys from `order`, then the missing ones in
@@ -115,6 +121,11 @@ pub fn stat(key: &str, data: &HudData) -> Option<Stat> {
             (icons::CLOUD, ms.to_string(), Some("ms"))
         }
         "server" => (icons::GLOBE, data.server.to_string(), None),
+        // SPEC §1 "bps": the horizontal speed of the movement information (7.6)
+        "speed" => {
+            let speed = crate::movement::of(data)?.speed.x;
+            (icons::GAUGE, crate::movement::shown(speed), Some("tiles/s"))
+        }
         "time" => (icons::CLOCK, clock(&chrono::Local::now()), None),
         "tps" => (icons::PULSE, TICK_SPEED.to_string(), Some("tps")),
         _ => return None,

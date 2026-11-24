@@ -187,7 +187,9 @@ fn watermark_order_and_items() {
     c.execute("hud_set", r#"watermark order "fps, nope,ping,fps""#);
     assert_eq!(
         watermark::order(&c),
-        ["fps", "ping", "user", "server", "time", "uid", "tps"]
+        [
+            "fps", "ping", "user", "server", "speed", "time", "uid", "tps"
+        ]
     );
     c.execute("hud_set", "watermark user 0");
     c.execute("hud_set", "watermark tps 1");
@@ -491,4 +493,88 @@ fn watermark_layout_measurements() {
     assert_eq!(fps_icon.2.left() - user_end, space::M + space::L + space::M);
     // the pill hugs its content: 16 pt after the last unit, 8 above and below the row
     assert_eq!(area.right() - unit.2.right(), space::L);
+}
+
+/// 7.6: the movement information against the real `CHud::GetMovementInformation` and
+/// `CPlayers::GetPlayerTargetAngle` (`rs_parity movement`, 20,000 random characters, local
+/// and other players, with and without DDNet targets, random velocity ramps): every float
+/// bit-identical and every shown text equal.
+#[test]
+fn movement_information_matches_cpp() {
+    use ddnet::physics::tuning::{Param, Tuning};
+    use ddnet::predict::Rendered;
+    use ddnet::protocol::generated::{ObjCharacter, ObjDDNetCharacter};
+    use ddnet_rs::movement;
+    use ddnet_rs::render::players::target_angle;
+
+    let path = format!(
+        "{}/../tests/golden/movement.txt",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let text = std::fs::read_to_string(path).unwrap();
+    let mut client = Client::new(PlayerInfo::default(), "", || [0; 16]);
+    let mut wrong = Vec::new();
+    for line in text.lines() {
+        let f: Vec<&str> = line.split(' ').collect();
+        let i = |k: usize| f[k].parse::<i32>().unwrap();
+        let float = |k: usize| f32::from_bits(u32::from_str_radix(f[k], 16).unwrap());
+        let ch = |k: usize| ObjCharacter {
+            x: i(k),
+            y: i(k + 1),
+            vel_x: i(k + 2),
+            vel_y: i(k + 3),
+            angle: i(k + 4),
+            ..Default::default()
+        };
+        let ext = |x, y| ObjDDNetCharacter {
+            target_x: x,
+            target_y: y,
+            ..Default::default()
+        };
+        let mode = i(12);
+        let tee = Rendered {
+            id: 0,
+            prev: ch(2),
+            cur: ch(7),
+            pos: Default::default(),
+            predicted: false,
+            ext: (mode != 0).then(|| ext(i(17), i(18))),
+            prev_ext: (mode == 2).then(|| ext(i(13), i(14))),
+        };
+        // C++ sends (int)m_aMousePos as the target
+        client.input.target_x = float(15) as i32;
+        client.input.target_y = float(16) as i32;
+        client.intra_tick = float(19);
+        let mut tuning = Tuning::default();
+        for (n, p) in [
+            Param::VelrampStart,
+            Param::VelrampRange,
+            Param::VelrampCurvature,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            tuning.0[p as usize] = i(20 + n);
+        }
+        let local = Some(if i(1) != 0 { 0 } else { 1 });
+        let aim = target_angle(&client, &tee, local);
+        let m = movement::info(&tee.prev, &tee.cur, client.intra_tick, &tuning, aim);
+        let values = [m.pos.x, m.pos.y, m.speed.x, m.speed.y, m.angle];
+        let got = format!(
+            "{} | {} | {}",
+            f[..23].join(" "),
+            values.map(|v| format!("{:08x}", v.to_bits())).join(" "),
+            values.map(movement::shown).join(" ")
+        );
+        if got != line {
+            wrong.push(format!("got  {got}\nwant {line}"));
+        }
+    }
+    assert!(
+        wrong.is_empty(),
+        "{} of {} differ:\n{}",
+        wrong.len(),
+        text.lines().count(),
+        wrong[..wrong.len().min(5)].join("\n")
+    );
 }
