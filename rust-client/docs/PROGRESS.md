@@ -436,7 +436,7 @@ for scenes that do not stay still, or `-RustSubject` to check what the server se
 `examples/maprender.rs` renders a map at a given
 center for fixed-view checks; mask pickups (they bob on each client's own clock).
 
-### M7 — visual identity and HUD (in progress: 7.1 and 7.2 approved, 7.3 next)
+### M7 — visual identity and HUD (in progress: 7.1 and 7.2 approved, 7.3 done, review pending)
 
 Pushed and verified: the plan and its review answers (PLAN §10, §10.6), the collision
 leak fix, and 7.1 (fonts + icons, design system, menus + gallery, the review tweaks,
@@ -519,12 +519,42 @@ off / subtle / full on the dm1 render) and the logo text 114 grey (4.6:1). Subtl
 unchanged, still the default. The user judges Liquid Glass live with the island
 animations in 7.9.
 
+#### 7.3 status (2026-11-24): HUD system, done (commit 3831fc4a3), pushed
+- `hud.rs`: `Widget` trait (`id`, `default_placement`, `show(ui, &HudData,
+  &HudConfig)`), `Anchor` (9 points, names `top_left` .. `bottom_right`, mapped to
+  egui `Align2`), `Placement` (anchor + offset in points + enabled), `HudConfig`
+  (`hud_widget <id> <anchor> <x> <y> <enabled>`, `hud_set <id> <key> <value>`, executed
+  by `Settings::execute_line`, saved by `Settings::serialize`; unknown ids/keys kept),
+  `HudData` (borrowed: client, predictor, followed tee, this frame's game messages),
+  `hud::show` (an egui `Area` per enabled widget, `anchor(align, offset)`, not
+  interactable, background order; egui keeps areas on screen).
+- `main.rs`: `App::hud` (empty until 7.5); the frame drains `client.messages` into the
+  HUD's events (fixes: the graphical client never drained them, so they piled up for
+  the whole connection); the HUD draws under the menus once the map is loaded and
+  only when there are widgets.
+- Tests `tests/hud.rs` (4): config round trip, malformed lines, 9 anchors x 2 DPI
+  against an independent table (a swapped anchor fails it), off-screen offsets clamp.
+  Gates: 75 tests. Live menu check unchanged.
+
+Deviations from PLAN 7.3 (tell the user; their call):
+1. No separate HUD `Painter` facade: widgets draw with egui + `widgets.rs` (panel,
+   glass pill, text, icon, stat). A facade is the Lua surface; it is built with Lua
+   (after M7), when its shape is known. Image and progress components come with their
+   first widgets (7.9/7.10).
+2. `HudData` holds what has a source today; fps (C++ averaging), server address,
+   local time (needs a time zone source) and now playing/track change come with the
+   widgets that read them (7.5, 7.10).
+3. The "inputs byte-identical with every widget on/off" server test is replaced by
+   construction: widgets get `&HudData` and an egui `Ui` only (no client, controls or
+   settings), and the HUD pass runs after `snap_input`/`net::pump` in the frame. A
+   real on/off comparison needs scripted, timing-identical runs; if the user wants it,
+   it fits once widgets exist (7.5).
+4. Widget `name`/`icon` (editor list) are added with the editor (7.4).
+
 #### Exact next actions
-1. 7.3 (HUD system and data, PLAN §10.3): `HudData` snapshot + event queue, `Widget`
-   (anchor + offset, settings), a small HUD painter on the widgets.rs components,
-   layout/settings as `hud_widget`/`hud_set` console lines in our settings.cfg; tests:
-   anchor/offset/DPI maths, console round trip, inputs byte-identical with the HUD on
-   and off.
+1. User review of 7.3 and the deviations above (not visual: no widget exists yet).
+2. 7.4 HUD editor (PLAN §10.3), then 7.5 watermark. Every UI step: frontend-design
+   skill + the CLAUDE.md UI rules review before it is done.
 
 The menu capture scripts (not in the repo) start `build-rs/DDNet-Server.exe` on port
 8305 from `%TEMP%\ddnet-rs-menu\server` with its own storage.cfg, run
