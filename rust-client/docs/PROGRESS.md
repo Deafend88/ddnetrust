@@ -436,7 +436,7 @@ for scenes that do not stay still, or `-RustSubject` to check what the server se
 `examples/maprender.rs` renders a map at a given
 center for fixed-view checks; mask pickups (they bob on each client's own clock).
 
-### M7 — visual identity and HUD (in progress: 7.1 and 7.2 approved, 7.3 done, review pending)
+### M7 — visual identity and HUD (in progress: 7.1-7.3 done and approved, 7.4 next)
 
 Pushed and verified: the plan and its review answers (PLAN §10, §10.6), the collision
 leak fix, and 7.1 (fonts + icons, design system, menus + gallery, the review tweaks,
@@ -519,7 +519,7 @@ off / subtle / full on the dm1 render) and the logo text 114 grey (4.6:1). Subtl
 unchanged, still the default. The user judges Liquid Glass live with the island
 animations in 7.9.
 
-#### 7.3 status (2026-11-24): HUD system, done (commit 3831fc4a3), pushed
+#### 7.3 status (2026-11-24): HUD system, done and approved (commit 3831fc4a3)
 - `hud.rs`: `Widget` trait (`id`, `default_placement`, `show(ui, &HudData,
   &HudConfig)`), `Anchor` (9 points, names `top_left` .. `bottom_right`, mapped to
   egui `Align2`), `Placement` (anchor + offset in points + enabled), `HudConfig`
@@ -536,7 +536,8 @@ animations in 7.9.
   against an independent table (a swapped anchor fails it), off-screen offsets clamp.
   Gates: 75 tests. Live menu check unchanged.
 
-Deviations from PLAN 7.3 (tell the user; their call):
+Deviations from PLAN 7.3 (accepted by the user on 2026-11-24; for 3 the user wants the
+real HUD on/off input test added in 7.5):
 1. No separate HUD `Painter` facade: widgets draw with egui + `widgets.rs` (panel,
    glass pill, text, icon, stat). A facade is the Lua surface; it is built with Lua
    (after M7), when its shape is known. Image and progress components come with their
@@ -551,10 +552,32 @@ Deviations from PLAN 7.3 (tell the user; their call):
    it fits once widgets exist (7.5).
 4. Widget `name`/`icon` (editor list) are added with the editor (7.4).
 
-#### Exact next actions
-1. User review of 7.3 and the deviations above (not visual: no widget exists yet).
-2. 7.4 HUD editor (PLAN §10.3), then 7.5 watermark. Every UI step: frontend-design
-   skill + the CLAUDE.md UI rules review before it is done.
+#### Exact next actions (next session starts here)
+1. Read CLAUDE.md (UI rules: frontend-design skill, read from the path given there
+   if it does not load as a skill; spacing scale; tokens only; one accent; essential
+   info; review before done), PLAN §10.3 7.4/7.5, this section, `git log`.
+2. Order question for the user first: 7.4 (editor) has no widget to drag until the
+   watermark exists (7.5). Propose: build 7.5's watermark first (or together), then the
+   editor, so the editor's live check moves a real widget. Ask; default to that order.
+3. 7.4 HUD editor (PLAN §10.3): `hud_editor` command, opened from the Esc menu and by
+   F6 (bound only if F6 is free, like `SetDDRaceBinds(true)`; config.rs `Binds`);
+   game input goes to menu mode (6.8 rules), cursor free; widgets show outlines; drag
+   to move with snapping (screen edges and centre, other widgets' edges, 8 pt grid;
+   Shift disables); click opens the widget's settings popover (`widgets::popover`:
+   toggles, order, compact); reset one / reset all; enable/disable list (add
+   `Widget::name`/`icon` here); saved to settings.cfg (`HudConfig`) when the editor
+   closes. Anchor reassignment: a widget dropped nearer another anchor gets that
+   anchor, with the offset recomputed so its screen position is unchanged.
+   Verify: unit tests for snapping and anchor reassignment (dragged to the right edge
+   gets a right anchor and keeps its place on resize); a scripted live run (SendKeys /
+   mouse events to our window only, the menu_check.ps1 pattern) that moves a widget,
+   closes the editor, restarts the client and finds it at the saved place.
+4. 7.5 watermark (PLAN §10.3) + the HUD on/off input test the user asked for: run
+   the client scripted against the local server with the HUD enabled and disabled and
+   compare the sent inputs (e.g. log `client.input` per sent tick, or capture with
+   the headless pattern of `ddnet/tests/server.rs`); HudData gains fps (C++ frame
+   time averaging), the server address and local time (time zone source needed).
+5. Before each commit: gates, `/ponytail-review`, UI rules review; update this file.
 
 The menu capture scripts (not in the repo) start `build-rs/DDNet-Server.exe` on port
 8305 from `%TEMP%\ddnet-rs-menu\server` with its own storage.cfg, run
