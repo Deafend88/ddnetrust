@@ -270,6 +270,10 @@ pub struct Config {
     pub cl_smooth_zoom_time: i32,
     pub cl_limit_max_zoom_level: i32,
     pub cl_race_binds_set: i32,
+    pub gfx_vsync: i32,
+    /// Ours (not a C++ variable): the DDNet data dir, used when neither `--data-dir`
+    /// nor `DDNET_DATA_DIR` is given.
+    pub rs_data_dir: String,
 }
 
 impl Default for Config {
@@ -297,6 +301,8 @@ impl Default for Config {
             cl_smooth_zoom_time: 250,
             cl_limit_max_zoom_level: 1,
             cl_race_binds_set: 0,
+            gfx_vsync: 0,
+            rs_data_dir: String::new(),
         }
     }
 }
@@ -335,6 +341,8 @@ impl Config {
             "cl_smooth_zoom_time" => Int(&mut self.cl_smooth_zoom_time, 0, 5000),
             "cl_limit_max_zoom_level" => Int(&mut self.cl_limit_max_zoom_level, 0, 1),
             "cl_race_binds_set" => Int(&mut self.cl_race_binds_set, 0, 3),
+            "gfx_vsync" => Int(&mut self.gfx_vsync, 0, 1),
+            "rs_data_dir" => Str(&mut self.rs_data_dir, 512),
             _ => return None,
         })
     }
@@ -373,16 +381,19 @@ impl Config {
         true
     }
 
-    /// The non-default variables as the C++ `CConfigManager::Save` writes them.
-    pub fn serialize(&self) -> Vec<String> {
+    /// The variables as the C++ `CConfigManager::Save` writes them: the non-default
+    /// ones, or with `all` every one (our settings file must override the C++ one).
+    pub fn serialize(&self, all: bool) -> Vec<String> {
         let mut clone = self.clone();
         let mut def = Self::default();
         let mut out = Vec::new();
         for name in VAR_NAMES {
             let line = match (clone.var(name).unwrap(), def.var(name).unwrap()) {
-                (Var::Int(v, ..), Var::Int(dv, ..)) if v != dv => format!("{name} {v}"),
-                (Var::Color(v), Var::Color(dv)) if v != dv => format!("{name} {v}"),
-                (Var::Str(v, _), Var::Str(dv, _)) if v != dv => format!("{name} \"{}\"", escape(v)),
+                (Var::Int(v, ..), Var::Int(dv, ..)) if all || v != dv => format!("{name} {v}"),
+                (Var::Color(v), Var::Color(dv)) if all || v != dv => format!("{name} {v}"),
+                (Var::Str(v, _), Var::Str(dv, _)) if all || v != dv => {
+                    format!("{name} \"{}\"", escape(v))
+                }
                 _ => continue,
             };
             out.push(line);
@@ -392,7 +403,7 @@ impl Config {
 }
 
 /// Every variable name `Config::var` knows.
-pub const VAR_NAMES: [&str; 22] = [
+pub const VAR_NAMES: [&str; 24] = [
     "player_name",
     "player_skin",
     "player_use_custom_color",
@@ -415,6 +426,8 @@ pub const VAR_NAMES: [&str; 22] = [
     "cl_smooth_zoom_time",
     "cl_limit_max_zoom_level",
     "cl_race_binds_set",
+    "gfx_vsync",
+    "rs_data_dir",
 ];
 
 /// C++: `str_copy` into a buffer of `size` bytes (cut at `size - 1` bytes, then
@@ -438,7 +451,7 @@ fn color_pack_light(v: u32) -> u32 {
 }
 
 /// C++: `str_escape`: `\` before `"` and `\`.
-fn escape(s: &str) -> String {
+pub fn escape(s: &str) -> String {
     s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
@@ -476,6 +489,23 @@ impl Binds {
         if !command.is_empty() {
             self.map.insert((mask, key), command.to_string());
         }
+    }
+
+    /// C++: `CBinds::GetKey`: the first (modifier, key) bound to exactly `command`.
+    pub fn slot_of(&self, command: &str) -> Option<(usize, usize)> {
+        self.map
+            .iter()
+            .find(|(_, c)| c.as_str() == command)
+            .map(|(&(mask, key), _)| (key, mask))
+    }
+
+    /// C++: the settings key reader (menus_settings_controls.cpp:543): unbind the
+    /// command's first slot, bind the new key (no modifiers) to it.
+    pub fn rebind(&mut self, command: &str, key: usize) {
+        if let Some((old, mask)) = self.slot_of(command) {
+            self.bind(old, "", false, mask);
+        }
+        self.bind(key, command, false, 0);
     }
 
     fn get(&self, key: usize, mask: usize) -> &str {
@@ -661,13 +691,17 @@ impl Binds {
     /// C++: `CBinds::OnInput` for one key event (`press`/`release`, both for a wheel
     /// step) with `pressed` the current key states (C++ `Input()->KeyIsPressed`).
     /// Returns the bind lines to run, with their stroke (C++ `ExecuteLineStroked`).
+    /// `menus_active`: C++ menus take key presses before binds see them, and releases
+    /// end active binds without running them (binds.cpp:180).
     pub fn on_input(
         &mut self,
         key: usize,
         press: bool,
         release: bool,
+        menus_active: bool,
         pressed: impl Fn(usize) -> bool,
     ) -> Vec<(bool, String)> {
+        let press = press && !menus_active;
         let mut run = Vec::new();
         let key_mask = Self::modifier_mask_of_key(key);
         let mask = [
@@ -705,20 +739,17 @@ impl Binds {
             }
         }
         if release {
-            // C++ also keeps binds active while chat, console or menus are open; DDNet-rs
-            // has none of them yet
-            if let Some(i) = self.active.iter().position(|b| b.0 == key) {
-                let (k, m) = self.active.remove(i);
-                if let Some(c) = self.map.get(&(m, k)) {
+            let mut end = |(k, m): (usize, usize)| {
+                if let Some(c) = self.map.get(&(m, k)).filter(|_| !menus_active) {
                     run.push((false, c.clone()));
                 }
+            };
+            if let Some(i) = self.active.iter().position(|b| b.0 == key) {
+                end(self.active.remove(i));
             }
             if key_mask != 0 {
                 while let Some(i) = self.active.iter().position(|b| b.1 & key_mask != 0) {
-                    let (k, m) = self.active.remove(i);
-                    if let Some(c) = self.map.get(&(m, k)) {
-                        run.push((false, c.clone()));
-                    }
+                    end(self.active.remove(i));
                 }
             }
         }
@@ -752,6 +783,29 @@ impl Settings {
         }
         s.binds.set_ddrace_binds(&mut s.config, true);
         s
+    }
+
+    /// Our settings file: every variable and every bind (it overrides the C++ file).
+    pub fn serialize(&self) -> String {
+        let mut text = String::from(
+            "# DDNet-rs settings (C++ console syntax)
+",
+        );
+        for line in self.config.serialize(true) {
+            text += &format!(
+                "{line}
+"
+            );
+        }
+        text += "unbindall
+";
+        for line in self.binds.serialize() {
+            text += &format!(
+                "{line}
+"
+            );
+        }
+        text
     }
 
     /// C++: `CConsole::ExecuteLine` for the config file commands: our variables, `bind`,

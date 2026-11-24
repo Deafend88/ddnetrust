@@ -1,9 +1,9 @@
-//! `ddnet-rs`: the graphical client. It connects to a local server and draws the map,
-//! tees and entities around the local tee, which you play with your C++ client's
-//! settings and binds (read once from `settings_ddnet.cfg`, never written). F12 saves a
-//! screenshot into our own directory; Esc frees the mouse, a click grabs it again.
+//! `ddnet-rs`: the graphical client. A start screen connects to a local server by
+//! address; in game you play with your C++ client's settings and binds (read once from
+//! `settings_ddnet.cfg`, never written) and Esc opens a small menu. Settings changed in
+//! the menu go to our own `%APPDATA%\DDNet-rs\settings.cfg`. F12 saves a screenshot.
 //!
-//! Usage: ddnet-rs <server ip:port> [--data-dir PATH] [--vsync] [--size WxH] [--view X,Y]
+//! Usage: ddnet-rs [server ip:port] [--data-dir PATH] [--vsync] [--size WxH] [--view X,Y]
 //!        [--follow CLIENT_ID] [--screenshot-after SECONDS] [--no-grab]
 
 use std::net::{SocketAddr, UdpSocket};
@@ -20,7 +20,7 @@ use ddnet::protocol::generated as g;
 use ddnet_rs::assets;
 use ddnet_rs::camera::{self, Camera, Frame};
 use ddnet_rs::config::{
-    KEY_LAST, KEY_MOUSE_WHEEL_DOWN, KEY_MOUSE_WHEEL_LEFT, KEY_MOUSE_WHEEL_RIGHT,
+    KEY_ESCAPE, KEY_LAST, KEY_MOUSE_WHEEL_DOWN, KEY_MOUSE_WHEEL_LEFT, KEY_MOUSE_WHEEL_RIGHT,
     KEY_MOUSE_WHEEL_UP, Settings,
 };
 use ddnet_rs::controls::{self, Controls, GameState};
@@ -30,6 +30,7 @@ use ddnet_rs::render::items::{self, Items};
 use ddnet_rs::render::map::{MapRender, View, hsl_packed_to_rgb};
 use ddnet_rs::render::players::Players;
 use ddnet_rs::storage::{self, Storage};
+use ddnet_rs::ui::{Action, Menu, Ui};
 use winit::application::ApplicationHandler;
 use winit::event::{DeviceEvent, DeviceId, ElementState, KeyEvent, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
@@ -42,9 +43,10 @@ const BACKGROUND_COLOR: u32 = 128;
 const NANOS_PER_TICK: i64 = 1_000_000_000 / 50;
 
 struct Options {
-    server: SocketAddr,
+    /// Connect at start instead of showing the start screen.
+    server: Option<SocketAddr>,
     data_dir: Option<std::path::PathBuf>,
-    /// C++ `gfx_vsync` (default 0).
+    /// Forces vsync on (else `gfx_vsync`).
     vsync: bool,
     /// Window size in pixels (default: the window system's).
     size: Option<(u32, u32)>,
@@ -58,28 +60,99 @@ struct Options {
     no_grab: bool,
 }
 
+/// The window and what draws into it.
 struct Running {
     window: Arc<Window>,
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
     gfx: Gfx,
+    players: Players,
+    /// `None` without DDNet's font: then there are no menus.
+    ui: Option<Ui>,
+}
+
+/// One connection to a server and its game state (C++: what `CClient::Disconnect` and
+/// `CGameClient::OnReset` clear).
+struct Session {
+    socket: UdpSocket,
+    client: Client,
     map: Option<(MapRender, &'static Collision)>,
     predictor: Option<Predictor<'static>>,
-    players: Players,
     items: Items,
     map_shown_at: Option<Instant>,
+    camera: Camera,
+    controls: Controls,
+    /// C++ `m_LocalCharacterPos` (or the followed tee's): kept while the tee is gone.
+    center: Option<(f32, f32)>,
+}
+
+impl Session {
+    fn connect(addr: SocketAddr, settings: &Settings, start: Instant) -> Result<Self, String> {
+        let socket = net::connect_socket(addr).map_err(|e| format!("socket: {e}"))?;
+        let mut client = Client::new(player_info(settings), "", net::random_bytes);
+        client.connect(net::now(start));
+        // C++: CGameClient::OnReset -> CCamera::OnReset
+        let mut camera = Camera::default();
+        camera.on_reset(&settings.config);
+        Ok(Self {
+            socket,
+            client,
+            map: None,
+            predictor: None,
+            items: Items::default(),
+            map_shown_at: None,
+            camera,
+            controls: Controls::default(),
+            center: None,
+        })
+    }
+
+    fn disconnect(&mut self, start: Instant) {
+        self.client.disconnect(None, net::now(start));
+        let _ = net::pump(&self.socket, &mut self.client, net::now(start));
+    }
+
+    /// What `CCamera`'s zoom commands and `UpdateCamera` read this frame.
+    fn camera_frame(&self, start: Instant, frame_time: f32) -> Frame {
+        Frame {
+            local_time: start.elapsed().as_secs_f32(),
+            frame_time,
+            allow_zoom: (self.predictor.as_ref()).is_some_and(|p| p.allow_zoom || p.spectating),
+        }
+    }
+
+    /// C++: `CGameClient::UpdatePositions` (`m_LocalCharacterPos`): the rendered
+    /// position of the followed or local tee, else the last one.
+    fn local_pos(&mut self, rendered: &[Rendered], follow: Option<i32>) -> Option<(f32, f32)> {
+        let id = follow.or(self.client.local_id());
+        if let Some(r) = rendered.iter().find(|r| Some(r.id) == id) {
+            self.center = Some((r.pos.x, r.pos.y));
+        }
+        self.center
+    }
+
+    /// C++: `CEnvelopeState::Update` while playing: predicted tick and intra tick since
+    /// the round start.
+    fn envelope_time(&self) -> i64 {
+        let Some(info) =
+            (self.client.snapshot().iter()).find(|it| it.type_id == g::NETOBJTYPE_GAMEINFO)
+        else {
+            return 0;
+        };
+        let info = g::ObjGameInfo::from_ints(&info.data);
+        let tick = (self.client.pred_tick() - 1 - info.round_start_tick) as i64;
+        (self.client.pred_intra_tick as f64 * NANOS_PER_TICK as f64) as i64 + tick * NANOS_PER_TICK
+    }
 }
 
 struct App {
     options: Options,
     storage: Storage,
     settings: Settings,
-    socket: UdpSocket,
-    client: Client,
     start: Instant,
     running: Option<Running>,
-    camera: Camera,
-    controls: Controls,
+    session: Option<Session>,
+    menu: Menu,
     /// C++ `m_aCurrentKeyStates`.
     pressed: Vec<bool>,
     /// Raw mouse motion since the last frame (C++ `SDL_GetRelativeMouseState`).
@@ -87,9 +160,9 @@ struct App {
     /// C++ `m_InputGrabbed` (relative mouse) and `m_MouseFocus`.
     grabbed: bool,
     focused: bool,
+    /// The present mode in use (C++ `gfx_vsync`).
+    vsync: bool,
     last_frame: Instant,
-    /// C++ `m_LocalCharacterPos` (or the followed tee's): kept while the tee is gone.
-    center: Option<(f32, f32)>,
     error: Option<String>,
 }
 
@@ -121,37 +194,29 @@ impl App {
             .ok_or("the surface does not fit this adapter")?;
         config.format = gfx::pick_format(&surface.get_capabilities(&adapter).formats)
             .ok_or("no non-sRGB 8-bit surface format")?;
-        config.present_mode = if self.options.vsync {
-            wgpu::PresentMode::AutoVsync
-        } else {
-            wgpu::PresentMode::AutoNoVsync
-        };
+        config.present_mode = present_mode(self.vsync);
         surface.configure(&device, &config);
         let mut gfx = Gfx::new(device, queue, config.format, size_of(&config));
         let players = Players::new(&mut gfx, &self.storage);
+        let ui = Ui::new(&window, &gfx, config.format, &self.storage);
+        if ui.is_none() {
+            eprintln!("no fonts/DejaVuSans.ttf in the data dir: no menus");
+        }
         Ok(Running {
             window,
             surface,
             config,
             gfx,
-            map: None,
-            predictor: None,
             players,
-            items: Items::default(),
-            map_shown_at: None,
+            ui,
         })
     }
 
     /// C++ `CInput::MouseModeRelative` / `MouseModeAbsolute`: hide and confine the
-    /// cursor while playing.
+    /// cursor (Locked where Confined is unsupported), or free it.
     fn set_grab(&mut self, grab: bool) {
         self.grabbed = grab;
-        self.apply_cursor(grab);
         self.mouse_delta = (0.0, 0.0);
-    }
-
-    /// Hides and confines the cursor (Locked where Confined is unsupported), or frees it.
-    fn apply_cursor(&self, grab: bool) {
         let Some(r) = &self.running else { return };
         r.window.set_cursor_visible(!grab);
         let mode = if grab {
@@ -164,147 +229,217 @@ impl App {
         }
     }
 
-    /// What `CCamera`'s zoom commands and `UpdateCamera` read this frame.
-    fn camera_frame(&self, frame_time: f32) -> Frame {
-        Frame {
-            local_time: self.start.elapsed().as_secs_f32(),
-            frame_time,
-            allow_zoom: self
-                .running
-                .as_ref()
-                .and_then(|r| r.predictor.as_ref())
-                .is_some_and(|p| p.allow_zoom || p.spectating),
+    /// The start screen shows without a connection, the Esc menu on request.
+    fn menu_visible(&self) -> bool {
+        self.session.is_none() || self.menu.open
+    }
+
+    fn connect(&mut self, addr: SocketAddr) {
+        self.menu.error = None;
+        self.menu.open = false;
+        match Session::connect(addr, &self.settings, self.start) {
+            Ok(s) => self.session = Some(s),
+            Err(e) => self.menu.error = Some(e),
         }
     }
 
-    /// One key event through `CBinds::OnInput` and the commands it runs. C++: the key
-    /// state changes when the event is added (`CInput::AddKeyEvent`), before binds see it.
+    fn disconnect(&mut self) {
+        if let Some(mut s) = self.session.take() {
+            s.disconnect(self.start);
+        }
+        self.menu.open = false;
+    }
+
+    /// One key event. With the settings key reader waiting it binds the key; otherwise
+    /// it goes through `CBinds::OnInput` and the commands it runs. C++: the key state
+    /// changes when the event is added (`CInput::AddKeyEvent`), before binds see it.
     fn key_event(&mut self, key: usize, press: bool, release: bool) {
+        if press && let Some(command) = self.menu.reading_key.take() {
+            if key != KEY_ESCAPE {
+                self.settings.binds.rebind(command, key);
+            }
+            return;
+        }
+        if press && key == KEY_ESCAPE {
+            self.menu.open = !self.menu.open;
+        }
         if press {
             self.pressed[key] = true;
         }
         if release {
             self.pressed[key] = false;
         }
+        let menus_active = self.menu_visible();
+        let Some(s) = &mut self.session else { return };
         let pressed = &self.pressed;
-        let lines = self
-            .settings
-            .binds
-            .on_input(key, press, release, |k| pressed[k]);
-        let frame = self.camera_frame(0.0);
+        let lines =
+            (self.settings.binds).on_input(key, press, release, menus_active, |k| pressed[k]);
+        let frame = s.camera_frame(self.start, 0.0);
         let game = GameState {
-            frozen_input: self
-                .running
-                .as_ref()
-                .and_then(|r| r.predictor.as_ref())
+            frozen_input: (s.predictor.as_ref())
                 .is_some_and(|p| p.bug_ddrace_input() && p.spectating),
         };
         for (stroke, line) in lines {
             let config = &self.settings.config;
-            self.controls
-                .execute(stroke, &line, game, &mut self.camera, &frame, config);
+            s.controls
+                .execute(stroke, &line, game, &mut s.camera, &frame, config);
         }
     }
 
-    /// C++: `CGameClient::UpdatePositions` (`m_LocalCharacterPos`): the fixed view, else
-    /// the rendered position of the followed or local tee, else the last one.
-    fn local_pos(&mut self, rendered: &[Rendered]) -> Option<(f32, f32)> {
-        let id = self.options.follow.or(self.client.local_id());
-        if let Some(r) = rendered.iter().find(|r| Some(r.id) == id) {
-            self.center = Some((r.pos.x, r.pos.y));
-        }
-        self.center
-    }
-
-    /// C++: `CEnvelopeState::Update` while playing: predicted tick and intra tick since
-    /// the round start.
-    fn envelope_time(&self) -> i64 {
-        let Some(info) = self
-            .client
-            .snapshot()
-            .iter()
-            .find(|it| it.type_id == g::NETOBJTYPE_GAMEINFO)
-        else {
-            return 0;
+    /// Our own settings file; the C++ client's files are never written.
+    fn save_settings(&self) {
+        let Some(dir) = storage::save_dir() else {
+            return;
         };
-        let info = g::ObjGameInfo::from_ints(&info.data);
-        let tick = (self.client.pred_tick() - 1 - info.round_start_tick) as i64;
-        (self.client.pred_intra_tick as f64 * NANOS_PER_TICK as f64) as i64 + tick * NANOS_PER_TICK
+        let text = self.settings.serialize();
+        if let Err(e) = std::fs::create_dir_all(&dir)
+            .and_then(|()| std::fs::write(dir.join("settings.cfg"), text))
+        {
+            eprintln!("saving settings failed: {e}");
+        }
+    }
+
+    /// C++: `CClient::Update` (and `CGameClient::OnUpdate`'s mouse motion): mouse,
+    /// input, network and the map; an error ends the session.
+    fn update_session(&mut self) -> Result<(), String> {
+        let menu_visible = self.menu_visible();
+        let size = self.running.as_ref().map(|r| size_of(&r.config));
+        let (start, config) = (self.start, &self.settings.config);
+        let Some(s) = &mut self.session else {
+            return Ok(());
+        };
+        // C++: CGameClient::OnUpdate: the relative mouse motion of this frame
+        let world_paused = (s.predictor.as_ref()).is_some_and(|p| p.world_paused);
+        let (dx, dy) = std::mem::take(&mut self.mouse_delta);
+        if self.grabbed && self.focused && (dx != 0.0 || dy != 0.0) {
+            s.controls
+                .on_cursor_move(dx as f32, dy as f32, config, world_paused);
+        }
+        // C++: CClient::Update (sends SnapInput, OnNewSnapshot reports the camera)
+        let bug_input = (s.predictor.as_ref()).is_some_and(|p| p.bug_ddrace_input());
+        s.client.input = s.controls.snap_input(menu_visible, bug_input);
+        s.client.camera = CameraState {
+            zoom: s.camera.zoom,
+            zooming: s.camera.zooming,
+            zoom_target: s.camera.zoom_smoothing_target,
+            deadzone: camera::deadzone(config),
+            follow_factor: camera::follow_factor(config),
+            aspect: size.map_or(16.0 / 9.0, |s| s.width as f32 / s.height as f32),
+        };
+        net::pump(&s.socket, &mut s.client, net::now(start))
+            .map_err(|e| format!("network: {e}"))?;
+        if s.client.state() == State::Offline {
+            return Err(format!("disconnected: '{}'", s.client.conn.error()));
+        }
+        if s.map.is_none()
+            && s.client.state() == State::Online
+            && let Some(r) = &mut self.running
+            && let Some(m) = (s.client.map()).and_then(|m| Map::load(m.data.clone()).ok())
+        {
+            let images = assets::load_map_images(&self.storage, &m);
+            // ponytail: leaked once per connection so the predictor can borrow it, and
+            // the map textures stay in gfx; free both when that matters
+            let collision: &'static Collision = Box::leak(Box::new(Collision::new(&m)));
+            s.map = Some((MapRender::new(&mut r.gfx, &m, &images), collision));
+            s.predictor = Some(Predictor::new(collision));
+            s.map_shown_at = Some(Instant::now());
+        }
+        Ok(())
     }
 
     fn frame(&mut self, event_loop: &ActiveEventLoop) {
         let frame_time = self.last_frame.elapsed().as_secs_f32().max(0.0001);
         self.last_frame = Instant::now();
-        // C++: CGameClient::OnUpdate: the relative mouse motion of this frame
-        let world_paused = (self.running.as_ref())
-            .and_then(|r| r.predictor.as_ref())
-            .is_some_and(|p| p.world_paused);
-        let (dx, dy) = std::mem::take(&mut self.mouse_delta);
-        if self.grabbed && self.focused && (dx != 0.0 || dy != 0.0) {
-            let config = &self.settings.config;
-            self.controls
-                .on_cursor_move(dx as f32, dy as f32, config, world_paused);
+        let o = &self.options;
+        let want_grab = self.session.is_some()
+            && !self.menu_visible()
+            && self.focused
+            && !o.no_grab
+            && o.view.is_none()
+            && o.follow.is_none();
+        if want_grab != self.grabbed {
+            self.set_grab(want_grab);
         }
-        // C++: CClient::Update (sends SnapInput, OnNewSnapshot reports the camera)
-        self.client.input = self.controls.snap_input();
-        let size = self.running.as_ref().map(|r| size_of(&r.config));
-        self.client.camera = CameraState {
-            zoom: self.camera.zoom,
-            zooming: self.camera.zooming,
-            zoom_target: self.camera.zoom_smoothing_target,
-            deadzone: camera::deadzone(&self.settings.config),
-            follow_factor: camera::follow_factor(&self.settings.config),
-            aspect: size.map_or(16.0 / 9.0, |s| s.width as f32 / s.height as f32),
-        };
-        let now = net::now(self.start);
-        if let Err(e) = net::pump(&self.socket, &mut self.client, now) {
-            self.error = Some(format!("network: {e}"));
-            return event_loop.exit();
+        let want_vsync = self.options.vsync || self.settings.config.gfx_vsync != 0;
+        if want_vsync != self.vsync
+            && let Some(r) = &mut self.running
+        {
+            self.vsync = want_vsync;
+            r.config.present_mode = present_mode(want_vsync);
+            r.surface.configure(&r.gfx.device, &r.config);
         }
-        if self.client.state() == State::Offline {
-            self.error = Some(format!("disconnected: '{}'", self.client.conn.error()));
-            return event_loop.exit();
+        if let Err(e) = self.update_session() {
+            self.session = None;
+            self.menu.error = Some(e);
+            if self.running.as_ref().is_none_or(|r| r.ui.is_none()) {
+                // no menus to go back to
+                self.error = self.menu.error.take();
+                return event_loop.exit();
+            }
         }
         let Some(r) = &mut self.running else { return };
-        if r.map.is_none()
-            && self.client.state() == State::Online
-            && let Some(m) = self
-                .client
-                .map()
-                .and_then(|m| Map::load(m.data.clone()).ok())
-        {
-            let images = assets::load_map_images(&self.storage, &m);
-            // ponytail: one map per run; leaked so the predictor can borrow it, free it
-            // when map changes are supported
-            let collision: &'static Collision = Box::leak(Box::new(Collision::new(&m)));
-            r.map = Some((MapRender::new(&mut r.gfx, &m, &images), collision));
-            r.predictor = Some(Predictor::new(collision));
-            r.map_shown_at = Some(Instant::now());
-        }
-        // C++: CGameClient::OnNewSnapshot/OnPredict, then UpdateRenderedCharacters
-        let (rendered, local_freeze_end) = match &mut r.predictor {
-            Some(p) => {
-                p.update(&mut self.client);
-                (p.rendered(&self.client), p.predicted_freeze_end())
+        let mut batch = Batch::default();
+        let [cr, cg, cb] = hsl_packed_to_rgb(BACKGROUND_COLOR);
+        batch.clear(cr, cg, cb);
+        let mut center = None;
+        let mut map_shown_at = None;
+        if let Some(s) = &mut self.session {
+            // C++: CGameClient::OnNewSnapshot/OnPredict, then UpdateRenderedCharacters
+            let (rendered, local_freeze_end) = match &mut s.predictor {
+                Some(p) => {
+                    p.update(&mut s.client);
+                    (p.rendered(&s.client), p.predicted_freeze_end())
+                }
+                None => (Vec::new(), None),
+            };
+            // C++: CGameClient::OnRender: UpdatePositions, UpdateCamera, CCamera::OnRender
+            let local = s.local_pos(&rendered, self.options.follow);
+            let frame = s.camera_frame(self.start, frame_time);
+            let config = &self.settings.config;
+            s.camera.update(s.controls.mouse_pos, &frame, config);
+            if let Some((x, y)) = local {
+                s.camera.on_render(&mut s.controls, vec2(x, y), config);
             }
-            None => (Vec::new(), None),
-        };
-        // C++: CGameClient::OnRender: UpdatePositions, UpdateCamera, CCamera::OnRender
-        let local = self.local_pos(&rendered);
-        let frame = self.camera_frame(frame_time);
-        let config = &self.settings.config;
-        self.camera.update(self.controls.mouse_pos, &frame, config);
-        if let Some((x, y)) = local {
-            self.camera
-                .on_render(&mut self.controls, vec2(x, y), config);
+            center = match (self.options.view, local) {
+                (Some(v), _) => Some(v),
+                (None, Some(_)) => Some((s.camera.center.x, s.camera.center.y)),
+                _ => None,
+            };
+            map_shown_at = s.map_shown_at;
+            let size = size_of(&r.config);
+            if let (Some((map, collision)), Some(center)) = (&s.map, center) {
+                let view = View {
+                    center,
+                    zoom: s.camera.zoom,
+                    width: size.width,
+                    height: size.height,
+                    envelope_time: s.envelope_time(),
+                };
+                map.render_background(&mut batch, &view);
+                if let Some(predictor) = &s.predictor {
+                    s.items.render(
+                        &mut batch,
+                        &items::Frame {
+                            client: &s.client,
+                            predictor,
+                            rendered: &rendered,
+                            collision,
+                            sprites: r.players.sprites(),
+                        },
+                    );
+                }
+                r.players.render(
+                    &mut r.gfx,
+                    &self.storage,
+                    &mut batch,
+                    &s.client,
+                    collision,
+                    &rendered,
+                    local_freeze_end,
+                );
+                map.render_foreground(&mut batch, &view);
+            }
         }
-        let center = match (self.options.view, local) {
-            (Some(v), _) => Some(v),
-            (None, Some(_)) => Some((self.camera.center.x, self.camera.center.y)),
-            _ => None,
-        };
-        let envelope_time = self.envelope_time();
-        let r = self.running.as_mut().unwrap();
         let surface_frame = match r.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(t)
             | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
@@ -315,50 +450,23 @@ impl App {
             _ => return,
         };
         let size = size_of(&r.config);
-        let mut batch = Batch::default();
-        let [cr, cg, cb] = hsl_packed_to_rgb(BACKGROUND_COLOR);
-        batch.clear(cr, cg, cb);
-        if let (Some((map, collision)), Some(center)) = (&r.map, center) {
-            let view = View {
-                center,
-                zoom: self.camera.zoom,
-                width: size.width,
-                height: size.height,
-                envelope_time,
-            };
-            map.render_background(&mut batch, &view);
-            if let Some(predictor) = &r.predictor {
-                r.items.render(
-                    &mut batch,
-                    &items::Frame {
-                        client: &self.client,
-                        predictor,
-                        rendered: &rendered,
-                        collision,
-                        sprites: r.players.sprites(),
-                    },
-                );
-            }
-            r.players.render(
-                &mut r.gfx,
-                &self.storage,
-                &mut batch,
-                &self.client,
-                collision,
-                &rendered,
-                local_freeze_end,
-            );
-            map.render_foreground(&mut batch, &view);
-        }
         let world = r.gfx.world_view();
         r.gfx.render(&mut batch, &world, size);
-        r.gfx.composite(
-            &surface_frame.texture.create_view(&Default::default()),
-            size,
-        );
+        let target = surface_frame.texture.create_view(&Default::default());
+        r.gfx.composite(&target, size);
+        let mut action = None;
+        let connected = self.session.is_some();
+        if (!connected || self.menu.open)
+            && let Some(ui) = &mut r.ui
+        {
+            let (menu, settings) = (&mut self.menu, &mut self.settings);
+            ui.frame(&r.window, &r.gfx, &target, size, |ctx| {
+                action = menu.show(ctx, connected, settings);
+            });
+        }
         r.window.pre_present_notify();
         r.gfx.queue.present(surface_frame);
-        if let (Some(after), Some(shown)) = (self.options.screenshot_after, r.map_shown_at)
+        if let (Some(after), Some(shown)) = (self.options.screenshot_after, map_shown_at)
             && shown.elapsed().as_secs_f64() >= after
         {
             // for reproducing the view with --view
@@ -366,8 +474,28 @@ impl App {
                 println!("camera center {x} {y}");
             }
             screenshot(&r.gfx);
-            event_loop.exit();
+            self.disconnect();
+            return event_loop.exit();
         }
+        match action {
+            Some(Action::Connect(addr)) => self.connect(addr),
+            Some(Action::Disconnect) => self.disconnect(),
+            Some(Action::Resume) => self.menu.open = false,
+            Some(Action::SettingsDone) => self.save_settings(),
+            Some(Action::Quit) => {
+                self.disconnect();
+                event_loop.exit();
+            }
+            None => {}
+        }
+    }
+}
+
+fn present_mode(vsync: bool) -> wgpu::PresentMode {
+    if vsync {
+        wgpu::PresentMode::AutoVsync
+    } else {
+        wgpu::PresentMode::AutoNoVsync
     }
 }
 
@@ -399,14 +527,7 @@ impl ApplicationHandler for App {
             return;
         }
         match self.start(event_loop) {
-            Ok(r) => {
-                self.running = Some(r);
-                // scripted views (screenshot comparisons) leave the mouse alone
-                let o = &self.options;
-                if !o.no_grab && o.view.is_none() && o.follow.is_none() {
-                    self.set_grab(true);
-                }
-            }
+            Ok(r) => self.running = Some(r),
             Err(e) => {
                 self.error = Some(e);
                 event_loop.exit();
@@ -415,10 +536,18 @@ impl ApplicationHandler for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
+        // egui sees every event; it acts on them only while a menu is drawn
+        let menu_visible = self.menu_visible();
+        if let Some(r) = &mut self.running
+            && let Some(ui) = &mut r.ui
+            && menu_visible
+            && self.menu.reading_key.is_none()
+        {
+            ui.on_window_event(&r.window, &event);
+        }
         match event {
             WindowEvent::CloseRequested => {
-                self.client.disconnect(None, net::now(self.start));
-                let _ = net::pump(&self.socket, &mut self.client, net::now(self.start));
+                self.disconnect();
                 event_loop.exit();
             }
             WindowEvent::Resized(size) => {
@@ -432,14 +561,13 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::RedrawRequested => self.frame(event_loop),
-            // C++: SDL_WINDOWEVENT_FOCUS_LOST/GAINED: key states cleared, the mouse let
-            // go while unfocused and grabbed again on return
+            // C++: SDL_WINDOWEVENT_FOCUS_LOST: key states cleared (the grab follows focus
+            // in `frame`)
             WindowEvent::Focused(focused) => {
                 self.focused = focused;
                 if !focused {
                     self.pressed.fill(false);
                 }
-                self.apply_cursor(focused && self.grabbed);
             }
             // synthetic events: winit's own key presses/releases on focus changes
             WindowEvent::KeyboardInput {
@@ -452,35 +580,24 @@ impl ApplicationHandler for App {
                     },
                 is_synthetic: false,
                 ..
-            } => match code {
-                KeyCode::F12 if state == ElementState::Pressed && !repeat => {
+            } => {
+                let press = state == ElementState::Pressed;
+                if code == KeyCode::F12 && press && !repeat {
                     if let Some(r) = &self.running {
                         screenshot(&r.gfx);
                     }
+                } else if let Some(key) = controls::key_id(code) {
+                    self.key_event(key, press, !press);
                 }
-                // ponytail: Esc frees the mouse until the menus (6.8) take it over
-                KeyCode::Escape if state == ElementState::Pressed && !repeat => {
-                    self.set_grab(false)
-                }
-                _ => {
-                    if let Some(key) = controls::key_id(code) {
-                        let press = state == ElementState::Pressed;
-                        self.key_event(key, press, !press);
-                    }
-                }
-            },
+            }
             WindowEvent::MouseInput { state, button, .. } => {
-                if !self.grabbed {
-                    if state == ElementState::Pressed {
-                        self.set_grab(true);
-                    }
-                } else if let Some(key) = controls::mouse_key_id(button) {
+                if let Some(key) = controls::mouse_key_id(button) {
                     let press = state == ElementState::Pressed;
                     self.key_event(key, press, !press);
                 }
             }
             // C++: TranslateMouseWheelEventKey, one press+release per wheel event
-            WindowEvent::MouseWheel { delta, .. } if self.grabbed => {
+            WindowEvent::MouseWheel { delta, .. } => {
                 let (x, y) = match delta {
                     MouseScrollDelta::LineDelta(x, y) => (x, y),
                     MouseScrollDelta::PixelDelta(p) => (p.x as f32, p.y as f32),
@@ -522,18 +639,8 @@ impl ApplicationHandler for App {
 }
 
 fn parse_args() -> Result<Options, String> {
-    let mut args = std::env::args().skip(1);
-    let server: SocketAddr = args
-        .next()
-        .and_then(|a| a.parse().ok())
-        .ok_or("usage: ddnet-rs <server ip:port> [--data-dir PATH] [--vsync] [--size WxH] [--view X,Y] [--follow CLIENT_ID] [--screenshot-after SECONDS] [--no-grab]")?;
-    if !server.ip().is_loopback() {
-        return Err(format!(
-            "refusing {server}: only local (loopback) servers are allowed for now"
-        ));
-    }
     let mut o = Options {
-        server,
+        server: None,
         data_dir: None,
         vsync: false,
         size: None,
@@ -542,6 +649,16 @@ fn parse_args() -> Result<Options, String> {
         screenshot_after: None,
         no_grab: false,
     };
+    let mut args = std::env::args().skip(1).peekable();
+    if let Some(a) = args.next_if(|a| !a.starts_with("--")) {
+        let server: SocketAddr = a.parse().map_err(|_| "usage: ddnet-rs [server ip:port] [--data-dir PATH] [--vsync] [--size WxH] [--view X,Y] [--follow CLIENT_ID] [--screenshot-after SECONDS] [--no-grab]")?;
+        if !server.ip().is_loopback() {
+            return Err(format!(
+                "refusing {server}: only local (loopback) servers are allowed for now"
+            ));
+        }
+        o.server = Some(server);
+    }
     while let Some(flag) = args.next() {
         let mut value = || args.next().ok_or(format!("{flag} needs a value"));
         match flag.as_str() {
@@ -577,14 +694,9 @@ fn parse_args() -> Result<Options, String> {
 
 /// The C++ client's `settings_ddnet.cfg` (first storage path that has it, read only),
 /// then our own `settings.cfg`, which overrides it.
-fn load_settings(storage: &Storage) -> Settings {
+fn load_settings(storage: &Storage, ours: Option<&[u8]>) -> Settings {
     let cpp = storage.read("settings_ddnet.cfg");
-    let ours = storage::save_dir().and_then(|d| std::fs::read(d.join("settings.cfg")).ok());
-    let files: Vec<&[u8]> = [&cpp, &ours]
-        .into_iter()
-        .flatten()
-        .map(|f| &f[..])
-        .collect();
+    let files: Vec<&[u8]> = [cpp.as_deref(), ours].into_iter().flatten().collect();
     let settings = Settings::load(&files);
     if cpp.is_some() {
         println!(
@@ -614,13 +726,24 @@ fn player_info(settings: &Settings) -> PlayerInfo {
 }
 
 fn main() {
-    let options = match parse_args() {
+    let mut options = match parse_args() {
         Ok(o) => o,
         Err(e) => {
             eprintln!("{e}");
             std::process::exit(2);
         }
     };
+    // our settings may name the data dir (after --data-dir and DDNET_DATA_DIR)
+    let ours = storage::save_dir().and_then(|d| std::fs::read(d.join("settings.cfg")).ok());
+    let data_dir = Settings::load(ours.as_deref().as_slice())
+        .config
+        .rs_data_dir;
+    if options.data_dir.is_none()
+        && std::env::var_os("DDNET_DATA_DIR").is_none()
+        && !data_dir.is_empty()
+    {
+        options.data_dir = Some(data_dir.into());
+    }
     let storage = match Storage::new(options.data_dir.clone()) {
         Ok(s) => s,
         Err(e) => {
@@ -634,38 +757,32 @@ fn main() {
     if storage.data_dir.is_none() {
         eprintln!("no DDNet data dir found: pass --data-dir or set DDNET_DATA_DIR");
     }
-    let settings = load_settings(&storage);
-    let socket = match net::connect_socket(options.server) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("socket: {e}");
-            std::process::exit(1);
-        }
-    };
+    let settings = load_settings(&storage, ours.as_deref());
     let start = Instant::now();
-    let mut client = Client::new(player_info(&settings), "", net::random_bytes);
-    client.connect(net::now(start));
-    // C++: CGameClient::OnReset -> CCamera::OnReset
-    let mut camera = Camera::default();
-    camera.on_reset(&settings.config);
+    let vsync = options.vsync || settings.config.gfx_vsync != 0;
     let mut app = App {
+        menu: Menu::new(options.server, &storage),
         options,
         storage,
         settings,
-        socket,
-        client,
         start,
         running: None,
-        camera,
-        controls: Controls::default(),
+        session: None,
         pressed: vec![false; KEY_LAST],
         mouse_delta: (0.0, 0.0),
         grabbed: false,
         focused: true,
+        vsync,
         last_frame: Instant::now(),
-        center: None,
         error: None,
     };
+    if let Some(addr) = app.options.server {
+        app.connect(addr);
+        if let Some(e) = app.menu.error.take() {
+            eprintln!("{e}");
+            std::process::exit(1);
+        }
+    }
     let event_loop = match EventLoop::new() {
         Ok(l) => l,
         Err(e) => {

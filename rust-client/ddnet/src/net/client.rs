@@ -479,6 +479,19 @@ impl Client {
             .map(|i| i.data)
     }
 
+    /// C++: `m_Snap.m_pLocalCharacter`: the local character of the current snapshot.
+    pub fn local_character(&self) -> Option<g::ObjCharacter> {
+        let id = self.local_id?;
+        let it = self
+            .snapshot()
+            .iter()
+            .find(|it| it.type_id == g::NETOBJTYPE_CHARACTER && it.id == id)?;
+        Some(g::ObjCharacter::from_ints(&crate::items::pad(
+            &it.data,
+            g::ObjCharacter::NUM_INTS,
+        )))
+    }
+
     fn stored(&self, tick: i32) -> Option<&StoredSnapshot> {
         self.storage.iter().rev().find(|s| s.tick == tick)
     }
@@ -966,26 +979,37 @@ impl Client {
     }
 
     /// C++: `CClient::SendInput` with the sending rules of `CControls::SnapInput`
-    /// (controls.cpp:241) for a playing player; `input` (incl. the player flags) is what
+    /// (controls.cpp:241), playing or in a menu; `input` (incl. the player flags) is what
     /// SnapInput produced.
     fn send_input(&mut self, now: i64) {
         if self.pred_tick <= 0 {
             return;
         }
         let mut input = self.input;
-        if input.target_x == 0 && input.target_y == 0 {
-            input.target_x = 1;
-        }
         let last = self.last_input;
-        let send = last.player_flags != input.player_flags
-            || last.direction != input.direction
-            || last.jump != input.jump
-            || last.fire != input.fire
-            || last.hook != input.hook
-            || last.wanted_weapon != input.wanted_weapon
-            || last.next_weapon != input.next_weapon
-            || last.prev_weapon != input.prev_weapon
-            || now > self.last_input_send + FREQ / 25; // send at least 25 Hz
+        let mut send = last.player_flags != input.player_flags;
+        if input.player_flags & g::PLAYERFLAG_PLAYING == 0 {
+            // in a menu: send once a second just to be sure
+            send = send || now > self.last_input_send + FREQ;
+        } else {
+            if input.target_x == 0 && input.target_y == 0 {
+                input.target_x = 1;
+            }
+            let ninja = self
+                .local_character()
+                .is_some_and(|c| c.weapon == g::WEAPON_NINJA)
+                && (input.direction != 0 || input.jump != 0 || input.hook != 0);
+            send = send
+                || last.direction != input.direction
+                || last.jump != input.jump
+                || last.fire != input.fire
+                || last.hook != input.hook
+                || last.wanted_weapon != input.wanted_weapon
+                || last.next_weapon != input.next_weapon
+                || last.prev_weapon != input.prev_weapon
+                || now > self.last_input_send + FREQ / 25 // send at least 25 Hz
+                || ninja;
+        }
         self.last_input = input;
         if !send {
             return;

@@ -29,6 +29,8 @@ pub struct Controls {
     /// C++ `m_aInputDirectionLeft[0]`, `m_aInputDirectionRight[0]`.
     pub left: i32,
     pub right: i32,
+    /// C++ `m_aLastData[0]`: the input of the last SnapInput.
+    last: g::ObjPlayerInput,
 }
 
 impl Default for Controls {
@@ -39,6 +41,7 @@ impl Default for Controls {
             input: g::ObjPlayerInput::default(),
             left: 0,
             right: 0,
+            last: g::ObjPlayerInput::default(),
         }
     }
 }
@@ -192,30 +195,61 @@ impl Controls {
         }
     }
 
-    /// C++: `CControls::SnapInput` (controls.cpp:241) while playing: the input to send,
-    /// with the mouse position as the target.
-    pub fn snap_input(&mut self) -> g::ObjPlayerInput {
-        let mut input = self.input;
-        input.player_flags = g::PLAYERFLAG_PLAYING
-            | match self.input_type {
-                MouseInputType::Automated => g::PLAYERFLAG_INPUT_ABSOLUTE,
-                MouseInputType::Absolute => {
-                    g::PLAYERFLAG_INPUT_ABSOLUTE | g::PLAYERFLAG_INPUT_MANUAL
-                }
-                MouseInputType::Relative => g::PLAYERFLAG_INPUT_MANUAL,
-            };
-        input.target_x = trunc_i32(self.mouse_pos.x);
-        input.target_y = trunc_i32(self.mouse_pos.y);
-        if input.target_x == 0 && input.target_y == 0 {
-            input.target_x = 1;
-            self.mouse_pos.x = 1.0;
-        }
-        input.direction = match (self.left != 0, self.right != 0) {
-            (true, false) => -1,
-            (false, true) => 1,
-            _ => 0,
+    /// C++: `CControls::SnapInput` (controls.cpp:241) without chat and scoreboard: the
+    /// input to send. Playing, the mouse position becomes the target; in a menu the
+    /// input is reset (unless the server has the DDRace input bug) and the copy to send
+    /// keeps the previous target, as in C++.
+    pub fn snap_input(&mut self, in_menu: bool, bug_ddrace_input: bool) -> g::ObjPlayerInput {
+        let i = &mut self.input;
+        i.player_flags = if in_menu {
+            g::PLAYERFLAG_IN_MENU
+        } else {
+            g::PLAYERFLAG_PLAYING
+        } | match self.input_type {
+            MouseInputType::Automated => g::PLAYERFLAG_INPUT_ABSOLUTE,
+            MouseInputType::Absolute => g::PLAYERFLAG_INPUT_ABSOLUTE | g::PLAYERFLAG_INPUT_MANUAL,
+            MouseInputType::Relative => g::PLAYERFLAG_INPUT_MANUAL,
         };
-        input
+        self.last.player_flags = i.player_flags;
+        let sent;
+        if in_menu {
+            if !bug_ddrace_input {
+                self.reset_input();
+            }
+            sent = self.input;
+            self.input.target_x = trunc_i32(self.mouse_pos.x);
+            self.input.target_y = trunc_i32(self.mouse_pos.y);
+        } else {
+            let i = &mut self.input;
+            i.target_x = trunc_i32(self.mouse_pos.x);
+            i.target_y = trunc_i32(self.mouse_pos.y);
+            if i.target_x == 0 && i.target_y == 0 {
+                i.target_x = 1;
+                self.mouse_pos.x = 1.0;
+            }
+            i.direction = match (self.left != 0, self.right != 0) {
+                (true, false) => -1,
+                (false, true) => 1,
+                _ => 0,
+            };
+            sent = *i;
+        }
+        self.last = self.input;
+        sent
+    }
+
+    /// C++: `CControls::ResetInput`: release movement, jump and fire (from the last
+    /// snapped input).
+    fn reset_input(&mut self) {
+        let l = &mut self.last;
+        l.direction = 0;
+        if l.fire & 1 != 0 {
+            l.fire += 1;
+        }
+        l.fire &= ddnet::physics::core::INPUT_STATE_MASK;
+        l.jump = 0;
+        self.input = self.last;
+        (self.left, self.right) = (0, 0);
     }
 }
 

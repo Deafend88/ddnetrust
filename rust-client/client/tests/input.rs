@@ -204,7 +204,7 @@ fn camera_matches_cpp() {
 /// our variables (sorted) and the bind lines in C++ order.
 fn saved(file: Option<&[u8]>) -> (Vec<String>, Vec<String>) {
     let s = Settings::load(file.as_slice());
-    let mut vars = s.config.serialize();
+    let mut vars = s.config.serialize(false);
     vars.sort();
     (vars, s.binds.serialize())
 }
@@ -261,4 +261,79 @@ cpp  {b}"
         )
     );
     assert_eq!(binds.len(), cpp_binds.len());
+}
+
+/// M6.8: C++ input rules while a menu is open. `CControls::SnapInput` (controls.cpp:277):
+/// the player flags say IN_MENU, the input is reset from the last snapped one (movement,
+/// jump released, fire counted as released, hook kept), and the copy sent keeps the
+/// previous target. `CBinds::OnInput` (binds.cpp:180): presses go to the menu, releases
+/// end active binds without running them.
+#[test]
+fn menu_input_follows_cpp() {
+    use ddnet::protocol::generated as g;
+    use ddnet_rs::config::find_key_by_name;
+
+    let mut s = Settings::load(&[]);
+    let (mut c, mut cam) = (Controls::default(), Camera::default());
+    let cfg = Config::default();
+    let frame = Frame {
+        local_time: 0.0,
+        frame_time: 0.01,
+        allow_zoom: true,
+    };
+    let none = |_: usize| false;
+    let (a, space, m1, m2) = (
+        find_key_by_name("a"),
+        find_key_by_name("space"),
+        find_key_by_name("mouse1"),
+        find_key_by_name("mouse2"),
+    );
+    for key in [a, space, m1, m2] {
+        for (stroke, line) in s.binds.on_input(key, true, false, false, none) {
+            c.execute(stroke, &line, GameState::default(), &mut cam, &frame, &cfg);
+        }
+    }
+    c.mouse_pos = vec2(100.0, -50.0);
+    let playing = c.snap_input(false, false);
+    assert_eq!(
+        (playing.direction, playing.jump, playing.fire, playing.hook),
+        (-1, 1, 1, 1)
+    );
+    assert_eq!((playing.target_x, playing.target_y), (100, -50));
+    assert_ne!(playing.player_flags & g::PLAYERFLAG_PLAYING, 0);
+
+    // the menu opens: the key releases reach the binds but run nothing
+    for key in [a, space, m1, m2] {
+        assert!(s.binds.on_input(key, false, true, true, none).is_empty());
+    }
+    assert!(s.binds.on_input(a, true, false, true, none).is_empty());
+    c.mouse_pos = vec2(30.0, 40.0);
+    let menu = c.snap_input(true, false);
+    assert_eq!(menu.player_flags & g::PLAYERFLAG_PLAYING, 0);
+    assert_ne!(menu.player_flags & g::PLAYERFLAG_IN_MENU, 0);
+    assert_eq!(
+        (menu.direction, menu.jump, menu.fire, menu.hook),
+        (0, 0, 2, 1)
+    );
+    assert_eq!((menu.target_x, menu.target_y), (100, -50)); // previous target
+    // with the DDRace input bug the input is not reset
+    let mut d = Controls::default();
+    d.input.jump = 1;
+    assert_eq!(d.snap_input(true, true).jump, 1);
+}
+
+/// M6.8: our settings file reloads to the same settings, on top of any C++ file.
+#[test]
+fn own_settings_file_round_trips() {
+    let corpus = golden("settings/corpus.cfg");
+    let mut s = Settings::load(&[corpus.as_bytes()]);
+    s.binds
+        .rebind("+jump", ddnet_rs::config::find_key_by_name("kp_5"));
+    s.execute_line("inp_mousesens 200"); // back to the default: must still override
+    let text = s.serialize();
+    for base in [&b""[..], corpus.as_bytes()] {
+        let again = Settings::load(&[base, text.as_bytes()]);
+        assert_eq!(again.config, s.config);
+        assert_eq!(again.binds.serialize(), s.binds.serialize());
+    }
 }
