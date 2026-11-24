@@ -109,7 +109,7 @@ impl Default for Quads {
 /// What `CItems` needs from the rest of the client this frame.
 pub struct Frame<'a> {
     pub client: &'a Client,
-    pub predictor: &'a Predictor<'a>,
+    pub predictor: &'a Predictor,
     pub rendered: &'a [Rendered],
     pub collision: &'a Collision,
     pub sprites: &'a Sprites,

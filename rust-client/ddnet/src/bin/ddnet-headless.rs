@@ -61,7 +61,6 @@ fn main() {
     client.connect(net::now(start));
 
     // the map's collision, and prediction from snapshots once the game is entered
-    let collision = std::cell::OnceCell::new();
     let mut prediction: Option<Predictor> = None;
     let mut last_state = client.state();
     let mut entered_at = None;
@@ -76,11 +75,9 @@ fn main() {
             println!("state: {:?}", client.state());
             if client.state() == State::Online {
                 entered_at = Some(now);
-                let col = client
-                    .map()
+                prediction = (client.map())
                     .and_then(|m| Map::load(m.data.clone()).ok())
-                    .map(|m| collision.get_or_init(|| Collision::new(&m)));
-                prediction = col.map(Predictor::new);
+                    .map(|m| Predictor::new(std::rc::Rc::new(Collision::new(&m))));
                 if let Some(map) = client.map() {
                     println!(
                         "map: {} crc={:08x} size={}",

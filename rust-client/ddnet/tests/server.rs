@@ -9,6 +9,7 @@ use std::fs;
 use std::net::UdpSocket;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use ddnet::map::Map;
@@ -183,7 +184,9 @@ fn prediction_matches_server() {
 
         let map = Map::load(client.map().unwrap().data.clone()).unwrap();
         let col = Collision::new(&map);
-        let mut pred = Predictor::new(&col);
+        let col = Rc::new(col);
+        let weak_col = Rc::downgrade(&col);
+        let mut pred = Predictor::new(col);
         let entered = net::now(start);
         while net::now(start) - entered < 10 * FREQ {
             net::scripted_input(&mut client.input, net::now(start) - entered);
@@ -196,6 +199,9 @@ fn prediction_matches_server() {
         assert!(s.compared > 100, "{map_name}: {s:?}");
         assert_eq!(s.mismatched, 0, "{map_name}: {s:?}");
         assert_eq!(s.prediction_errors, 0, "{map_name}: {s:?}");
+        // the collision lives exactly as long as the predictor and its world copies
+        drop(pred);
+        assert!(weak_col.upgrade().is_none(), "collision still alive");
         let dir = server.dir.clone();
         drop(server);
         let _ = fs::remove_dir_all(dir);
@@ -246,7 +252,7 @@ fn prediction_recovers_from_interference() {
     }
     let map = Map::load(a.map().unwrap().data.clone()).unwrap();
     let col = Collision::new(&map);
-    let mut pred = Predictor::new(&col);
+    let mut pred = Predictor::new(Rc::new(col));
     let entered = net::now(start);
     let mut during = None;
     let (mut closest, mut hooked) = (i32::MAX, false);
@@ -340,7 +346,7 @@ fn rendered_positions_are_smooth() {
     }
     let map = Map::load(a.map().unwrap().data.clone()).unwrap();
     let col = Collision::new(&map);
-    let mut pred = Predictor::new(&col);
+    let mut pred = Predictor::new(Rc::new(col));
     let (ida, idb) = (a.local_id().unwrap(), b.local_id().unwrap());
     let entered = net::now(start);
     // per tee: last rendered and last snapshot position, largest step of each, frames

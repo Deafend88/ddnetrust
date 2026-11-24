@@ -6,6 +6,8 @@
 //!     build-rs/rs_parity.exe map "data/maps/<name>.map" rust-client/tests/golden/maps/<name>.txt <scratch dir>
 //! with spaces in <name> replaced by '_' in the output file name.
 
+use std::rc::Rc;
+
 use ddnet::map::{Layer, Map};
 use ddnet::physics::collision::{Collision, Layers, clamp_vel};
 use ddnet::physics::core::{CharacterCore, WorldCore};
@@ -603,7 +605,7 @@ fn world_state(ch: &Character, c: &CharacterCore, teams: &TeamsCore) -> Queries 
 }
 
 /// Four characters in the client prediction world, against `rs_parity world`.
-fn check_world(name: &str, col: &Collision, text: &str) {
+fn check_world(name: &str, col: Rc<Collision>, text: &str) {
     const IDS: [usize; 4] = [3, 0, 6, 1]; // insertion order
     const SORTED: [usize; 4] = [0, 1, 3, 6];
     const START_TICK: i32 = 10000;
@@ -629,7 +631,7 @@ fn check_world(name: &str, col: &Collision, text: &str) {
             freeze_delay: 3,
             antiping_players: 1,
         };
-        let mut world = GameWorld::new(col, config);
+        let mut world = GameWorld::new(Rc::clone(&col), config);
         world.tunings = tunings.clone();
         world.game_tick = START_TICK;
         if mode == 1 {
@@ -777,7 +779,7 @@ fn world() {
         let map = load(name);
         check_world(
             name,
-            &world_collision(Layers::from_map(&map)),
+            Rc::new(world_collision(Layers::from_map(&map))),
             &golden_file(name, "world"),
         );
     }
@@ -789,7 +791,7 @@ fn world_hook_teleporters() {
         let map = load(name);
         check_world(
             name,
-            &world_collision(hook_tele_layers(&map)),
+            Rc::new(world_collision(hook_tele_layers(&map))),
             &golden_file(name, "world-hooktele"),
         );
     }
@@ -855,9 +857,9 @@ fn front_door_layers(map: &Map) -> Layers {
 #[test]
 fn doors() {
     for name in MAPS {
-        let col = Collision::from_layers(front_door_layers(&load(name)));
+        let col = Rc::new(Collision::from_layers(front_door_layers(&load(name))));
         let text = golden_file(name, "doors");
-        let mut world = GameWorld::new(&col, WorldConfig::default());
+        let mut world = GameWorld::new(Rc::clone(&col), WorldConfig::default());
         let mut teams = TeamsCore::default();
         teams.set_team(2, 1);
         let mut lines = text.lines().skip(1); // "pool ..."

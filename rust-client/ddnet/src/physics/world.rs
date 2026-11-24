@@ -17,6 +17,8 @@ use super::door::{Door, reset_door_collision};
 use super::teams::{MAX_CLIENTS, NUM_DDRACE_TEAMS, TeamsCore};
 use super::tuning::{Param, Tuning};
 use super::vmath::{Vec2, distance, dot, normalize, trunc_i32, vec2};
+use std::rc::Rc;
+
 use crate::protocol::generated::{
     self as g, ObjCharacter, ObjCharacterCore, ObjDDNetCharacter, ObjEntityEx, ObjPlayerInput,
 };
@@ -1001,8 +1003,9 @@ fn set_hit_disabled(c: &mut CharacterCore, disabled: bool) {
 
 /// C++: `CGameWorld` holding characters and doors.
 #[derive(Clone)]
-pub struct GameWorld<'a> {
-    col: &'a Collision,
+pub struct GameWorld {
+    /// Shared with the predictor: dropped with the last world that uses it.
+    col: Rc<Collision>,
     pub core: WorldCore,
     pub teams: TeamsCore,
     /// C++: the tuning list, one per tune zone.
@@ -1019,9 +1022,9 @@ pub struct GameWorld<'a> {
     local_id: i32,
 }
 
-impl<'a> GameWorld<'a> {
+impl GameWorld {
     /// C++: `CGameWorld::Init` plus `InitSwitchers` from `CGameClient::OnConnected`.
-    pub fn new(col: &'a Collision, config: WorldConfig) -> Self {
+    pub fn new(col: Rc<Collision>, config: WorldConfig) -> Self {
         let mut core = WorldCore::default();
         core.init_switchers(col.highest_switch_number);
         Self {
@@ -1047,7 +1050,7 @@ impl<'a> GameWorld<'a> {
 
     fn ctx(&mut self, me: usize) -> Ctx<'_> {
         Ctx {
-            col: self.col,
+            col: &self.col,
             tunings: &self.tunings,
             config: &self.config,
             game_tick: self.game_tick,
@@ -1225,7 +1228,7 @@ impl<'a> GameWorld<'a> {
                 self.remove_character(i);
             }
         }
-        let col = self.col;
+        let col = &self.col;
         self.doors.retain(|d| {
             if d.marked_for_destroy {
                 d.destroy(col);
@@ -1310,7 +1313,7 @@ impl<'a> GameWorld<'a> {
             c.input = ch.input;
         });
         let deferred = !self.config.no_weak_hook_and_bounce;
-        self.core.tick(id, self.col, &self.teams, true, deferred);
+        self.core.tick(id, &self.col, &self.teams, true, deferred);
         self.apply_interferences();
     }
 
@@ -1333,7 +1336,7 @@ impl<'a> GameWorld<'a> {
             self.with_char(id, |ch, c, w| ch.tick(c, w));
         }
         for &id in &order {
-            self.core.move_(id, self.col, &self.teams);
+            self.core.move_(id, &self.col, &self.teams);
             self.core.quantize(id);
             let pos = self.core.characters[id].as_ref().map(|c| c.pos);
             if let (Some(ch), Some(pos)) = (self.chars[id].as_mut(), pos) {

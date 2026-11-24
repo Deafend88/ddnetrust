@@ -7,6 +7,7 @@
 //!        [--follow CLIENT_ID] [--screenshot-after SECONDS] [--no-grab]
 
 use std::net::{SocketAddr, UdpSocket};
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -76,8 +77,9 @@ struct Running {
 struct Session {
     socket: UdpSocket,
     client: Client,
-    map: Option<(MapRender, &'static Collision)>,
-    predictor: Option<Predictor<'static>>,
+    /// The map's collision is shared with the predictor; both drop with the session.
+    map: Option<(MapRender, Rc<Collision>)>,
+    predictor: Option<Predictor>,
     items: Items,
     map_shown_at: Option<Instant>,
     camera: Camera,
@@ -250,8 +252,7 @@ impl App {
         self.end_session();
     }
 
-    /// Drops the session and frees its map textures (the collision stays leaked, see
-    /// `update_session`).
+    /// Drops the session (its collision with it) and frees its map textures.
     fn end_session(&mut self) {
         if let Some(s) = self.session.take()
             && let (Some((map, _)), Some(r)) = (s.map, &mut self.running)
@@ -348,10 +349,11 @@ impl App {
             && let Some(m) = (s.client.map()).and_then(|m| Map::load(m.data.clone()).ok())
         {
             let images = assets::load_map_images(&self.storage, &m);
-            // ponytail: leaked once per connection so the predictor can borrow it (freeing
-            // it needs an owning predictor); the map textures are freed in end_session
-            let collision: &'static Collision = Box::leak(Box::new(Collision::new(&m)));
-            s.map = Some((MapRender::new(&mut r.gfx, &m, &images), collision));
+            let collision = Rc::new(Collision::new(&m));
+            s.map = Some((
+                MapRender::new(&mut r.gfx, &m, &images),
+                Rc::clone(&collision),
+            ));
             s.predictor = Some(Predictor::new(collision));
             s.map_shown_at = Some(Instant::now());
         }

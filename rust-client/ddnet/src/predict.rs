@@ -11,6 +11,8 @@
 
 use std::collections::BTreeMap;
 
+use std::rc::Rc;
+
 use crate::net::client::Client;
 use crate::physics::collision::Collision;
 use crate::physics::core::{CharacterCore, WorldCore};
@@ -74,9 +76,9 @@ pub struct Stats {
 
 /// C++: `CGameClient`'s `m_GameWorld` (server state); `m_PredictedWorld` is rebuilt
 /// from it by `predict`.
-pub struct Predictor<'a> {
-    col: &'a Collision,
-    world: GameWorld<'a>,
+pub struct Predictor {
+    col: Rc<Collision>,
+    world: GameWorld,
     teams: TeamsCore,
     highest_switch: i32,
     /// C++: `CCharOrder::m_Ids`.
@@ -122,8 +124,8 @@ fn find(items: &[Item], type_id: i32, id: i32) -> Option<&Item> {
     items.iter().find(|it| it.type_id == type_id && it.id == id)
 }
 
-impl<'a> Predictor<'a> {
-    pub fn new(col: &'a Collision) -> Self {
+impl Predictor {
+    pub fn new(col: Rc<Collision>) -> Self {
         // C++: CGameClient::OnConnected / OnReset defaults
         let config = WorldConfig {
             infinite_ammo: true,
@@ -133,10 +135,10 @@ impl<'a> Predictor<'a> {
             ..Default::default()
         };
         Self {
-            col,
-            world: GameWorld::new(col, config),
-            teams: TeamsCore::default(),
             highest_switch: col.highest_switch_number,
+            world: GameWorld::new(Rc::clone(&col), config),
+            teams: TeamsCore::default(),
+            col,
             char_order: (0..MAX_CLIENTS).collect(),
             chars: vec![None; MAX_CLIENTS],
             local_id: -1,
@@ -174,8 +176,8 @@ impl<'a> Predictor<'a> {
         w.characters[0].as_mut().unwrap().active_weapon = c.weapon;
         while c.tick < tick {
             c.tick += 1;
-            w.tick(0, self.col, &teams, false, true);
-            w.move_(0, self.col, &teams);
+            w.tick(0, &self.col, &teams, false, true);
+            w.move_(0, &self.col, &teams);
             w.quantize(0);
         }
         write_core(c, w.characters[0].as_ref().unwrap());
