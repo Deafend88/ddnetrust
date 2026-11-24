@@ -3,31 +3,80 @@
 //! popover. Everything reads its look from `style.rs`.
 
 use egui::{
-    Color32, CornerRadius, Frame, InnerResponse, Margin, Response, RichText, Sense, Stroke, Ui,
-    vec2,
+    Color32, CornerRadius, Frame, InnerResponse, Margin, Response, RichText, Sense, Shadow, Shape,
+    Stroke, Ui, vec2,
 };
+
+use crate::glass;
 
 use crate::style::{
     Glass, POPUP_SHADOW, Weight, color, font, icon_font, motion, radius, size, space,
 };
 
-/// A card: rounded panel with the glass fill and a hairline border.
+/// Shows `frame` over glass of the same shape, in paint order: the frame's shadow, the
+/// blurred game (none when glass is off), the frame's fill and border.
+fn glass_frame<R>(
+    ui: &mut Ui,
+    glass: Glass,
+    liquid: bool,
+    mut frame: Frame,
+    add: impl FnOnce(&mut Ui) -> R,
+) -> InnerResponse<R> {
+    let shadow = std::mem::replace(&mut frame.shadow, Shadow::NONE);
+    let shadow_at = ui.painter().add(Shape::Noop);
+    let backdrop_at = ui.painter().add(Shape::Noop);
+    let r = frame.show(ui, add);
+    let rect = r.response.rect;
+    ui.painter()
+        .set(shadow_at, shadow.as_shape(rect, frame.corner_radius));
+    if glass != Glass::Off {
+        // 1 px inside the fill's anti-aliased edge, or the sharper-cut blur shows as a
+        // bright rim around the panel
+        let radius = frame.corner_radius.nw as f32 - 1.0;
+        let liquid = liquid && glass == Glass::Full;
+        ui.painter()
+            .set(backdrop_at, glass::shape(rect.shrink(1.0), radius, liquid));
+    }
+    r
+}
+
+/// A card: rounded glass panel with a hairline border.
 pub fn panel<R>(ui: &mut Ui, glass: Glass, add: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R> {
-    Frame::new()
+    let frame = Frame::new()
         .fill(glass.panel_fill())
         .stroke(Stroke::new(1.0, color::BORDER))
         .corner_radius(CornerRadius::same(radius::CARD))
-        .inner_margin(Margin::same(space::XL as i8))
-        .show(ui, |ui| ui.vertical(add).inner)
+        .inner_margin(Margin::same(space::XL as i8));
+    glass_frame(ui, glass, false, frame, |ui| ui.vertical(add).inner)
 }
 
-/// A fully rounded capsule.
-pub fn pill<R>(ui: &mut Ui, fill: Color32, add: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R> {
+fn pill_frame(fill: Color32) -> Frame {
     Frame::new()
         .fill(fill)
         .corner_radius(CornerRadius::same(radius::PILL))
         .inner_margin(Margin::symmetric(space::L as i8, space::S as i8))
-        .show(ui, |ui| ui.horizontal(add).inner)
+}
+
+/// A fully rounded capsule in a solid colour (e.g. the watermark's logo).
+pub fn pill<R>(ui: &mut Ui, fill: Color32, add: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R> {
+    pill_frame(fill).show(ui, |ui| ui.horizontal(add).inner)
+}
+
+/// A glass capsule (the watermark, the island; `liquid`: Liquid Glass at full strength).
+pub fn glass_pill<R>(
+    ui: &mut Ui,
+    glass: Glass,
+    liquid: bool,
+    add: impl FnOnce(&mut Ui) -> R,
+) -> InnerResponse<R> {
+    let fill = if liquid && glass == Glass::Full {
+        Glass::liquid_fill()
+    } else {
+        glass.panel_fill()
+    };
+    glass_frame(ui, glass, liquid, pill_frame(fill), |ui| {
+        ui.horizontal(add).inner
+    })
 }
 
 /// An icon glyph (`icons.rs`).
@@ -174,17 +223,16 @@ pub fn popover<R>(
     glass: Glass,
     add: impl FnOnce(&mut Ui) -> R,
 ) -> Option<R> {
+    let frame = Frame::new()
+        .fill(glass.panel_fill())
+        .stroke(Stroke::new(1.0, color::BORDER))
+        .corner_radius(CornerRadius::same(radius::CARD))
+        .inner_margin(Margin::same(space::L as i8))
+        .shadow(POPUP_SHADOW);
     egui::Popup::from_response(anchor)
         .open(open)
         .gap(space::S)
-        .frame(
-            Frame::new()
-                .fill(glass.panel_fill())
-                .stroke(Stroke::new(1.0, color::BORDER))
-                .corner_radius(CornerRadius::same(radius::CARD))
-                .inner_margin(Margin::same(space::L as i8))
-                .shadow(POPUP_SHADOW),
-        )
-        .show(add)
+        .frame(Frame::NONE)
+        .show(|ui| glass_frame(ui, glass, false, frame, add).inner)
         .map(|r| r.inner)
 }

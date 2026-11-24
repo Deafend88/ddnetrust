@@ -124,6 +124,11 @@ impl Glass {
         };
         color::SURFACE.gamma_multiply_u8(alpha)
     }
+
+    /// Liquid Glass's fill: light, the shader's tint does most of the darkening.
+    pub fn liquid_fill() -> Color32 {
+        color::SURFACE.gamma_multiply_u8(77)
+    }
 }
 
 /// Inter (regular, medium, semibold; SIL OFL) and Phosphor (MIT), embedded from

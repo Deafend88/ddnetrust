@@ -1,7 +1,7 @@
 //! Every design-system component on one page, drawn headless (M7.1): for review
 //! (`examples/gallery.rs` writes a PNG) and as a regression test (`tests/gfx.rs`).
 
-use egui::{Align2, RichText};
+use egui::Align2;
 
 use crate::gfx::batch::{Batch, QuadItem};
 use crate::gfx::{Gfx, Size};
@@ -16,7 +16,7 @@ pub const SIZE: Size = Size {
 };
 
 /// A colourful backdrop standing in for the game, so translucent panels show.
-fn backdrop(gfx: &mut Gfx) {
+fn stripes(gfx: &mut Gfx) {
     let mut b = Batch::default();
     b.clear(0.18, 0.22, 0.30);
     b.map_screen(0.0, 0.0, SIZE.width as f32, SIZE.height as f32);
@@ -44,9 +44,8 @@ fn backdrop(gfx: &mut Gfx) {
     gfx.render(&mut b, &world, SIZE);
 }
 
-/// The page itself.
-fn page(ctx: &egui::Context) {
-    let glass = Glass::Subtle;
+/// The page itself, its panels at `glass`.
+fn page(ctx: &egui::Context, glass: Glass) {
     egui::Area::new(egui::Id::unique("gallery"))
         .anchor(Align2::LEFT_TOP, [space::XL, space::XL])
         .show(ctx, |ui| {
@@ -111,7 +110,7 @@ fn page(ctx: &egui::Context) {
                 });
                 ui.vertical(|ui| {
                     // the watermark's look (7.5 builds the real widget)
-                    w::pill(ui, Glass::Subtle.panel_fill(), |ui| {
+                    w::glass_pill(ui, glass, false, |ui| {
                         w::pill(ui, color::LOGO, |ui| {
                             w::icon(ui, icons::BOLT, size::ICON_SMALL, color::LOGO_TEXT);
                             w::text(
@@ -129,21 +128,8 @@ fn page(ctx: &egui::Context) {
                         w::stat(ui, icons::BOLT, "372", Some("fps"));
                     });
                     ui.add_space(space::M);
-                    ui.horizontal(|ui| {
-                        for (g, name) in [
-                            (Glass::Off, "Off"),
-                            (Glass::Subtle, "Subtle"),
-                            (Glass::Full, "Full"),
-                        ] {
-                            w::panel(ui, g, |ui| {
-                                ui.set_width(100.0);
-                                w::text(ui, name, size::LABEL, Weight::Medium, color::TEXT);
-                                ui.label(RichText::new("glass").color(color::TEXT_SECONDARY));
-                            });
-                        }
-                    });
-                    ui.add_space(space::M);
-                    w::pill(ui, Glass::Subtle.panel_fill(), |ui| {
+                    // the island's look (7.9): Liquid Glass at full strength
+                    w::glass_pill(ui, glass, true, |ui| {
                         w::icon(ui, icons::CHECK_CIRCLE, size::ICON_LARGE, color::SUCCESS);
                         w::text(
                             ui,
@@ -168,22 +154,30 @@ fn page(ctx: &egui::Context) {
         });
 }
 
-/// Draws the gallery into the world target of `gfx` (sized `SIZE`). egui needs a few
-/// passes to settle its layout and finish fade-ins; each pass redraws the backdrop first.
+/// Draws the gallery (glass subtle, over coloured stripes) into the world target of
+/// `gfx` (sized `SIZE`).
 pub fn render(gfx: &mut Gfx) {
-    let mut painter = Painter::new(gfx, gfx.format, Glass::Subtle);
+    render_with(gfx, Glass::Subtle, stripes);
+}
+
+/// Draws the gallery at `glass` over what `backdrop` draws into the world target. egui
+/// needs a few passes to settle its layout and finish fade-ins; each pass redraws the
+/// backdrop first.
+pub fn render_with(gfx: &mut Gfx, glass: Glass, mut backdrop: impl FnMut(&mut Gfx)) {
+    let size = gfx.world_size();
+    let mut painter = Painter::new(gfx, gfx.format, glass);
     // the clock moves on between passes so fade-ins finish (deterministically)
     for pass in 0..3 {
         backdrop(gfx);
         let input = egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
                 egui::Pos2::ZERO,
-                egui::vec2(SIZE.width as f32, SIZE.height as f32),
+                egui::vec2(size.width as f32, size.height as f32),
             )),
             time: Some(pass as f64 * 10.0),
             ..Default::default()
         };
         let world = gfx.world_view();
-        painter.paint(gfx, &world, SIZE, input, page);
+        painter.paint(gfx, &world, size, input, |ctx| page(ctx, glass));
     }
 }

@@ -7,6 +7,7 @@ pub mod config;
 pub mod controls;
 pub mod gallery;
 pub mod gfx;
+pub mod glass;
 pub mod icons;
 pub mod image;
 pub mod keynames;

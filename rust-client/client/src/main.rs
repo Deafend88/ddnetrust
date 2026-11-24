@@ -31,7 +31,7 @@ use ddnet_rs::render::items::{self, Items};
 use ddnet_rs::render::map::{MapRender, View, hsl_packed_to_rgb};
 use ddnet_rs::render::players::Players;
 use ddnet_rs::storage::{self, Storage};
-use ddnet_rs::style::{self, Glass};
+use ddnet_rs::style::Glass;
 use ddnet_rs::ui::{Action, Menu, Ui};
 use winit::application::ApplicationHandler;
 use winit::event::{DeviceEvent, DeviceId, ElementState, KeyEvent, MouseScrollDelta, WindowEvent};
@@ -476,7 +476,7 @@ impl App {
         // the settings may have changed the look
         let c = &self.settings.config;
         if (c.rs_glass, c.rs_ui_scale) != (r.ui_glass, r.ui_scale) {
-            style::install(&r.ui.painter.ctx, Glass::from_setting(c.rs_glass));
+            r.ui.painter.set_glass(Glass::from_setting(c.rs_glass));
             r.ui.painter
                 .ctx
                 .set_zoom_factor(c.rs_ui_scale as f32 / 100.0);

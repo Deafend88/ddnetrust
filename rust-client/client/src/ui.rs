@@ -7,6 +7,7 @@ use winit::window::Window;
 
 use crate::config::{Binds, Settings, escape};
 use crate::gfx::{Gfx, Size};
+use crate::glass::{GlassFrame, GlassRenderer};
 use crate::icons;
 use crate::storage::Storage;
 use crate::style::{self, Glass, Weight, color, size, space};
@@ -16,6 +17,8 @@ use crate::widgets as w;
 pub struct Painter {
     pub ctx: egui::Context,
     renderer: egui_wgpu::Renderer,
+    glass_renderer: GlassRenderer,
+    glass: Glass,
 }
 
 impl Painter {
@@ -23,10 +26,22 @@ impl Painter {
         let ctx = egui::Context::default();
         style::install(&ctx, glass);
         let renderer = egui_wgpu::Renderer::new(&gfx.device, format, Default::default());
-        Self { ctx, renderer }
+        Self {
+            ctx,
+            renderer,
+            glass_renderer: GlassRenderer::new(&gfx.device, format),
+            glass,
+        }
     }
 
-    /// Runs `build` for one frame on `input` and draws the result onto `target`.
+    /// Changes the glass strength (`rs_glass`): the style's fills and the blur.
+    pub fn set_glass(&mut self, glass: Glass) {
+        style::install(&self.ctx, glass);
+        self.glass = glass;
+    }
+
+    /// Runs `build` for one frame on `input` and draws the result onto `target`; glass
+    /// panels show the blurred world target of `gfx` (`target` or the window).
     pub fn paint(
         &mut self,
         gfx: &Gfx,
@@ -50,6 +65,18 @@ impl Painter {
             }
         }
         let mut encoder = gfx.device.create_command_encoder(&Default::default());
+        // the blur goes first: the panels' callbacks read it from `prepare` on
+        let frame = self.glass_renderer.blur(
+            &gfx.device,
+            &mut encoder,
+            &gfx.world_view(),
+            gfx.world_size(),
+            self.glass,
+        );
+        match frame {
+            Some(f) => self.renderer.callback_resources.insert(f),
+            None => self.renderer.callback_resources.remove::<GlassFrame>(),
+        };
         let mut buffers =
             self.renderer
                 .update_buffers(&gfx.device, &gfx.queue, &mut encoder, &prims, &screen);
@@ -131,10 +158,10 @@ impl Ui {
     }
 }
 
-/// The bindable controls shown in the settings, as (label, command).
 /// The main menu's width: one column of full-width controls.
 const MENU_WIDTH: f32 = 320.0;
 
+/// The bindable controls shown in the settings, as (label, command).
 const CONTROLS: [(&str, &str); 5] = [
     ("Move left", "+left"),
     ("Move right", "+right"),
@@ -191,29 +218,33 @@ impl Menu {
         settings: &mut Settings,
     ) -> Option<Action> {
         let mut action = None;
-        // no egui title bar (a band and a rule): the title is plain text in the card
+        let glass = Glass::from_setting(settings.config.rs_glass);
+        // the card is a glass panel: no egui window frame or title bar
         egui::Window::new("menu")
             .title_bar(false)
             .resizable(false)
+            .frame(egui::Frame::NONE)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ctx, |ui| {
-                let title = match self.page {
-                    Page::Main => "DDNet-rs",
-                    Page::Settings => "Settings",
-                };
-                w::text(ui, title, size::TITLE, Weight::SemiBold, color::TEXT);
-                ui.add_space(space::S);
-                match self.page {
-                    Page::Main => action = self.main_page(ui, connected),
-                    Page::Settings => {
-                        self.settings_page(ui, settings);
-                        if w::button(ui, None, "Back").clicked() {
-                            self.page = Page::Main;
-                            self.reading_key = None;
-                            action = Some(Action::SettingsDone);
+                w::panel(ui, glass, |ui| {
+                    let title = match self.page {
+                        Page::Main => "DDNet-rs",
+                        Page::Settings => "Settings",
+                    };
+                    w::text(ui, title, size::TITLE, Weight::SemiBold, color::TEXT);
+                    ui.add_space(space::S);
+                    match self.page {
+                        Page::Main => action = self.main_page(ui, connected),
+                        Page::Settings => {
+                            self.settings_page(ui, settings);
+                            if w::button(ui, None, "Back").clicked() {
+                                self.page = Page::Main;
+                                self.reading_key = None;
+                                action = Some(Action::SettingsDone);
+                            }
                         }
                     }
-                }
+                })
             });
         action
     }
