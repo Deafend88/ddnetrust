@@ -436,7 +436,7 @@ for scenes that do not stay still, or `-RustSubject` to check what the server se
 `examples/maprender.rs` renders a map at a given
 center for fixed-view checks; mask pickups (they bob on each client's own clock).
 
-### M7 — visual identity and HUD (in progress: 7.1-7.3 done and approved, 7.4 next)
+### M7 — visual identity and HUD (in progress: 7.1-7.3 approved, 7.4 done, 7.5 part 1 done)
 
 Pushed and verified: the plan and its review answers (PLAN §10, §10.6), the collision
 leak fix, and 7.1 (fonts + icons, design system, menus + gallery, the review tweaks,
@@ -552,32 +552,56 @@ real HUD on/off input test added in 7.5):
    it fits once widgets exist (7.5).
 4. Widget `name`/`icon` (editor list) are added with the editor (7.4).
 
+#### 7.5 part 1 status (2026-11-24): watermark widget (commit 29751f3cf)
+Built before the editor (the user chose this order) so the editor drags a real widget.
+- `watermark.rs`: `Watermark` widget (top left 16, 16) and `draw` (the gallery uses the
+  same pill, so `gallery_matches_reference` guards its look). Items: user (local
+  `ClientInfo` name), server (address as typed), ping (local `PlayerInfo` latency,
+  clamped 0..999 like the C++ scoreboard), fps (`round_to_int(1 / m_FrameTimeAverage)`,
+  average `* 0.9 + frame * 0.1` like `CClient::Run`, start 0.0001), uid (local id), tps
+  (50). Defaults on: user, ping, fps. `hud_set watermark compact|<item>|order`.
+- `HudData` gained `server`, `frame_time_average`, `glass`.
+- Not yet (rest of 7.5): time (needs a time zone source) and speed (7.6 movement info);
+  the side-by-side captures with the two reference PNGs; the HUD on/off input test.
+
+#### 7.4 status (2026-11-24): HUD editor, done (commit f530ed00d), user review pending
+- `hud_editor.rs`: `drop` = clamp on screen, snap (screen edges and centre, other
+  widgets' left/right/top/bottom edges, within 8 pt; Shift = free), nearest anchor by
+  screen thirds with the offset recomputed (same screen position), offsets on the 8 pt
+  grid on axes that did not snap. `Editor::show` draws enabled widgets in movable areas
+  (selectable text off, or labels eat the drag), 1 px outline, accent outline when
+  selected/dragged, accent guide lines, the settings popover (`Widget::settings` + Reset)
+  and the panel ("Edit HUD": widget icon + name + on/off toggle, Reset all = the known
+  widgets only, Done). Disabled widgets are not drawn; the panel toggles them.
+- `Widget` gained `name`, `icon`, `settings` (default none); `HudConfig::set`/`reset`,
+  `hud::area_id`.
+- Opened by `hud_editor` (F6, bound by `Settings::add_our_binds` only while free; kept
+  out of `Settings::load`, which `default_binds_match_cpp` checks against C++) and "Edit
+  HUD" in the Esc menu. While open: menu-mode input (`App::ui_active`), cursor free; Esc
+  or Done closes and saves settings.cfg; a session end closes it too.
+- Watermark settings: compact, items on/off, order with up/down carets (`icons` +
+  `caret-up/down`). Deviation: SPEC's drag-to-reorder list is up/down buttons, and its
+  "separator" entry is not there (in the friend's code it only groups the settings
+  list; it has no effect on the HUD). Ask the user if either is wanted.
+- `gen_icons.py` now reads codepoints from the TTF's ligature table (fontTools), no
+  Phosphor CSS needed; all 40 old codepoints came out identical. Gallery reference
+  regenerated (two more icons, nothing else changed).
+- Verified: tests/hud.rs (9): snapping cases, anchor reassignment keeps the place on a
+  1920x1080 resize, free drops round-trip on every anchor, a headless egui drag through
+  the real editor (fails if labels stay selectable); 80 tests total, clippy, fmt.
+  Live: `scripts/hud_editor_check.ps1` (F6, drag, click, Esc, restart): saved
+  `hud_widget "watermark" right 0 96 1`, found there after the restart. Synthetic mouse
+  input needs the real cursor on our (topmost) window, or winit reports the pointer gone.
+
 #### Exact next actions (next session starts here)
-1. Read CLAUDE.md (UI rules: frontend-design skill, read from the path given there
-   if it does not load as a skill; spacing scale; tokens only; one accent; essential
-   info; review before done), PLAN §10.3 7.4/7.5, this section, `git log`.
-2. Order question for the user first: 7.4 (editor) has no widget to drag until the
-   watermark exists (7.5). Propose: build 7.5's watermark first (or together), then the
-   editor, so the editor's live check moves a real widget. Ask; default to that order.
-3. 7.4 HUD editor (PLAN §10.3): `hud_editor` command, opened from the Esc menu and by
-   F6 (bound only if F6 is free, like `SetDDRaceBinds(true)`; config.rs `Binds`);
-   game input goes to menu mode (6.8 rules), cursor free; widgets show outlines; drag
-   to move with snapping (screen edges and centre, other widgets' edges, 8 pt grid;
-   Shift disables); click opens the widget's settings popover (`widgets::popover`:
-   toggles, order, compact); reset one / reset all; enable/disable list (add
-   `Widget::name`/`icon` here); saved to settings.cfg (`HudConfig`) when the editor
-   closes. Anchor reassignment: a widget dropped nearer another anchor gets that
-   anchor, with the offset recomputed so its screen position is unchanged.
-   Verify: unit tests for snapping and anchor reassignment (dragged to the right edge
-   gets a right anchor and keeps its place on resize); a scripted live run (SendKeys /
-   mouse events to our window only, the menu_check.ps1 pattern) that moves a widget,
-   closes the editor, restarts the client and finds it at the saved place.
-4. 7.5 watermark (PLAN §10.3) + the HUD on/off input test the user asked for: run
-   the client scripted against the local server with the HUD enabled and disabled and
-   compare the sent inputs (e.g. log `client.input` per sent tick, or capture with
-   the headless pattern of `ddnet/tests/server.rs`); HudData gains fps (C++ frame
-   time averaging), the server address and local time (time zone source needed).
-5. Before each commit: gates, `/ponytail-review`, UI rules review; update this file.
+1. Read CLAUDE.md, PLAN §10.3 7.5-7.6, this section, `git log`.
+2. User review of 7.4 (editor look, the reorder/separator deviation above).
+3. Rest of 7.5: time item (time zone source: e.g. the `windows` crate already approved
+   for SMTC, or `chrono`; ask before adding a dependency), speed item (after or with
+   7.6's movement information), layout measurement tests, side-by-side captures with
+   `hud-watermark-dark-bg.png`/`-light-bg.png` for review, and the HUD on/off input test
+   (run scripted with the HUD enabled and disabled, compare the sent inputs).
+4. Before each commit: gates, `/ponytail-review`, UI rules review; update this file.
 
 The menu capture scripts (not in the repo) start `build-rs/DDNet-Server.exe` on port
 8305 from `%TEMP%\ddnet-rs-menu\server` with its own storage.cfg, run
