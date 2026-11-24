@@ -7,6 +7,7 @@ use std::rc::Rc;
 use ddnet::net::client::{Client, PlayerInfo};
 use ddnet_rs::config::Settings;
 use ddnet_rs::hud::{self, Anchor, HudConfig, HudData, Placement, Widget};
+use ddnet_rs::hud_editor::{self as editor, Editor};
 use ddnet_rs::style::Glass;
 use ddnet_rs::watermark;
 use egui::{Rect, pos2, vec2};
@@ -65,11 +66,19 @@ impl Widget for Probe {
     fn id(&self) -> &'static str {
         "probe"
     }
+    fn name(&self) -> &'static str {
+        "Probe"
+    }
+    fn icon(&self) -> &'static str {
+        ddnet_rs::icons::INFO
+    }
     fn default_placement(&self) -> Placement {
         self.placement
     }
     fn show(&mut self, ui: &mut egui::Ui, _: &HudData, _: &HudConfig) {
         let (r, _) = ui.allocate_exact_size(vec2(120.0, 40.0), egui::Sense::hover());
+        // text over the whole widget, like the watermark's (the editor drags through it)
+        ui.put(r, egui::Label::new("probe probe probe probe"));
         self.rect.set(r);
     }
 }
@@ -205,4 +214,136 @@ fn watermark_fps_rounds_like_cpp() {
     for k in ["user", "uid", "ping"] {
         assert!(watermark::stat(k, &data(1.0)).is_none(), "{k}");
     }
+}
+
+/// Where egui puts a widget of `size` placed at `p` (the anchor table of the test above).
+fn rect_of(p: Placement, size: egui::Vec2, screen: Rect) -> Rect {
+    let a = p.anchor.align();
+    let f = vec2(a.x().to_factor(), a.y().to_factor());
+    let min = screen.min + screen.size() * f - size * f + vec2(p.x as f32, p.y as f32);
+    Rect::from_min_size(min, size)
+}
+
+#[test]
+fn editor_snaps_to_edges_centre_widgets_and_grid() {
+    let screen = Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 600.0));
+    let size = vec2(120.0, 40.0);
+    let at = |x: f32, y: f32| Rect::from_min_size(pos2(x, y), size);
+    let drop = |r: Rect, others: &[Rect], free: bool| editor::drop(r, screen, others, free);
+    // 5 pt from the left/top edges: flush, with guides on both edges
+    let (p, guides) = drop(at(5.0, 7.0), &[], false);
+    assert_eq!((p.anchor, p.x, p.y), (Anchor::TopLeft, 0, 0));
+    assert_eq!(guides, [Some(0.0), Some(0.0)]);
+    // centre 6 pt off the screen's centre line: centred on the top anchor
+    let (p, guides) = drop(at(346.0, 98.0), &[], false);
+    assert_eq!((p.anchor, p.x, p.y), (Anchor::Top, 0, 96));
+    assert_eq!(guides, [Some(400.0), None]);
+    // left edge 4 pt from another widget's right edge: touching it
+    let other = Rect::from_min_size(pos2(100.0, 300.0), vec2(80.0, 30.0));
+    let (p, _) = drop(at(184.0, 260.0), &[other], false);
+    assert_eq!(rect_of(p, size, screen).left(), 180.0);
+    // nothing near: offsets on the 8 pt grid
+    let (p, guides) = drop(at(37.0, 70.0), &[], false);
+    assert_eq!((p.anchor, p.x, p.y), (Anchor::TopLeft, 40, 72));
+    assert_eq!(guides, [None, None]);
+    // Shift: exactly where it was dropped
+    let (p, guides) = drop(at(37.0, 70.0), &[], true);
+    assert_eq!((p.x, p.y), (37, 70));
+    assert_eq!(guides, [None, None]);
+    // dragged past the screen: kept on it
+    let (p, _) = drop(at(-50.0, 900.0), &[], true);
+    assert_eq!(rect_of(p, size, screen), at(0.0, 560.0));
+}
+
+#[test]
+fn editor_reassigns_the_anchor_and_keeps_the_place_on_resize() {
+    let screen = Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 600.0));
+    let size = vec2(120.0, 40.0);
+    // dropped 18 pt from the right edge, near the vertical middle
+    let r = Rect::from_min_size(pos2(800.0 - 18.0 - 120.0, 290.0), size);
+    let (p, _) = editor::drop(r, screen, &[], false);
+    assert_eq!(p.anchor, Anchor::Right);
+    assert_eq!(p.x, -16); // -18 on the 8 pt grid
+    // a wider and taller window: still 16 pt from the right edge, still centred
+    let big = Rect::from_min_size(pos2(0.0, 0.0), vec2(1920.0, 1080.0));
+    let moved = rect_of(p, size, big);
+    assert_eq!(big.right() - moved.right(), 16.0);
+    // the centre was 10 pt below the screen's: 8 on the grid
+    assert_eq!(p.y, 8);
+    assert_eq!(moved.center().y - big.center().y, 8.0);
+    // every anchor: a free drop puts the widget exactly where it was
+    for (x, y) in [(10.0, 10.0), (400.0, 20.0), (660.0, 500.0), (20.0, 290.0)] {
+        let r = Rect::from_min_size(pos2(x, y), size);
+        let (p, _) = editor::drop(r, screen, &[], true);
+        assert_eq!(rect_of(p, size, screen), r, "{:?}", p.anchor);
+    }
+}
+
+/// The real editor in egui: a drag with the mouse moves the probe and saves where it
+/// ended up into the config.
+#[test]
+fn editor_drags_a_widget_into_the_config() {
+    let client = Client::new(PlayerInfo::default(), "", || [0; 16]);
+    let data = HudData {
+        client: &client,
+        server: "",
+        frame_time_average: 0.01,
+        glass: Glass::Off,
+        predictor: None,
+        tee: None,
+        events: &[],
+    };
+    let rect = Rc::new(Cell::new(Rect::NOTHING));
+    let start = Placement {
+        anchor: Anchor::TopLeft,
+        x: 16,
+        y: 16,
+        enabled: true,
+    };
+    let mut widgets: Vec<Box<dyn Widget>> = vec![Box::new(Probe {
+        placement: start,
+        rect: rect.clone(),
+    })];
+    let mut config = HudConfig::default();
+    let mut ed = Editor::default();
+    ed.open = true;
+    let ctx = egui::Context::default();
+    let mut run = |config: &mut HudConfig, events: Vec<egui::Event>| {
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 600.0))),
+            events,
+            ..Default::default()
+        };
+        let mut out = ctx.run_pass(input, |ctx| {
+            ed.show(ctx, &mut widgets, &data, config);
+        });
+        out.textures_delta.clear();
+    };
+    let button = |pos, pressed| egui::Event::PointerButton {
+        pos,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: Default::default(),
+    };
+    for _ in 0..3 {
+        run(&mut config, vec![]);
+    }
+    // drag from the probe's middle 600 pt right and 300 pt down, in steps
+    let from = rect.get().center();
+    run(
+        &mut config,
+        vec![egui::Event::PointerMoved(from), button(from, true)],
+    );
+    let mut at = from;
+    for _ in 0..10 {
+        at += vec2(60.0, 30.0);
+        run(&mut config, vec![egui::Event::PointerMoved(at)]);
+    }
+    run(&mut config, vec![button(at, false)]);
+    run(&mut config, vec![]);
+    // now at (616, 316): the right third and the middle, so the right anchor; offsets on
+    // the grid: right edge 800 - 736 = 64, centre 336 - 300 = 36 -> 40
+    let p = config.placements["probe"];
+    assert_eq!((p.anchor, p.x, p.y), (Anchor::Right, -64, 40), "{p:?}");
+    assert_eq!(rect.get().min, pos2(616.0, 320.0));
 }

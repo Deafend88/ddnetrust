@@ -184,6 +184,7 @@ pub enum Action {
     Quit,
     /// Leaving the settings page: save them.
     SettingsDone,
+    EditHud,
 }
 
 pub struct Menu {
@@ -259,6 +260,9 @@ impl Menu {
                 if connected {
                     if w::accent_button(ui, Some(icons::PLAY), "Back to the game").clicked() {
                         action = Some(Action::Resume);
+                    }
+                    if w::button(ui, Some(icons::MOVE), "Edit HUD").clicked() {
+                        action = Some(Action::EditHud);
                     }
                     if w::button(ui, Some(icons::DISCONNECT), "Disconnect").clicked() {
                         action = Some(Action::Disconnect);

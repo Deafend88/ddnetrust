@@ -9,17 +9,18 @@ use egui::Ui;
 
 use crate::hud::{Anchor, HudConfig, HudData, Placement, Widget};
 use crate::icons;
-use crate::style::{Glass, Weight, color, size};
+use crate::style::{Glass, Weight, color, size, space};
 use crate::widgets as w;
 
-/// Stat keys in their default order, and whether each shows by default (SPEC §1).
-pub const ITEMS: [(&str, bool); 6] = [
-    ("user", true),
-    ("server", false),
-    ("ping", true),
-    ("fps", true),
-    ("uid", false),
-    ("tps", false),
+/// Stat keys in their default order, whether each shows by default (SPEC §1) and the
+/// name in the editor.
+pub const ITEMS: [(&str, bool, &str); 6] = [
+    ("user", true, "Name"),
+    ("server", false, "Server address"),
+    ("ping", true, "Ping"),
+    ("fps", true, "Framerate"),
+    ("uid", false, "Client ID"),
+    ("tps", false, "Tick rate"),
 ];
 
 /// C++ `SERVER_TICK_SPEED`.
@@ -58,9 +59,9 @@ pub fn order(config: &HudConfig) -> Vec<&'static str> {
     let saved = config.value("watermark", "order").unwrap_or("");
     let saved = saved
         .split(',')
-        .filter_map(|k| ITEMS.iter().find(|(i, _)| *i == k.trim()));
+        .filter_map(|k| ITEMS.iter().find(|i| i.0 == k.trim()));
     let mut keys = Vec::new();
-    for (k, _) in saved.chain(&ITEMS) {
+    for (k, ..) in saved.chain(&ITEMS) {
         if !keys.contains(k) {
             keys.push(*k);
         }
@@ -68,11 +69,17 @@ pub fn order(config: &HudConfig) -> Vec<&'static str> {
     keys
 }
 
+fn compact(config: &HudConfig) -> bool {
+    config
+        .value("watermark", "compact")
+        .is_some_and(|v| v.trim() != "0")
+}
+
 /// Whether item `key` shows.
 pub fn shown(config: &HudConfig, key: &str) -> bool {
     match config.value("watermark", key) {
         Some(v) => v.trim() != "0",
-        None => ITEMS.iter().any(|&(k, on)| k == key && on),
+        None => ITEMS.iter().any(|&(k, on, _)| k == key && on),
     }
 }
 
@@ -118,6 +125,14 @@ impl Widget for Watermark {
         "watermark"
     }
 
+    fn name(&self) -> &'static str {
+        "Watermark"
+    }
+
+    fn icon(&self) -> &'static str {
+        icons::BOLT
+    }
+
     fn default_placement(&self) -> Placement {
         Placement {
             anchor: Anchor::TopLeft,
@@ -133,9 +148,46 @@ impl Widget for Watermark {
             .filter(|k| shown(config, k))
             .filter_map(|k| stat(k, data))
             .collect();
-        let compact = config
-            .value("watermark", "compact")
-            .is_some_and(|v| v.trim() != "0");
-        draw(ui, data.glass, compact, &stats);
+        draw(ui, data.glass, compact(config), &stats);
+    }
+
+    /// Compact, then each item: on/off and its place in the order.
+    fn settings(&mut self, ui: &mut Ui, config: &mut HudConfig) {
+        let mut order = order(config);
+        let mut swap = None;
+        egui::Grid::new("watermark").num_columns(3).show(ui, |ui| {
+            let mut on = compact(config);
+            if w::toggle(ui, &mut on).changed() {
+                config.set("watermark", "compact", on as i32);
+            }
+            ui.label("Compact");
+            ui.end_row();
+            for (i, key) in order.iter().enumerate() {
+                let mut on = shown(config, key);
+                if w::toggle(ui, &mut on).changed() {
+                    config.set("watermark", key, on as i32);
+                }
+                ui.label(ITEMS.iter().find(|it| it.0 == *key).map_or(*key, |it| it.2));
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = space::XS;
+                    let up = ui
+                        .add_enabled_ui(i > 0, |ui| w::icon_button(ui, icons::CARET_UP, "Move up"));
+                    if up.inner.clicked() {
+                        swap = Some(i - 1);
+                    }
+                    let down = ui.add_enabled_ui(i + 1 < order.len(), |ui| {
+                        w::icon_button(ui, icons::CARET_DOWN, "Move down")
+                    });
+                    if down.inner.clicked() {
+                        swap = Some(i);
+                    }
+                });
+                ui.end_row();
+            }
+        });
+        if let Some(i) = swap {
+            order.swap(i, i + 1);
+            config.set("watermark", "order", order.join(","));
+        }
     }
 }

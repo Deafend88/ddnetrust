@@ -155,6 +155,18 @@ impl HudConfig {
         self.placements.get(id).copied().unwrap_or(default)
     }
 
+    /// Sets a widget's setting (`hud_set id key value`).
+    pub fn set(&mut self, id: &str, key: &str, value: impl ToString) {
+        self.values
+            .insert((id.to_string(), key.to_string()), value.to_string());
+    }
+
+    /// Forgets the placement and settings of `id`: back to its defaults.
+    pub fn reset(&mut self, id: &str) {
+        self.placements.remove(id);
+        self.values.retain(|(w, _), _| w != id);
+    }
+
     /// A widget's setting as written in `hud_set`.
     pub fn value(&self, id: &str, key: &str) -> Option<&str> {
         self.values
@@ -187,10 +199,19 @@ pub struct HudData<'a> {
 pub trait Widget {
     /// The id in settings.cfg.
     fn id(&self) -> &'static str;
+    /// The name and icon in the HUD editor.
+    fn name(&self) -> &'static str;
+    fn icon(&self) -> &'static str;
     fn default_placement(&self) -> Placement;
-    /// Draws the widget (also called for disabled ones in the editor later); `data` and
-    /// `config` are all it reads.
+    /// Draws the widget; `data` and `config` are all it reads.
     fn show(&mut self, ui: &mut egui::Ui, data: &HudData, config: &HudConfig);
+    /// The widget's own settings in its editor popover.
+    fn settings(&mut self, _ui: &mut egui::Ui, _config: &mut HudConfig) {}
+}
+
+/// The egui area a widget is drawn in.
+pub fn area_id(id: &str) -> egui::Id {
+    egui::Id::unique(("hud", id))
 }
 
 /// Draws every enabled widget at its placement.
@@ -205,7 +226,7 @@ pub fn show(
         if !p.enabled {
             continue;
         }
-        egui::Area::new(egui::Id::unique(("hud", w.id())))
+        egui::Area::new(area_id(w.id()))
             .anchor(p.anchor.align(), [p.x as f32, p.y as f32])
             .interactable(false)
             .order(egui::Order::Background)

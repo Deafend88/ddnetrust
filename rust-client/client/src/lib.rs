@@ -9,6 +9,7 @@ pub mod gallery;
 pub mod gfx;
 pub mod glass;
 pub mod hud;
+pub mod hud_editor;
 pub mod icons;
 pub mod image;
 pub mod keynames;

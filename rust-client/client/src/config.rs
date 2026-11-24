@@ -798,6 +798,12 @@ impl Settings {
         s
     }
 
+    /// Our binds (PLAN §10.6), added after `load` like `SetDDRaceBinds(true)`: only
+    /// while the key is free. Kept out of `load`, which mirrors C++.
+    pub fn add_our_binds(&mut self) {
+        self.binds.bind_name("f6", "hud_editor", true);
+    }
+
     /// Our settings file: every variable and every bind (it overrides the C++ file).
     pub fn serialize(&self) -> String {
         let mut text = String::from(

@@ -22,12 +22,13 @@ use ddnet_rs::assets;
 use ddnet_rs::camera::{self, Camera, Frame};
 use ddnet_rs::config::{
     KEY_ESCAPE, KEY_LAST, KEY_MOUSE_WHEEL_DOWN, KEY_MOUSE_WHEEL_LEFT, KEY_MOUSE_WHEEL_RIGHT,
-    KEY_MOUSE_WHEEL_UP, Settings,
+    KEY_MOUSE_WHEEL_UP, Settings, split_line,
 };
 use ddnet_rs::controls::{self, Controls, GameState};
 use ddnet_rs::gfx::batch::Batch;
 use ddnet_rs::gfx::{self, Gfx, Size, block_on};
 use ddnet_rs::hud::{self, HudData, Widget};
+use ddnet_rs::hud_editor::Editor;
 use ddnet_rs::render::items::{self, Items};
 use ddnet_rs::render::map::{MapRender, View, hsl_packed_to_rgb};
 use ddnet_rs::render::players::Players;
@@ -165,6 +166,7 @@ struct App {
     menu: Menu,
     /// The HUD widgets.
     hud: Vec<Box<dyn Widget>>,
+    editor: Editor,
     /// C++ `CClient::m_FrameTimeAverage`.
     frame_time_average: f32,
     /// C++ `m_aCurrentKeyStates`.
@@ -254,6 +256,22 @@ impl App {
         self.session.is_none() || self.menu.open
     }
 
+    /// A menu or the HUD editor has the mouse and keyboard (C++ menu mode).
+    fn ui_active(&self) -> bool {
+        self.menu_visible() || self.editor.open
+    }
+
+    fn open_editor(&mut self) {
+        self.menu.open = false;
+        self.editor.open = self.session.is_some();
+    }
+
+    /// Closing the editor saves the layout.
+    fn close_editor(&mut self) {
+        self.editor.close();
+        self.save_settings();
+    }
+
     fn connect(&mut self, addr: SocketAddr) {
         self.menu.error = None;
         self.menu.open = false;
@@ -278,6 +296,9 @@ impl App {
             map.free(&mut r.gfx);
         }
         self.menu.open = false;
+        if self.editor.open {
+            self.close_editor();
+        }
     }
 
     /// One key event. With the settings key reader waiting it binds the key; otherwise
@@ -291,7 +312,11 @@ impl App {
             return;
         }
         if press && key == KEY_ESCAPE {
-            self.menu.open = !self.menu.open;
+            if self.editor.open {
+                self.close_editor();
+            } else {
+                self.menu.open = !self.menu.open;
+            }
         }
         if press {
             self.pressed[key] = true;
@@ -299,7 +324,7 @@ impl App {
         if release {
             self.pressed[key] = false;
         }
-        let menus_active = self.menu_visible();
+        let menus_active = self.ui_active();
         let Some(s) = &mut self.session else { return };
         let pressed = &self.pressed;
         let lines =
@@ -309,10 +334,15 @@ impl App {
             frozen_input: (s.predictor.as_ref())
                 .is_some_and(|p| p.bug_ddrace_input() && p.spectating),
         };
+        let mut edit_hud = false;
         for (stroke, line) in lines {
             let config = &self.settings.config;
             s.controls
                 .execute(stroke, &line, game, &mut s.camera, &frame, config);
+            edit_hud |= stroke && split_line(&line).iter().any(|(c, _)| c == "hud_editor");
+        }
+        if edit_hud {
+            self.open_editor();
         }
     }
 
@@ -332,7 +362,7 @@ impl App {
     /// C++: `CClient::Update` (and `CGameClient::OnUpdate`'s mouse motion): mouse,
     /// input, network and the map; an error ends the session.
     fn update_session(&mut self) -> Result<(), String> {
-        let menu_visible = self.menu_visible();
+        let menu_visible = self.ui_active();
         let size = self.running.as_ref().map(|r| size_of(&r.config));
         let (start, config) = (self.start, &self.settings.config);
         let Some(s) = &mut self.session else {
@@ -385,7 +415,7 @@ impl App {
         self.frame_time_average = self.frame_time_average * 0.9 + frame_time * 0.1;
         let o = &self.options;
         let want_grab = self.session.is_some()
-            && !self.menu_visible()
+            && !self.ui_active()
             && self.focused
             && !o.no_grab
             && o.view.is_none()
@@ -516,18 +546,24 @@ impl App {
                     events: &events,
                 }
             });
+        let mut editor_done = false;
         if menu_visible || data.is_some() {
             let (menu, settings, widgets) = (&mut self.menu, &mut self.settings, &mut self.hud);
+            let editor = &mut self.editor;
             r.ui.frame(&r.window, &r.gfx, &target, size, |ctx| {
-                if let Some(data) = &data {
-                    hud::show(ctx, widgets, data, &settings.hud);
+                match &data {
+                    Some(data) if editor.open => {
+                        editor_done = editor.show(ctx, widgets, data, &mut settings.hud);
+                    }
+                    Some(data) => hud::show(ctx, widgets, data, &settings.hud),
+                    None => {}
                 }
                 if menu_visible {
                     action = menu.show(ctx, connected, settings);
                 }
             });
         }
-        if !menu_visible {
+        if !menu_visible && !self.editor.open {
             r.ui.hidden();
         }
         r.window.pre_present_notify();
@@ -548,11 +584,15 @@ impl App {
             Some(Action::Disconnect) => self.disconnect(),
             Some(Action::Resume) => self.menu.open = false,
             Some(Action::SettingsDone) => self.save_settings(),
+            Some(Action::EditHud) => self.open_editor(),
             Some(Action::Quit) => {
                 self.disconnect();
                 event_loop.exit();
             }
             None => {}
+        }
+        if editor_done {
+            self.close_editor();
         }
     }
 }
@@ -605,7 +645,7 @@ impl ApplicationHandler for App {
         // egui gets input only while a menu is drawn (and no key is being read), but the
         // window focus always: egui draws keyboard focus only in a focused window
         let to_egui = matches!(event, WindowEvent::Focused(_))
-            || (self.menu_visible() && self.menu.reading_key.is_none());
+            || (self.ui_active() && self.menu.reading_key.is_none());
         if let Some(r) = &mut self.running
             && to_egui
         {
@@ -763,7 +803,8 @@ fn parse_args() -> Result<Options, String> {
 fn load_settings(storage: &Storage, ours: Option<&[u8]>) -> Settings {
     let cpp = storage.read("settings_ddnet.cfg");
     let files: Vec<&[u8]> = [cpp.as_deref(), ours].into_iter().flatten().collect();
-    let settings = Settings::load(&files);
+    let mut settings = Settings::load(&files);
+    settings.add_our_binds();
     if cpp.is_some() {
         println!(
             "settings: read settings_ddnet.cfg (read only); skipped {} commands DDNet-rs does not use",
@@ -829,6 +870,7 @@ fn main() {
     let mut app = App {
         menu: Menu::new(options.server, &storage),
         hud: vec![Box::new(Watermark)],
+        editor: Editor::default(),
         frame_time_average: 0.0001,
         options,
         storage,

@@ -134,6 +134,13 @@ fn labelled(
     }
 }
 
+/// A frameless icon button; `label` is its tooltip.
+pub fn icon_button(ui: &mut Ui, glyph: &str, label: &str) -> Response {
+    let icon = RichText::new(glyph).font(icon_font(size::ICON));
+    ui.add(egui::Button::new(icon).frame(false))
+        .on_hover_text(label)
+}
+
 /// A plain button.
 pub fn button(ui: &mut Ui, glyph: Option<&str>, label: &str) -> Response {
     ui.add(labelled(glyph, label, Weight::Medium, color::TEXT))

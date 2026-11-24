@@ -82,9 +82,13 @@ pub const PROHIBIT: &str = "\u{e3de}";
 pub const USERS: &str = "\u{e4d6}";
 /// Phosphor `info`.
 pub const INFO: &str = "\u{e2ce}";
+/// Phosphor `caret-up`.
+pub const CARET_UP: &str = "\u{e13c}";
+/// Phosphor `caret-down`.
+pub const CARET_DOWN: &str = "\u{e136}";
 
 /// Every icon above, in order (the gallery shows them all).
-pub const ALL: [&str; 40] = [
+pub const ALL: [&str; 42] = [
     USER,
     FINGERPRINT,
     BOLT,
@@ -125,4 +129,6 @@ pub const ALL: [&str; 40] = [
     PROHIBIT,
     USERS,
     INFO,
+    CARET_UP,
+    CARET_DOWN,
 ];
