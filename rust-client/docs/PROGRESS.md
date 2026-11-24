@@ -436,7 +436,7 @@ for scenes that do not stay still, or `-RustSubject` to check what the server se
 `examples/maprender.rs` renders a map at a given
 center for fixed-view checks; mask pickups (they bob on each client's own clock).
 
-### M7 — visual identity and HUD (in progress: 7.1 done and approved, 7.2 started)
+### M7 — visual identity and HUD (in progress: 7.1 approved, 7.2 done, review pending)
 
 Pushed and verified: the plan and its review answers (PLAN §10, §10.6), the collision
 leak fix, and 7.1 (fonts + icons, design system, menus + gallery, the review tweaks,
@@ -490,20 +490,32 @@ are hidden; `Ui::hidden` drops it), and egui never got `Focused` events in a cli
 started straight into a server (now always forwarded). The frontend-design skill does
 not load as a skill in this setup; its SKILL.md is read from the path in CLAUDE.md.
 
+#### 7.2 status (2026-11-24): glass, done, waiting for the user's review of the strengths
+- `glass.rs`: dual-Kawase pyramid of the world target (Rgba16Float; subtle 3 levels =
+  1/8 size, full 5), recorded in `Painter::paint` before egui's pass; panel backdrops
+  are egui-wgpu paint callbacks (`glass::shape(rect, radius, liquid)`), so they keep
+  their panel's z-order and clip. Per-panel uniform buffer created in `prepare`
+  (`ponytail:` note: shared buffer if panels ever number in the hundreds); `paint`
+  resets the viewport egui sets to the callback rect.
+- `widgets::glass_frame` (private): shadow, backdrop (inset 1 px under the fill, or the
+  sharper cut showed as a bright rim), fill, border; used by `panel`, `glass_pill` and
+  `popover`. The menu card is a glass panel (`Window::frame(Frame::NONE)`).
+- Liquid Glass only for the island at full strength (`glass_pill(.., liquid: true)`):
+  inward refraction near the edge (10 px over a 14 px band), specular rim from the top
+  left, tint darkening 20-55 % by the backdrop's mean luminance (5 samples of the
+  deepest level), light fill `Glass::liquid_fill()`.
+- `Painter::set_glass` replaces the style reinstall in `main.rs`.
+- Verified: `tests/glass.rs` (5 GPU tests, see the commit; both refraction and mask
+  tests fail when the shader is broken on purpose); all gates (71 tests); live menu
+  checks with glass. `examples/glass.rs <map> <x> <y> <out dir>` renders the gallery
+  at each strength over a map (review: dm1 at 900 500) and times the passes at
+  2560x1440, release build: subtle 0.16 ms, full 0.19-0.22 ms (target 0.5 ms).
+
 #### Exact next actions
-1. 7.2 glass (PLAN §10.3). Design chosen: glass is drawn through egui-wgpu paint
-   callbacks (`egui_wgpu::Callback`, `CallbackTrait::paint` gets egui's render pass),
-   so each panel's blurred backdrop is drawn in egui's z-order and clip (a popover over
-   a panel stays right). `Painter::paint` builds the dual-Kawase pyramid from the world
-   texture (`Gfx::world`) before `renderer.render`, and puts its bind group into
-   `renderer.callback_resources`; `widgets::panel`/`pill`/`popover` add a callback shape
-   at their rect before their fill (glass off: none). egui's pass uses premultiplied
-   alpha, no depth, msaa 1: the glass pipeline must match. Liquid Glass (island):
-   refraction along the SDF normal near the edge, specular rim, tint from the mean
-   luminance of the deepest pyramid level.
-2. Verify as PLAN 7.2 lists (GPU tests on synthetic backdrops, frame time at 1440p),
-   and render the three strengths over a busy real map (`examples/maprender.rs` code
-   as the backdrop) for the user's review.
+1. The user reviews `glass-off/subtle/full.png` (from `examples/glass.rs` with dm1 900
+   500); tune the subtle blur and fills with them (PLAN §10.6 answer 4).
+2. Then 7.3 (HUD system and data, PLAN §10.3). Every UI step: frontend-design skill +
+   the CLAUDE.md UI rules review before it is done.
 
 The menu capture scripts (not in the repo) start `build-rs/DDNet-Server.exe` on port
 8305 from `%TEMP%\ddnet-rs-menu\server` with its own storage.cfg, run
