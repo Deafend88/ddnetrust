@@ -237,6 +237,8 @@ fn settings_file_matches_cpp() {
     let corpus = golden("settings/corpus.cfg");
     let (vars, binds) = saved(Some(corpus.as_bytes()));
     let (cpp_vars, cpp_binds) = cpp_saved("corpus.saved.cfg");
+    // only the unknown client setting is skipped (binds and our variables are not)
+    assert_eq!(Settings::load(&[corpus.as_bytes()]).skipped, 1);
     assert_eq!(vars, cpp_vars);
     let diff: Vec<String> = binds
         .iter()

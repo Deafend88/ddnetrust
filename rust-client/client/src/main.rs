@@ -580,15 +580,19 @@ fn parse_args() -> Result<Options, String> {
 fn load_settings(storage: &Storage) -> Settings {
     let cpp = storage.read("settings_ddnet.cfg");
     let ours = storage::save_dir().and_then(|d| std::fs::read(d.join("settings.cfg")).ok());
-    if cpp.is_some() {
-        println!("settings: read settings_ddnet.cfg (read only)");
-    }
     let files: Vec<&[u8]> = [&cpp, &ours]
         .into_iter()
         .flatten()
         .map(|f| &f[..])
         .collect();
-    Settings::load(&files)
+    let settings = Settings::load(&files);
+    if cpp.is_some() {
+        println!(
+            "settings: read settings_ddnet.cfg (read only); skipped {} commands DDNet-rs does not use",
+            settings.skipped
+        );
+    }
+    settings
 }
 
 /// C++: what `CGameClient::SendStartInfo` takes from the config.

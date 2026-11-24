@@ -732,6 +732,9 @@ impl Binds {
 pub struct Settings {
     pub config: Config,
     pub binds: Binds,
+    /// Config commands skipped because DDNet-rs does not use them (other stock DDNet
+    /// settings, other clients' settings such as TClient's).
+    pub skipped: usize,
 }
 
 impl Settings {
@@ -739,6 +742,7 @@ impl Settings {
         let mut s = Self {
             config: Config::default(),
             binds: Binds::default(),
+            skipped: 0,
         };
         s.binds.set_defaults(&mut s.config);
         for f in files {
@@ -750,8 +754,9 @@ impl Settings {
         s
     }
 
-    /// C++: `CConsole::ExecuteLine` for the config file commands: variables, `bind`,
-    /// `unbind`, `unbindall`. Everything else is ignored.
+    /// C++: `CConsole::ExecuteLine` for the config file commands: our variables, `bind`,
+    /// `unbind`, `unbindall`. Everything else is skipped (counted in `skipped`); binds to
+    /// commands DDNet-rs lacks are kept, like stock DDNet keeps binds to unknown ones.
     pub fn execute_line(&mut self, line: &str) {
         for (command, args) in split_line(line) {
             if self.config.set(&command, &args) {
@@ -772,7 +777,8 @@ impl Settings {
                     }
                 }
                 "unbindall" => self.binds.map.clear(),
-                _ => {}
+                "bind" | "unbind" => {}
+                _ => self.skipped += 1,
             }
         }
     }
