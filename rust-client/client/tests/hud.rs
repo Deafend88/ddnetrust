@@ -605,3 +605,173 @@ fn tall_popover_opens_beside_the_widget() {
         "{moved:?} {r:?}"
     );
 }
+
+/// 7.7: `CHud::RenderPlayerState`'s decisions, on cases worked out from the C++ code
+/// (hud.cpp:842): the jump count in every branch and its quirks, weapons, the ninja
+/// timer, the order of the indicators, and the gun indicator quirk.
+#[test]
+fn status_bar_follows_render_player_state() {
+    use ddnet::physics::core::CharacterCore;
+    use ddnet::protocol::generated::{self as g, ObjCharacter, ObjDDNetCharacter};
+    use ddnet_rs::statusbar::{Indicator as I, Input, status};
+
+    let run = |c: &CharacterCore,
+               p: &ObjCharacter,
+               grounded: bool,
+               ext: &ObjDDNetCharacter,
+               display: bool,
+               tick: i32| {
+        status(&Input {
+            core: c,
+            player: p,
+            grounded,
+            ext,
+            display_info: display,
+            game_tick: tick,
+        })
+    };
+    let ext = ObjDDNetCharacter::default();
+    let jumps = |jumps: i32, total: i32, jumped: i32, grounded: bool, endless: bool| {
+        let mut c = CharacterCore::default();
+        c.jumps = jumps;
+        c.jumped_total = total;
+        c.endless_jump = endless;
+        let p = ObjCharacter {
+            jumped,
+            ..Default::default()
+        };
+        run(&c, &p, grounded, &ext, true, 0).jumps
+    };
+    // two jumps: grounded both left; in the air the ground jump counts as used
+    assert_eq!(jumps(2, 0, 0, true, false), (2, 2));
+    assert_eq!(jumps(2, 0, 1, false, false), (1, 2));
+    // all used and the air jump flag (Jumped & 2) set: none; without it C++ shows 1
+    assert_eq!(jumps(2, 1, 3, false, false), (0, 2));
+    assert_eq!(jumps(2, 1, 1, false, false), (1, 2));
+    // one jump: Jumped & 2 is the used count (2), so -1 unused -> 0
+    assert_eq!(jumps(1, 0, 2, true, false), (0, 1));
+    assert_eq!(jumps(1, 5, 0, false, false), (1, 1));
+    // only a ground jump (-1): in the air with no air jump flag the "edge case" shows 1
+    assert_eq!(jumps(-1, 0, 0, true, false), (1, 1));
+    assert_eq!(jumps(-1, 0, 0, false, false), (1, 1));
+    assert_eq!(jumps(-1, 0, 2, false, false), (0, 1));
+    // endless jump: never all used
+    assert_eq!(jumps(2, 7, 3, false, true), (1, 2));
+    // at most 10 shown; zero jumps
+    assert_eq!(jumps(20, 0, 0, true, false), (10, 10));
+    assert_eq!(jumps(0, 0, 0, true, false), (0, 0));
+    // malformed extremes wrap like C++ instead of panicking
+    assert_eq!(jumps(i32::MIN, i32::MAX, 0, false, true).1, 0);
+    // without display info: the snapped jump count, both values
+    let e = ObjDDNetCharacter {
+        jumps: -3,
+        ..Default::default()
+    };
+    let c = CharacterCore::default();
+    assert_eq!(
+        run(&c, &ObjCharacter::default(), true, &e, false, 0).jumps,
+        (3, 3)
+    );
+
+    // weapons in id order with the active one; the ninja timer: 750 ticks, shown only
+    // while running and with display info
+    let mut c = CharacterCore::default();
+    for w in [0, 1, 5] {
+        c.weapons[w].got = true;
+    }
+    c.ninja.activation_tick = 100;
+    let p = ObjCharacter {
+        weapon: 5,
+        ..Default::default()
+    };
+    let s = run(&c, &p, true, &ext, true, 100);
+    assert_eq!(s.weapons, [(0, false), (1, false), (5, true)]);
+    assert_eq!(s.ninja, Some(1.0));
+    assert_eq!(run(&c, &p, true, &ext, true, 475).ninja, Some(0.5));
+    assert_eq!(run(&c, &p, true, &ext, true, 850).ninja, None);
+    assert_eq!(run(&c, &p, true, &ext, false, 100).ninja, None);
+
+    // every indicator on, in C++'s order; telegun and hit indicators need the weapon
+    let mut c = CharacterCore::default();
+    c.endless_jump = true;
+    c.endless_hook = true;
+    c.jetpack = true;
+    c.has_telegun_gun = true;
+    c.has_telegun_grenade = true;
+    c.has_telegun_laser = true;
+    c.solo = true;
+    c.collision_disabled = true;
+    c.hook_hit_disabled = true;
+    c.hammer_hit_disabled = true;
+    c.shotgun_hit_disabled = true;
+    c.grenade_hit_disabled = true;
+    c.laser_hit_disabled = true;
+    c.deep_frozen = true;
+    c.live_frozen = true;
+    c.jumps = 2;
+    let modes = ObjDDNetCharacter {
+        flags: g::CHARACTERFLAG_LOCK_MODE
+            | g::CHARACTERFLAG_PRACTICE_MODE
+            | g::CHARACTERFLAG_TEAM0_MODE,
+        ..Default::default()
+    };
+    let s = run(&c, &ObjCharacter::default(), true, &modes, true, 0);
+    assert_eq!(s.capabilities, [I::EndlessJump, I::EndlessHook, I::Jetpack]);
+    assert_eq!(
+        s.prohibited,
+        [
+            I::Solo,
+            I::CollisionDisabled,
+            I::HookHitDisabled,
+            I::HammerHitDisabled
+        ]
+    );
+    assert_eq!(
+        s.modes,
+        [
+            I::LockMode,
+            I::PracticeMode,
+            I::Team0Mode,
+            I::DeepFrozen,
+            I::LiveFrozen
+        ]
+    );
+    // modes need display info
+    let s = run(&c, &ObjCharacter::default(), true, &modes, false, 0);
+    assert_eq!(s.modes, [I::DeepFrozen, I::LiveFrozen]);
+    for w in &mut c.weapons {
+        w.got = true;
+    }
+    let s = run(&c, &ObjCharacter::default(), true, &ext, true, 0);
+    assert_eq!(
+        s.capabilities,
+        [
+            I::EndlessJump,
+            I::EndlessHook,
+            I::Jetpack,
+            I::TeleGun,
+            I::TeleGrenade,
+            I::TeleLaser
+        ]
+    );
+    assert_eq!(s.prohibited.len(), 8);
+    // the C++ quirk: the gun indicator follows the grenade flag (and the gun telegun)
+    let mut quirk = c.clone();
+    quirk.grenade_hit_disabled = true;
+    quirk.has_telegun_gun = true;
+    let only = |c: &CharacterCore| {
+        let mut c = c.clone();
+        (
+            c.solo,
+            c.collision_disabled,
+            c.hook_hit_disabled,
+            c.hammer_hit_disabled,
+        ) = (false, false, false, false);
+        (c.shotgun_hit_disabled, c.laser_hit_disabled) = (false, false);
+        run(&c, &ObjCharacter::default(), true, &ext, true, 0).prohibited
+    };
+    assert_eq!(only(&quirk), [I::GunHitDisabled, I::GrenadeHitDisabled]);
+    let mut no_telegun = quirk.clone();
+    no_telegun.has_telegun_gun = false;
+    assert_eq!(only(&no_telegun), [I::GrenadeHitDisabled]);
+}

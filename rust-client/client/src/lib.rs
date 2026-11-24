@@ -16,6 +16,7 @@ pub mod keynames;
 pub mod movement;
 pub mod render;
 pub mod skin;
+pub mod statusbar;
 pub mod storage;
 pub mod style;
 pub mod ui;

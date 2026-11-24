@@ -50,11 +50,19 @@ ICONS = [
 	("game-controller", "GAME"),  # back to the game
 	("sign-out", "DISCONNECT"),  # disconnect
 	("power", "POWER"),  # quit
-	("snowflake", "SNOWFLAKE"),  # freeze
+	("snowflake", "SNOWFLAKE"),  # deep freeze
+	("pause-circle", "PAUSE_CIRCLE"),  # live freeze (movement disabled)
 	("rocket", "ROCKET"),  # jetpack
 	("link", "LINK"),  # endless hook
-	("prohibit", "PROHIBIT"),  # disabled
-	("users", "USERS"),  # team
+	("arrow-fat-lines-up", "ARROW_FAT_LINES_UP"),  # endless jump
+	("sparkle", "SPARKLE"),  # teleport weapon
+	("person-simple", "PERSON"),  # solo
+	("ghost", "GHOST"),  # collision with others off
+	("link-break", "LINK_BREAK"),  # hooking others off
+	("lock", "LOCK"),  # lock mode
+	("barbell", "BARBELL"),  # practice mode
+	("prohibit", "PROHIBIT"),  # hitting others with a weapon off
+	("users", "USERS"),  # team (team 0 mode)
 	("info", "INFO"),  # information
 	("caret-up", "CARET_UP"),  # move up
 	("caret-down", "CARET_DOWN"),  # move down

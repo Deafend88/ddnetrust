@@ -33,6 +33,7 @@ use ddnet_rs::movement::Movement;
 use ddnet_rs::render::items::{self, Items};
 use ddnet_rs::render::map::{MapRender, View, hsl_packed_to_rgb};
 use ddnet_rs::render::players::Players;
+use ddnet_rs::statusbar::StatusBar;
 use ddnet_rs::storage::{self, Storage};
 use ddnet_rs::style::Glass;
 use ddnet_rs::ui::{Action, Menu, Ui};
@@ -340,7 +341,15 @@ impl App {
             let config = &self.settings.config;
             s.controls
                 .execute(stroke, &line, game, &mut s.camera, &frame, config);
-            edit_hud |= stroke && split_line(&line).iter().any(|(c, _)| c == "hud_editor");
+            for (command, args) in split_line(&line).into_iter().filter(|_| stroke) {
+                match command.as_str() {
+                    "hud_editor" => edit_hud = true,
+                    // C++: CClient::Con_Rcon, Con_RconAuth
+                    "rcon" => s.client.rcon(&args, net::now(self.start)),
+                    "rcon_auth" => s.client.rcon_auth(&args, net::now(self.start)),
+                    _ => {}
+                }
+            }
         }
         if edit_hud {
             self.open_editor();
@@ -872,7 +881,11 @@ fn main() {
     let vsync = options.vsync || settings.config.gfx_vsync != 0;
     let mut app = App {
         menu: Menu::new(options.server, &storage),
-        hud: vec![Box::new(Watermark), Box::new(Movement)],
+        hud: vec![
+            Box::new(Watermark),
+            Box::new(StatusBar::new(&storage)),
+            Box::new(Movement),
+        ],
         editor: Editor::default(),
         frame_time_average: 0.0001,
         options,

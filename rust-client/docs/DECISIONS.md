@@ -186,3 +186,7 @@ only matters for names so long that neither file can exist.
 - Name and skin changes apply on the next connect; C++ sends `Cl_ChangeInfo` in game.
 - `rs_data_dir` is our own variable (not C++): the data dir when neither `--data-dir`
   nor `DDNET_DATA_DIR` is given.
+- `CHud::RenderPlayerState` (hud.cpp:842): the "gun hit disabled" indicator tests
+  `m_GrenadeHitDisabled && m_HasTelegunGun` (and draws the laser indicator's quad), so it
+  follows the grenade flag, not `m_GunHitDisabled` (which the core does not even have).
+  Suspected C++ bug; the status bar (7.7) keeps the same decision.

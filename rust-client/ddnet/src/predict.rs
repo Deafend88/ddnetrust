@@ -101,6 +101,8 @@ pub struct Predictor {
     pub spectating: bool,
     pub world_paused: bool,
     pub allow_zoom: bool,
+    /// C++ `m_GameInfo.m_HudDDRace`: the server wants the DDRace HUD (GameInfoEx 7+).
+    pub hud_ddrace: bool,
     /// The latest prediction of the local character for each tick.
     history: BTreeMap<i32, ObjCharacterCore>,
     pub stats: Stats,
@@ -150,6 +152,7 @@ impl Predictor {
             predicted_tick: -1,
             spectating: false,
             world_paused: false,
+            hud_ddrace: false,
             allow_zoom: false,
             history: BTreeMap::new(),
             stats: Stats::default(),
@@ -276,6 +279,7 @@ impl Predictor {
             bug_input = flags & g::GAMEINFOFLAG_BUG_DDRACE_INPUT != 0;
         }
         let no_weak = version >= 8 && flags2 & g::GAMEINFOFLAG2_NO_WEAK_HOOK != 0;
+        self.hud_ddrace = version >= 7 && flags2 & g::GAMEINFOFLAG2_HUD_DDRACE != 0;
         let race = ddrace
             || flags & (g::GAMEINFOFLAG_GAMETYPE_RACE | g::GAMEINFOFLAG_GAMETYPE_FASTCAP) != 0;
         let city = version >= 5 && flags2 & g::GAMEINFOFLAG2_GAMETYPE_CITY != 0;
@@ -508,6 +512,20 @@ impl Predictor {
                 Some(r)
             })
             .collect()
+    }
+
+    /// C++: `m_aClients[id].m_Predicted` where it is the predicted core: the local tee
+    /// while predicting (other tees' cores come from their `DDNetCharacter`, see
+    /// `physics::core::read_ddnet`).
+    pub fn predicted_core(&self, id: i32) -> Option<&CharacterCore> {
+        (self.predicting && id == self.local_id)
+            .then_some(self.predicted_core.as_ref())
+            .flatten()
+    }
+
+    /// The map's collision.
+    pub fn collision(&self) -> &Collision {
+        &self.col
     }
 
     /// C++: `m_aClients[local].m_Predicted.m_FreezeEnd`, the predicted freeze of the

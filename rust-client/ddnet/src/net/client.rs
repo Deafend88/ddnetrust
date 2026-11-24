@@ -42,6 +42,7 @@ const NETMSG_READY: i32 = 14;
 const NETMSG_ENTERGAME: i32 = 15;
 const NETMSG_INPUT: i32 = 16;
 const NETMSG_RCON_CMD: i32 = 17;
+const NETMSG_RCON_AUTH: i32 = 18;
 const NETMSG_REQUEST_MAP_DATA: i32 = 19;
 const NETMSG_PING: i32 = 22;
 const NETMSG_PING_REPLY: i32 = 23;
@@ -736,6 +737,25 @@ impl Client {
             data: download.data,
         });
         self.send_msg(NETMSG_READY, true, &Packer::default(), true, true, now);
+    }
+
+    /// C++: `CClient::RconAuth` as the `rcon_auth` console command calls it (empty name,
+    /// "send rcon commands" 1).
+    pub fn rcon_auth(&mut self, password: &str, now: i64) {
+        // ponytail: C++ skips this once authed (m_aRconAuthed); we do not track the
+        // auth status yet, so a second rcon_auth is sent again
+        let mut p = Packer::default();
+        p.add_string(b"", 0, true);
+        p.add_string(password.as_bytes(), 0, true);
+        p.add_int(1);
+        self.send_msg(NETMSG_RCON_AUTH, true, &p, true, false, now);
+    }
+
+    /// C++: `CClient::Rcon` (the `rcon` console command).
+    pub fn rcon(&mut self, command: &str, now: i64) {
+        let mut p = Packer::default();
+        p.add_string(command.as_bytes(), 0, true);
+        self.send_msg(NETMSG_RCON_CMD, true, &p, true, false, now);
     }
 
     /// C++: `CGameClient::OnConnected` network part: start info and the `crashmeplx`
