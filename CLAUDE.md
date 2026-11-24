@@ -23,6 +23,18 @@ Read `rust-client/docs/PLAN.md`, `rust-client/docs/PROGRESS.md` and `git log` fi
   commit. Exception: never simplify away exact C++ behaviour.
 - Use context7 for third-party crate docs.
 
+## UI rules (menus, HUD, island, gallery)
+- Use the frontend-design skill for every UI step, applied to our egui/wgpu UI (not web
+  code). If it does not load, read
+  `~/.claude/plugins/marketplaces/claude-plugins-official/plugins/frontend-design/skills/frontend-design/SKILL.md`.
+- No decorative gradients, glows or colour effects unless the spec asks for them.
+- One spacing scale (4/8/12/16/24/32, `style::space`) used everywhere; no one-off paddings.
+- One accent colour; everything else neutral.
+- Show only essential information; secondary info on hover or in a detail view.
+- Corner radii, icon sizes and font sizes come from the design tokens (`style.rs`) only.
+- Before finishing any UI step, review it against these rules and the skill, and fix
+  violations.
+
 ## Testing
 - Only a local `DDNet-Server` from this repo, bound to `127.0.0.1` with `sv_register 0`,
   run from a scratch dir (see `rust-client/docs/TESTING.md`).
