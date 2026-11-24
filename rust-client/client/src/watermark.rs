@@ -5,17 +5,18 @@
 use ddnet::map::ints_to_str;
 use ddnet::physics::vmath::round_to_int;
 use ddnet::protocol::generated as g;
-use egui::Ui;
+use egui::{CornerRadius, Frame, Margin, Ui};
 
 use crate::hud::{Anchor, HudConfig, HudData, Placement, Widget};
 use crate::icons;
-use crate::style::{Glass, Weight, color, size, space};
+use crate::style::{Glass, LOGO_GLOW, Weight, color, radius, size, space};
 use crate::widgets as w;
 
-/// Stat keys in their default order, whether each shows by default (SPEC §1) and the
+/// Stat keys in their default order, whether each shows by default (SPEC §1, except the
+/// name: off, it already shows above the tee; user review 2026-11-25) and the
 /// name in the editor.
 pub const ITEMS: [(&str, bool, &str); 8] = [
-    ("user", true, "Name"),
+    ("user", false, "Name"),
     ("server", false, "Server address"),
     ("ping", true, "Ping"),
     ("fps", true, "Framerate"),
@@ -31,26 +32,53 @@ const TICK_SPEED: i32 = 50;
 /// One stat: icon, value, optional unit.
 pub type Stat = (&'static str, String, Option<&'static str>);
 
-/// Draws the watermark pill (also used by the gallery).
+/// Draws the watermark (also used by the gallery): a HUD bar with the logo (a light
+/// rounded rectangle with a soft glow: the tee mark and "DDNet-rs", the mark only in
+/// compact mode), then the stats. Spacing measured from the reference (PROGRESS 7.5).
 pub fn draw(ui: &mut Ui, glass: Glass, compact: bool, stats: &[Stat]) {
-    w::glass_pill(ui, glass, false, |ui| {
-        w::pill(ui, color::LOGO, |ui| {
-            w::icon(ui, icons::BOLT, size::ICON_SMALL, color::LOGO_TEXT);
-            if !compact {
-                w::text(
-                    ui,
-                    "DDNet-rs",
-                    size::CAPTION,
-                    Weight::Regular,
-                    color::LOGO_TEXT,
-                );
-            }
-        });
+    let right = if stats.is_empty() {
+        space::M
+    } else {
+        space::XL
+    };
+    let margin = Margin {
+        left: space::M as i8,
+        right: right as i8,
+        top: space::M as i8,
+        bottom: space::M as i8,
+    };
+    // the logo is the tallest item: the mark and its padding
+    let row_height = size::ICON + 2.0 * space::S;
+    w::hud_bar(ui, glass, false, margin, row_height, |ui| {
+        Frame::new()
+            .fill(color::LOGO)
+            .corner_radius(CornerRadius::same(radius::SMALL))
+            .inner_margin(Margin::symmetric(space::M as i8, space::S as i8))
+            .shadow(LOGO_GLOW)
+            .show(ui, |ui| {
+                ui.spacing_mut().interact_size.y = size::ICON;
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = space::S;
+                    w::tee_mark(ui, size::ICON, color::LOGO_TEXT, color::LOGO);
+                    if !compact {
+                        w::text(
+                            ui,
+                            "DDNet-rs",
+                            size::CAPTION,
+                            Weight::Regular,
+                            color::LOGO_TEXT,
+                        );
+                    }
+                });
+            });
+        if !stats.is_empty() {
+            ui.add_space(space::XXL);
+        }
         self::stats(ui, stats);
     });
 }
 
-/// Stats separated by dots (the watermark's row; also the movement widget's).
+/// Stats separated by dots.
 pub fn stats(ui: &mut Ui, stats: &[Stat]) {
     for (i, (glyph, value, unit)) in stats.iter().enumerate() {
         if i > 0 {
@@ -107,7 +135,7 @@ pub fn stat(key: &str, data: &HudData) -> Option<Stat> {
         // C++: CHud::RenderTextInfo, round_to_int(1.0f / FrameTimeAverage())
         "fps" => {
             let fps = round_to_int(1.0 / data.frame_time_average);
-            (icons::BOLT, fps.to_string(), Some("fps"))
+            (icons::MONITOR, fps.to_string(), Some("fps"))
         }
         // C++: CScoreboard::RenderPlayers, std::clamp(m_Latency, 0, 999)
         "ping" => {
@@ -118,13 +146,13 @@ pub fn stat(key: &str, data: &HudData) -> Option<Stat> {
             let ms = g::ObjPlayerInfo::from_ints(&info.data)
                 .latency
                 .clamp(0, 999);
-            (icons::CLOUD, ms.to_string(), Some("ms"))
+            (icons::WIFI, ms.to_string(), Some("ms"))
         }
         "server" => (icons::GLOBE, data.server.to_string(), None),
         // SPEC §1 "bps": the horizontal speed of the movement information (7.6)
         "speed" => {
             let speed = crate::movement::of(data)?.speed.x;
-            (icons::GAUGE, crate::movement::shown(speed), Some("tiles/s"))
+            (icons::GAUGE, crate::movement::shown(speed), Some("t/s"))
         }
         "time" => (icons::CLOCK, clock(&chrono::Local::now()), None),
         "tps" => (icons::PULSE, TICK_SPEED.to_string(), Some("tps")),
@@ -149,7 +177,7 @@ impl Widget for Watermark {
     }
 
     fn icon(&self) -> &'static str {
-        icons::BOLT
+        icons::INFO
     }
 
     fn default_placement(&self) -> Placement {

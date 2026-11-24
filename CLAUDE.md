@@ -27,7 +27,11 @@ Read `rust-client/docs/PLAN.md`, `rust-client/docs/PROGRESS.md` and `git log` fi
 - Use the frontend-design skill for every UI step, applied to our egui/wgpu UI (not web
   code). If it does not load, read
   `~/.claude/plugins/marketplaces/claude-plugins-official/plugins/frontend-design/skills/frontend-design/SKILL.md`.
-- No decorative gradients, glows or colour effects unless the spec asks for them.
+- No decorative gradients, glows or colour effects unless the spec asks for them. Effects
+  shown in the reference images (e.g. the watermark logo's glow) count as asked for.
+- Shapes: single-line widgets (watermark, notifications, capsules) are full pills;
+  multi-line widgets and panels are rounded rectangles (like the stacked position/speed
+  widget).
 - One spacing scale (4/8/12/16/24/32, `style::space`) used everywhere; no one-off paddings.
 - One accent colour; everything else neutral.
 - Show only essential information; secondary info on hover or in a detail view.

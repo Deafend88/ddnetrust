@@ -175,14 +175,14 @@ fn widgets_stay_on_screen() {
 #[test]
 fn watermark_order_and_items() {
     let mut c = HudConfig::default();
-    // SPEC §1 defaults: user, ping and fps on, in the default order
+    // defaults: ping and fps on (the name is off: it shows above the tee), in order
     let on = |c: &HudConfig| -> Vec<&str> {
         watermark::order(c)
             .into_iter()
             .filter(|k| watermark::shown(c, k))
             .collect()
     };
-    assert_eq!(on(&c), ["user", "ping", "fps"]);
+    assert_eq!(on(&c), ["ping", "fps"]);
     // a saved order (with an unknown key and a duplicate) comes first, the rest follow
     c.execute("hud_set", r#"watermark order "fps, nope,ping,fps""#);
     assert_eq!(
@@ -191,9 +191,10 @@ fn watermark_order_and_items() {
             "fps", "ping", "user", "server", "speed", "time", "uid", "tps"
         ]
     );
-    c.execute("hud_set", "watermark user 0");
+    c.execute("hud_set", "watermark user 1");
+    c.execute("hud_set", "watermark ping 0");
     c.execute("hud_set", "watermark tps 1");
-    assert_eq!(on(&c), ["fps", "ping", "tps"]);
+    assert_eq!(on(&c), ["fps", "user", "tps"]);
     // the time item: local HH:MM, 24-hour, zero-padded
     let t = |h, m| chrono::NaiveTime::from_hms_opt(h, m, 59).unwrap();
     assert_eq!(watermark::clock(&t(7, 5)), "07:05");
@@ -410,8 +411,8 @@ fn editor_panel_and_popover_keep_out_of_the_way() {
     assert_eq!(moved.min, pos2(24.0, 220.0));
 }
 
-/// 7.5 layout: the watermark's measurements as drawn (offset 16, pill paddings 16 x 8,
-/// 12 between items, 16 per separator dot, the type scale's sizes). Each text's place
+/// 7.5 layout: the watermark's measurements as drawn (offset 16, the gaps measured from
+/// the reference, the type scale's sizes). Each text's place
 /// and size comes from egui's output shapes.
 #[test]
 fn watermark_layout_measurements() {
@@ -428,6 +429,9 @@ fn watermark_layout_measurements() {
         events: &[],
     };
     let mut widgets: Vec<Box<dyn Widget>> = vec![Box::new(watermark::Watermark)];
+    // the name is off by default; on here to measure the gaps between two stats
+    let mut config = HudConfig::default();
+    config.execute("hud_set", "watermark user 1");
     let ctx = egui::Context::default();
     style::install(&ctx, Glass::Off);
     let mut shapes = Vec::new();
@@ -436,9 +440,7 @@ fn watermark_layout_measurements() {
             screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 600.0))),
             ..Default::default()
         };
-        let mut out = ctx.run_pass(input, |ctx| {
-            hud::show(ctx, &mut widgets, &data, &HudConfig::default())
-        });
+        let mut out = ctx.run_pass(input, |ctx| hud::show(ctx, &mut widgets, &data, &config));
         out.textures_delta.clear();
         shapes = out.shapes;
     }
@@ -460,39 +462,39 @@ fn watermark_layout_measurements() {
         .memory(|m| m.area_rect(hud::area_id("watermark")))
         .unwrap();
     assert_eq!(area.min, pos2(16.0, 16.0));
-    // the logo icon: outer pill padding + logo pill padding from the area's corner
-    let logo_icon = find(ddnet_rs::icons::BOLT);
-    assert_eq!(logo_icon.1, size::ICON_SMALL);
-    assert_eq!(logo_icon.2.left(), 16.0 + 2.0 * space::L);
+    // the logo text: bar margin M, logo margin M, the tee mark (icon size), gap S
     let logo = find("DDNet-rs");
     assert_eq!(logo.1, size::CAPTION);
-    // stats: icon, 4 pt, value (body), unit right after it (body)
+    assert_eq!(
+        logo.2.left(),
+        16.0 + space::M + space::M + size::ICON + space::S
+    );
+    // stats: icon (icon size), 8 pt, value (body), unit right after it (body)
+    let icon = |glyph: &str| find(glyph).2;
     let user = find("brainless tee");
     assert_eq!(user.1, size::BODY);
     assert_eq!(
-        user.2.left() - find(ddnet_rs::icons::USER).2.right(),
-        space::XS
+        user.2.left() - icon(ddnet_rs::icons::USER).right(),
+        space::S
     );
     assert_eq!(find(ddnet_rs::icons::USER).1, size::ICON);
     let fps = find("100");
     let unit = find("fps");
     assert_eq!((fps.1, unit.1), (size::BODY, size::BODY));
     assert_eq!(unit.2.left(), fps.2.right());
-    // logo pill to first stat: its right padding and one item gap; stat to stat: gap,
-    // dot slot, gap (the ping is unknown offline, so user and fps are neighbours)
+    // logo to first stat: the logo's margin and 32 (reference: 33); stat to stat: the
+    // dot slot, 48 (reference: 48; the ping is unknown offline, so user and fps are
+    // neighbours)
     assert_eq!(
-        find(ddnet_rs::icons::USER).2.left() - logo.2.right(),
-        space::L + space::M
+        icon(ddnet_rs::icons::USER).left() - logo.2.right(),
+        space::M + space::XXL
     );
-    let user_end = user.2.right();
-    let fps_icon = texts
-        .iter()
-        .filter(|t| t.0 == ddnet_rs::icons::BOLT)
-        .nth(1)
-        .unwrap();
-    assert_eq!(fps_icon.2.left() - user_end, space::M + space::L + space::M);
-    // the pill hugs its content: 16 pt after the last unit, 8 above and below the row
-    assert_eq!(area.right() - unit.2.right(), space::L);
+    assert_eq!(
+        icon(ddnet_rs::icons::MONITOR).left() - user.2.right(),
+        2.0 * space::XL
+    );
+    // the bar ends 24 after the last unit
+    assert_eq!(area.right() - unit.2.right(), space::XL);
 }
 
 /// 7.6: the movement information against the real `CHud::GetMovementInformation` and
@@ -576,5 +578,30 @@ fn movement_information_matches_cpp() {
         wrong.len(),
         text.lines().count(),
         wrong[..wrong.len().min(5)].join("\n")
+    );
+}
+
+/// 7.5 review: a settings popover taller than the room above and below its widget (the
+/// watermark's eight items in an 800x600 window) opens beside the widget, moved onto the
+/// screen, covering neither the widget nor the panel.
+#[test]
+fn tall_popover_opens_beside_the_widget() {
+    let screen = Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 600.0));
+    let widget = Rect::from_min_size(pos2(272.0, 362.0), vec2(528.0, 64.0));
+    let size = vec2(246.0, 490.0);
+    let panel = editor::panel_rect(vec2(270.0, 190.0), screen, &[widget]);
+    let a = editor::popover_align(widget, size, screen, panel);
+    let r = a.align_rect(&widget, size, 8.0);
+    // egui moves it onto the screen vertically
+    let r = r.translate(vec2(
+        0.0,
+        (-r.top()).max(0.0) - (r.bottom() - 600.0).max(0.0),
+    ));
+    assert!(screen.contains_rect(r), "{r:?}");
+    assert!(!r.intersects(widget), "{r:?} {widget:?}");
+    let moved = editor::panel_rect(vec2(270.0, 190.0), screen, &[widget, r]);
+    assert!(
+        !moved.intersects(r) && !moved.intersects(widget),
+        "{moved:?} {r:?}"
     );
 }

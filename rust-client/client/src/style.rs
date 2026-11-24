@@ -78,6 +78,14 @@ pub const POPUP_SHADOW: egui::Shadow = egui::Shadow {
     color: Color32::from_black_alpha(110),
 };
 
+/// The soft white glow around the watermark's logo (the reference shows one).
+pub const LOGO_GLOW: egui::Shadow = egui::Shadow {
+    offset: [0, 0],
+    blur: 20,
+    spread: 1,
+    color: Color32::from_rgba_premultiplied(150, 150, 150, 150),
+};
+
 /// Font weights (egui font families).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Weight {
@@ -130,6 +138,17 @@ impl Glass {
         color::SURFACE.gamma_multiply_u8(alpha)
     }
 
+    /// A HUD bar's fill: opaque when glass is off; else a translucent black that blends
+    /// into dark scenes and keeps white text readable on light ones (the watermark
+    /// reference: 45% black: about 65 grey over the light reference's 118).
+    pub fn hud_fill(self) -> Color32 {
+        match self {
+            Self::Off => color::SURFACE,
+            Self::Subtle => Color32::from_black_alpha(115),
+            Self::Full => Color32::from_black_alpha(90),
+        }
+    }
+
     /// Secondary text on this strength's panels.
     pub fn text_secondary(self) -> Color32 {
         match self {
@@ -163,7 +182,7 @@ pub fn fonts() -> FontDefinitions {
         ),
         (
             "Phosphor",
-            &include_bytes!("../../assets/fonts/Phosphor.ttf")[..],
+            &include_bytes!("../../assets/fonts/Phosphor-Fill.ttf")[..],
         ),
     ] {
         fonts

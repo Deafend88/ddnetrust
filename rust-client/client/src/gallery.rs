@@ -92,7 +92,7 @@ fn page(ctx: &egui::Context, glass: Glass) {
                     ui.add_space(space::S);
                     ui.horizontal(|ui| {
                         w::button(ui, None, "Button");
-                        w::accent_button(ui, Some(icons::PLAY), "Connect");
+                        w::accent_button(ui, Some(icons::CONNECT), "Connect");
                     });
                     ui.horizontal(|ui| {
                         w::toggle(ui, &mut true);
@@ -117,8 +117,8 @@ fn page(ctx: &egui::Context, glass: Glass) {
                         false,
                         &[
                             (icons::USER, "TeDeafe".into(), None),
-                            (icons::CLOUD, "27".into(), Some("ms")),
-                            (icons::BOLT, "372".into(), Some("fps")),
+                            (icons::WIFI, "27".into(), Some("ms")),
+                            (icons::MONITOR, "372".into(), Some("fps")),
                         ],
                     );
                     ui.add_space(space::M);

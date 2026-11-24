@@ -7,12 +7,12 @@ use ddnet::physics::core::velocity_ramp;
 use ddnet::physics::tuning::{Param, Tuning};
 use ddnet::physics::vmath::{PI, Vec2, length, mix, vec2};
 use ddnet::protocol::generated::ObjCharacter;
-use egui::Ui;
+use egui::{Margin, Ui};
 
 use crate::hud::{Anchor, HudConfig, HudData, Placement, Widget};
 use crate::icons;
 use crate::render::players::target_angle;
-use crate::watermark::{self, Stat};
+use crate::style::{Weight, color, font, size, space};
 use crate::widgets as w;
 
 /// C++ `SERVER_TICK_SPEED` (`Client()->GameTickSpeed()`).
@@ -109,6 +109,54 @@ fn shown_item(config: &HudConfig, key: &str) -> bool {
         .is_none_or(|v| v.trim() != "0")
 }
 
+/// An item: icon, labelled values ("X", "57.53"), unit.
+type Item = (
+    &'static str,
+    Vec<(&'static str, String)>,
+    Option<&'static str>,
+);
+
+/// "X" then the value, then the unit if any: label and unit in the secondary grey like
+/// the watermark's units.
+fn value(ui: &mut Ui, (label, v): &(&str, String), unit: Option<&str>) {
+    let weak = ui.visuals().weak_text_color();
+    w::text(ui, label, size::BODY, Weight::Regular, weak);
+    ui.add_space(space::XS);
+    w::text(ui, v, size::BODY, Weight::Medium, color::TEXT);
+    if let Some(unit) = unit {
+        w::text(ui, unit, size::BODY, Weight::Regular, weak);
+    }
+}
+
+/// The items in a row: each icon, then "X 57.53  Y 15.53" with the unit after the last
+/// value, or (`stacked`) the values under each other, each with its unit. A one-value
+/// item stays a single line, so it and its icon centre on the row like the others.
+fn row(ui: &mut Ui, items: &[Item], stacked: bool) {
+    for (n, (glyph, values, unit)) in items.iter().enumerate() {
+        if n > 0 {
+            w::dot(ui);
+        }
+        w::icon(ui, glyph, size::ICON, color::TEXT);
+        ui.add_space(space::S);
+        if stacked && values.len() > 1 {
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = space::XS;
+                ui.spacing_mut().interact_size.y = 0.0;
+                for v in values {
+                    ui.horizontal(|ui| value(ui, v, *unit));
+                }
+            });
+            continue;
+        }
+        for (k, v) in values.iter().enumerate() {
+            if k > 0 {
+                ui.add_space(space::M);
+            }
+            value(ui, v, unit.filter(|_| k + 1 == values.len()));
+        }
+    }
+}
+
 pub struct Movement;
 
 impl Widget for Movement {
@@ -135,24 +183,46 @@ impl Widget for Movement {
 
     fn show(&mut self, ui: &mut Ui, data: &HudData, config: &HudConfig) {
         let Some(i) = of(data) else { return };
-        let pair = |v: Vec2| format!("{}, {}", shown(v.x), shown(v.y));
-        let stats: Vec<Stat> = ITEMS
+        let xy = |v: Vec2| vec![("X", shown(v.x)), ("Y", shown(v.y))];
+        let items: Vec<Item> = ITEMS
             .iter()
             .filter(|(k, _)| shown_item(config, k))
             .map(|&(k, _)| match k {
-                "position" => (icons::MAP_PIN, pair(i.pos), None),
-                "speed" => (icons::GAUGE, pair(i.speed), Some("tiles/s")),
-                _ => (icons::COMPASS, shown(i.angle), Some("°")),
+                "position" => (icons::MAP_PIN, xy(i.pos), None),
+                "speed" => (icons::GAUGE, xy(i.speed), Some("t/s")),
+                _ => (icons::CROSSHAIR, vec![("aim", shown(i.angle))], Some("°")),
             })
             .collect();
-        if stats.is_empty() {
+        if items.is_empty() {
             return;
         }
-        w::glass_pill(ui, data.glass, false, |ui| watermark::stats(ui, &stats));
+        let stacked = config
+            .value("movement", "stacked")
+            .is_some_and(|v| v.trim() != "0");
+        let margin = Margin::symmetric(space::XL as i8, space::L as i8);
+        // two-row items make it a multi-line widget: a rounded rectangle, not a pill
+        let multi_line = stacked && items.iter().any(|i| i.1.len() > 1);
+        let line = (ui.ctx()).fonts_mut(|f| f.row_height(&font(size::BODY, Weight::Medium)));
+        let row_height = if multi_line {
+            2.0 * line + space::XS
+        } else {
+            line.max(size::ICON)
+        };
+        w::hud_bar(ui, data.glass, multi_line, margin, row_height, |ui| {
+            row(ui, &items, stacked)
+        });
     }
 
     fn settings(&mut self, ui: &mut Ui, config: &mut HudConfig) {
         egui::Grid::new("movement").num_columns(2).show(ui, |ui| {
+            let mut on = config
+                .value("movement", "stacked")
+                .is_some_and(|v| v.trim() != "0");
+            if w::toggle(ui, &mut on).changed() {
+                config.set("movement", "stacked", on as i32);
+            }
+            ui.label("Two rows");
+            ui.end_row();
             for (key, name) in ITEMS {
                 let mut on = shown_item(config, key);
                 if w::toggle(ui, &mut on).changed() {

@@ -135,20 +135,34 @@ pub fn panel_rect(size: Vec2, screen: Rect, avoid: &[Rect]) -> Rect {
     .unwrap_or_else(|| at(Align2::CENTER_BOTTOM))
 }
 
-/// The side of `widget` its settings popover (of `size`) opens on: the first of egui's
-/// menu positions that fits on screen and stays off the editor panel, else the first
-/// that fits on screen (the panel then moves out of its way, see `panel_rect`).
+/// The side of `widget` its settings popover (of `size`) opens on, in this order: the
+/// first of egui's menu positions that fits on screen and stays off the editor panel;
+/// one that fits; then, for a popover taller or wider than the room, one that covers
+/// neither the widget nor the panel once egui has moved it onto the screen (beside the
+/// widget); one that only keeps the widget free. The panel moves out of the popover's
+/// way (see `panel_rect`).
 pub fn popover_align(widget: Rect, size: Vec2, screen: Rect, panel: Rect) -> RectAlign {
     let rect = |a: &RectAlign| a.align_rect(&widget, size, w::POPOVER_GAP);
+    // where egui's Area puts it: moved onto the screen
+    let placed = |a: &RectAlign| {
+        let r = rect(a);
+        let push = |lo: f32, hi: f32, min: f32, max: f32| (min - lo).max(0.0) - (hi - max).max(0.0);
+        r.translate(vec2(
+            push(r.left(), r.right(), screen.left(), screen.right()),
+            push(r.top(), r.bottom(), screen.top(), screen.bottom()),
+        ))
+    };
     let fits = |a: &&RectAlign| screen.contains_rect(rect(a));
+    let off_widget = |a: &&RectAlign| !placed(a).intersects(widget);
+    let off_panel = |a: &&RectAlign| !placed(a).intersects(panel);
     let aligns = RectAlign::MENU_ALIGNS;
-    (aligns
-        .iter()
-        .filter(fits)
-        .find(|a| !rect(a).intersects(panel)))
-    .or_else(|| aligns.iter().find(fits))
-    .copied()
-    .unwrap_or(RectAlign::BOTTOM_START)
+    let mut choices = aligns.iter();
+    (choices.clone().filter(fits).find(off_panel))
+        .or_else(|| choices.clone().find(fits))
+        .or_else(|| choices.clone().filter(off_widget).find(off_panel))
+        .or_else(|| choices.find(off_widget))
+        .copied()
+        .unwrap_or(RectAlign::BOTTOM_START)
 }
 
 fn panel_id() -> Id {

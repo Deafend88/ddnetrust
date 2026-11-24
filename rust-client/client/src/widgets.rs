@@ -79,6 +79,64 @@ pub fn glass_pill<R>(
     })
 }
 
+/// A HUD bar: a translucent shape over glass (the watermark's container), `margin`
+/// inside, its items centred on a row `row_height` tall (the tallest item). Shape rule
+/// (CLAUDE.md): a pill for one line, a rounded rectangle (`radius::CARD`) for several.
+pub fn hud_bar<R>(
+    ui: &mut Ui,
+    glass: Glass,
+    multi_line: bool,
+    margin: Margin,
+    row_height: f32,
+    add: impl FnOnce(&mut Ui) -> R,
+) -> InnerResponse<R> {
+    let radius = if multi_line {
+        radius::CARD
+    } else {
+        radius::PILL
+    };
+    let frame = Frame::new()
+        .fill(glass.hud_fill())
+        .corner_radius(CornerRadius::same(radius))
+        .inner_margin(margin);
+    glass_frame(ui, glass, false, frame, |ui| {
+        // egui centres a horizontal row's items on interact_size.y
+        ui.spacing_mut().interact_size.y = row_height;
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 0.0;
+            add(ui)
+        })
+        .inner
+    })
+}
+
+/// The DDNet-rs mark: a tee looking right (round body, two upright eyes, two feet) in
+/// `color`, the eyes in `eyes`.
+pub fn tee_mark(ui: &mut Ui, size: f32, color: Color32, eyes: Color32) -> Response {
+    let (rect, response) = ui.allocate_exact_size(vec2(size, size), Sense::hover());
+    let p = ui.painter();
+    let capsule = |center: egui::Pos2, s: egui::Vec2, c: Color32| {
+        p.rect_filled(
+            egui::Rect::from_center_size(center, s),
+            CornerRadius::same(radius::PILL),
+            c,
+        );
+    };
+    let (c, u) = (rect.center() - vec2(0.0, size * 0.06), size);
+    p.circle_filled(c, u * 0.42, color);
+    for dx in [-0.27, 0.12] {
+        capsule(
+            rect.center() + vec2(u * dx, u * 0.38),
+            vec2(u * 0.42, u * 0.2),
+            color,
+        );
+    }
+    for dx in [0.1, 0.26] {
+        capsule(c + vec2(u * dx, -u * 0.08), vec2(u * 0.1, u * 0.2), eyes);
+    }
+    response
+}
+
 /// An icon glyph (`icons.rs`).
 pub fn icon(ui: &mut Ui, glyph: &str, size: f32, color: Color32) -> Response {
     ui.label(RichText::new(glyph).font(icon_font(size)).color(color))
@@ -95,7 +153,7 @@ pub fn stat(ui: &mut Ui, glyph: &str, value: &str, unit: Option<&str>) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
         icon(ui, glyph, size::ICON, color::TEXT);
-        ui.add_space(space::XS);
+        ui.add_space(space::S);
         text(ui, value, size::BODY, Weight::Medium, color::TEXT);
         if let Some(unit) = unit {
             let weak = ui.visuals().weak_text_color();
@@ -104,14 +162,11 @@ pub fn stat(ui: &mut Ui, glyph: &str, value: &str, unit: Option<&str>) {
     });
 }
 
-/// The faint dot between stats.
+/// The barely visible dot between stats, in the middle of the gap between them.
 pub fn dot(ui: &mut Ui) {
-    let (rect, _) = ui.allocate_exact_size(vec2(space::L, size::BODY), Sense::hover());
-    ui.painter().circle_filled(
-        rect.center(),
-        1.5,
-        ui.visuals().weak_text_color().gamma_multiply(0.5),
-    );
+    let (rect, _) = ui.allocate_exact_size(vec2(2.0 * space::XL, size::BODY), Sense::hover());
+    ui.painter()
+        .circle_filled(rect.center(), 1.5, color::SEPARATOR);
 }
 
 /// A button with an optional icon before the label. The icon is its own atom in the

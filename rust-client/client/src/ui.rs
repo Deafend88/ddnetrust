@@ -258,7 +258,7 @@ impl Menu {
             egui::Layout::top_down_justified(egui::Align::Center),
             |ui| {
                 if connected {
-                    if w::accent_button(ui, Some(icons::PLAY), "Back to the game").clicked() {
+                    if w::accent_button(ui, Some(icons::GAME), "Back to the game").clicked() {
                         action = Some(Action::Resume);
                     }
                     if w::button(ui, Some(icons::MOVE), "Edit HUD").clicked() {
@@ -274,7 +274,7 @@ impl Menu {
                             .desired_width(f32::INFINITY),
                     );
                     let enter = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                    if w::accent_button(ui, Some(icons::PLAY), "Connect").clicked() || enter {
+                    if w::accent_button(ui, Some(icons::CONNECT), "Connect").clicked() || enter {
                         match self.address.trim().parse::<SocketAddr>() {
                             Ok(a) if a.ip().is_loopback() => action = Some(Action::Connect(a)),
                             Ok(_) => {
