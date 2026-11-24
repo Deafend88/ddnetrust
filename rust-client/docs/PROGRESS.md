@@ -511,11 +511,13 @@ not load as a skill in this setup; its SKILL.md is read from the path in CLAUDE.
   at each strength over a map (review: dm1 at 900 500) and times the passes at
   2560x1440, release build: subtle 0.16 ms, full 0.19-0.22 ms (target 0.5 ms).
 
-Review round 2 (applied): full = 7 levels (soft colour fields), saturation x1.25, lighter
-tint (SURFACE_RAISED at 63 %); secondary text per strength via egui's
-`weak_text_color` (`Glass::text_secondary`: 172, 204 at full; captions >= 4.7:1 on the
-dm1 render); logo text 114 grey (4.6:1). Subtle unchanged, still the default. The user
-judges Liquid Glass live with the island animations in 7.9.
+Review round 2: a lighter, more saturated full (7 levels, x1.25 saturation, lighter
+tint) was tried and reverted at the user's request (washed out); full stays 5 levels,
+no saturation, SURFACE at 70 %. Kept: secondary text per strength via egui's
+`weak_text_color` (`Glass::text_secondary`: 172, 204 at full; captions 8.0 / 5.9 / 5.6:1
+off / subtle / full on the dm1 render) and the logo text 114 grey (4.6:1). Subtle is
+unchanged, still the default. The user judges Liquid Glass live with the island
+animations in 7.9.
 
 #### Exact next actions
 1. 7.3 (HUD system and data, PLAN §10.3): `HudData` snapshot + event queue, `Widget`
