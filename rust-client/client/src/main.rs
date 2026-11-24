@@ -31,6 +31,7 @@ use ddnet_rs::render::items::{self, Items};
 use ddnet_rs::render::map::{MapRender, View, hsl_packed_to_rgb};
 use ddnet_rs::render::players::Players;
 use ddnet_rs::storage::{self, Storage};
+use ddnet_rs::style::{self, Glass};
 use ddnet_rs::ui::{Action, Menu, Ui};
 use winit::application::ApplicationHandler;
 use winit::event::{DeviceEvent, DeviceId, ElementState, KeyEvent, MouseScrollDelta, WindowEvent};
@@ -68,8 +69,10 @@ struct Running {
     config: wgpu::SurfaceConfiguration,
     gfx: Gfx,
     players: Players,
-    /// `None` without DDNet's font: then there are no menus.
-    ui: Option<Ui>,
+    ui: Ui,
+    /// The `rs_glass` and `rs_ui_scale` the UI was set up with.
+    ui_glass: i32,
+    ui_scale: i32,
 }
 
 /// One connection to a server and its game state (C++: what `CClient::Disconnect` and
@@ -200,11 +203,17 @@ impl App {
         surface.configure(&device, &config);
         let mut gfx = Gfx::new(device, queue, config.format, size_of(&config));
         let players = Players::new(&mut gfx, &self.storage);
-        let ui = Ui::new(&window, &gfx, config.format, &self.storage);
-        if ui.is_none() {
-            eprintln!("no fonts/DejaVuSans.ttf in the data dir: no menus");
-        }
+        let c = &self.settings.config;
+        let ui = Ui::new(
+            &window,
+            &gfx,
+            config.format,
+            Glass::from_setting(c.rs_glass),
+        );
+        ui.painter.ctx.set_zoom_factor(c.rs_ui_scale as f32 / 100.0);
         Ok(Running {
+            ui_glass: c.rs_glass,
+            ui_scale: c.rs_ui_scale,
             window,
             surface,
             config,
@@ -384,11 +393,6 @@ impl App {
         if let Err(e) = self.update_session() {
             self.end_session();
             self.menu.error = Some(e);
-            if self.running.as_ref().is_none_or(|r| r.ui.is_none()) {
-                // no menus to go back to
-                self.error = self.menu.error.take();
-                return event_loop.exit();
-            }
         }
         let Some(r) = &mut self.running else { return };
         let mut batch = Batch::default();
@@ -469,11 +473,18 @@ impl App {
         r.gfx.composite(&target, size);
         let mut action = None;
         let connected = self.session.is_some();
-        if (!connected || self.menu.open)
-            && let Some(ui) = &mut r.ui
-        {
+        // the settings may have changed the look
+        let c = &self.settings.config;
+        if (c.rs_glass, c.rs_ui_scale) != (r.ui_glass, r.ui_scale) {
+            style::install(&r.ui.painter.ctx, Glass::from_setting(c.rs_glass));
+            r.ui.painter
+                .ctx
+                .set_zoom_factor(c.rs_ui_scale as f32 / 100.0);
+            (r.ui_glass, r.ui_scale) = (c.rs_glass, c.rs_ui_scale);
+        }
+        if !connected || self.menu.open {
             let (menu, settings) = (&mut self.menu, &mut self.settings);
-            ui.frame(&r.window, &r.gfx, &target, size, |ctx| {
+            r.ui.frame(&r.window, &r.gfx, &target, size, |ctx| {
                 action = menu.show(ctx, connected, settings);
             });
         }
@@ -552,11 +563,10 @@ impl ApplicationHandler for App {
         // egui sees every event; it acts on them only while a menu is drawn
         let menu_visible = self.menu_visible();
         if let Some(r) = &mut self.running
-            && let Some(ui) = &mut r.ui
             && menu_visible
             && self.menu.reading_key.is_none()
         {
-            ui.on_window_event(&r.window, &event);
+            r.ui.on_window_event(&r.window, &event);
         }
         match event {
             WindowEvent::CloseRequested => {

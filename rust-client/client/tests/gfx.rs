@@ -249,3 +249,33 @@ fn map_textures_are_freed() {
     );
     assert!(g.read_world().chunks(4).any(|p| p[..3] != [0, 0, 0]));
 }
+
+/// M7.1: the design-system gallery drawn on the GPU equals its committed reference
+/// (`tests/golden/gallery.png`, made with `cargo run -p ddnet-rs --example gallery --
+/// tests/golden/gallery.png` and reviewed by eye) within 2/255 per channel, so any
+/// change to the tokens, fonts or components shows up here.
+#[test]
+fn gallery_matches_reference() {
+    use ddnet_rs::gallery;
+    let Some(mut g) = Gfx::headless(gallery::SIZE) else {
+        eprintln!("SKIPPED: no graphics adapter");
+        return;
+    };
+    gallery::render(&mut g);
+    let got = g.read_world();
+    let path = format!("{}/../tests/golden/gallery.png", env!("CARGO_MANIFEST_DIR"));
+    let decoder = png::Decoder::new(std::io::BufReader::new(std::fs::File::open(path).unwrap()));
+    let mut reader = decoder.read_info().unwrap();
+    let mut want = vec![0; reader.output_buffer_size().unwrap()];
+    let info = reader.next_frame(&mut want).unwrap();
+    assert_eq!(
+        (info.width, info.height),
+        (gallery::SIZE.width, gallery::SIZE.height)
+    );
+    let differing = got
+        .chunks(4)
+        .zip(want.chunks(3))
+        .filter(|(a, b)| a[..3].iter().zip(b.iter()).any(|(x, y)| x.abs_diff(*y) > 2))
+        .count();
+    assert_eq!(differing, 0, "{differing} pixels differ from the reference");
+}

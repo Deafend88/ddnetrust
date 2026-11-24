@@ -2,76 +2,42 @@
 //! the composited world; the full menu design (C++ `CMenus`) comes later.
 
 use std::net::SocketAddr;
-use std::sync::Arc;
 
-use egui::{FontData, FontDefinitions, FontFamily};
 use winit::window::Window;
 
 use crate::config::{Binds, Settings, escape};
 use crate::gfx::{Gfx, Size};
+use crate::icons;
 use crate::storage::Storage;
+use crate::style::{self, Glass, color, size};
+use crate::widgets as w;
 
-/// egui with its winit input and wgpu painter.
-pub struct Ui {
-    ctx: egui::Context,
-    state: egui_winit::State,
+/// egui and its wgpu painter, without a window (the gallery draws headless).
+pub struct Painter {
+    pub ctx: egui::Context,
     renderer: egui_wgpu::Renderer,
 }
 
-impl Ui {
-    /// `None` without DDNet's `fonts/DejaVuSans.ttf` (the menus need a font).
-    pub fn new(
-        window: &Window,
-        gfx: &Gfx,
-        format: wgpu::TextureFormat,
-        storage: &Storage,
-    ) -> Option<Self> {
-        let font = storage.read("fonts/DejaVuSans.ttf")?;
+impl Painter {
+    pub fn new(gfx: &Gfx, format: wgpu::TextureFormat, glass: Glass) -> Self {
         let ctx = egui::Context::default();
-        let mut fonts = FontDefinitions::empty();
-        fonts
-            .font_data
-            .insert("DejaVuSans".into(), Arc::new(FontData::from_owned(font)));
-        for family in [FontFamily::Proportional, FontFamily::Monospace] {
-            fonts.families.insert(family, vec!["DejaVuSans".into()]);
-        }
-        ctx.set_fonts(fonts);
-        let state = egui_winit::State::new(
-            ctx.clone(),
-            egui::ViewportId::ROOT,
-            window,
-            None,
-            None,
-            None,
-        );
+        style::install(&ctx, glass);
         let renderer = egui_wgpu::Renderer::new(&gfx.device, format, Default::default());
-        Some(Self {
-            ctx,
-            state,
-            renderer,
-        })
+        Self { ctx, renderer }
     }
 
-    /// Feeds a window event to egui; true if egui wants it for itself (typing, clicks).
-    pub fn on_window_event(&mut self, window: &Window, event: &winit::event::WindowEvent) -> bool {
-        self.state.on_window_event(window, event).consumed
-    }
-
-    /// Runs `build` for one frame and draws the result onto `target`.
-    pub fn frame(
+    /// Runs `build` for one frame on `input` and draws the result onto `target`.
+    pub fn paint(
         &mut self,
-        window: &Window,
         gfx: &Gfx,
         target: &wgpu::TextureView,
         size: Size,
+        input: egui::RawInput,
         mut build: impl FnMut(&egui::Context),
-    ) {
-        let input = self.state.take_egui_input(window);
+    ) -> egui::PlatformOutput {
         let mut output = self.ctx.run_pass(input, |ctx| build(ctx));
-        self.state
-            .handle_platform_output(window, output.platform_output);
         let ppp = output.pixels_per_point;
-        let prims = self.ctx.tessellate(output.shapes, ppp);
+        let prims = self.ctx.tessellate(std::mem::take(&mut output.shapes), ppp);
         let screen = egui_wgpu::ScreenDescriptor {
             size_in_pixels: [size.width, size.height],
             pixels_per_point: ppp,
@@ -110,6 +76,47 @@ impl Ui {
         for id in output.textures_delta.free.drain() {
             self.renderer.free_texture(&id);
         }
+        std::mem::take(&mut output.platform_output)
+    }
+}
+
+/// The painter with its winit input.
+pub struct Ui {
+    pub painter: Painter,
+    state: egui_winit::State,
+}
+
+impl Ui {
+    pub fn new(window: &Window, gfx: &Gfx, format: wgpu::TextureFormat, glass: Glass) -> Self {
+        let painter = Painter::new(gfx, format, glass);
+        let state = egui_winit::State::new(
+            painter.ctx.clone(),
+            egui::ViewportId::ROOT,
+            window,
+            None,
+            None,
+            None,
+        );
+        Self { painter, state }
+    }
+
+    /// Feeds a window event to egui; true if egui wants it for itself (typing, clicks).
+    pub fn on_window_event(&mut self, window: &Window, event: &winit::event::WindowEvent) -> bool {
+        self.state.on_window_event(window, event).consumed
+    }
+
+    /// Runs `build` for one frame and draws the result onto `target`.
+    pub fn frame(
+        &mut self,
+        window: &Window,
+        gfx: &Gfx,
+        target: &wgpu::TextureView,
+        size: Size,
+        build: impl FnMut(&egui::Context),
+    ) {
+        let input = self.state.take_egui_input(window);
+        let output = self.painter.paint(gfx, target, size, input, build);
+        self.state.handle_platform_output(window, output);
     }
 }
 
@@ -195,18 +202,19 @@ impl Menu {
     fn main_page(&mut self, ui: &mut egui::Ui, connected: bool) -> Option<Action> {
         let mut action = None;
         if connected {
-            if ui.button("Back to the game").clicked() {
+            if w::accent_button(ui, Some(icons::PLAY), "Back to the game").clicked() {
                 action = Some(Action::Resume);
             }
-            if ui.button("Disconnect").clicked() {
+            if w::button(ui, Some(icons::DISCONNECT), "Disconnect").clicked() {
                 action = Some(Action::Disconnect);
             }
         } else {
             ui.horizontal(|ui| {
-                ui.label("Server address");
-                let edit = ui.text_edit_singleline(&mut self.address);
+                w::icon(ui, icons::LINK, size::ICON, color::TEXT_SECONDARY);
+                let edit = ui
+                    .add(egui::TextEdit::singleline(&mut self.address).hint_text("Server address"));
                 let enter = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                if ui.button("Connect").clicked() || enter {
+                if w::accent_button(ui, Some(icons::PLAY), "Connect").clicked() || enter {
                     match self.address.trim().parse::<SocketAddr>() {
                         Ok(a) if a.ip().is_loopback() => action = Some(Action::Connect(a)),
                         Ok(_) => self.error = Some("only local (loopback) servers for now".into()),
@@ -215,15 +223,17 @@ impl Menu {
                 }
             });
             if let Some(e) = &self.error {
-                ui.colored_label(egui::Color32::LIGHT_RED, e);
+                ui.colored_label(color::DANGER, e);
             }
         }
-        if ui.button("Settings").clicked() {
-            self.page = Page::Settings;
-        }
-        if ui.button("Quit").clicked() {
-            action = Some(Action::Quit);
-        }
+        ui.horizontal(|ui| {
+            if w::button(ui, Some(icons::GEAR), "Settings").clicked() {
+                self.page = Page::Settings;
+            }
+            if w::button(ui, Some(icons::POWER), "Quit").clicked() {
+                action = Some(Action::Quit);
+            }
+        });
         action
     }
 
@@ -232,70 +242,91 @@ impl Menu {
     fn settings_page(&mut self, ui: &mut egui::Ui, s: &mut Settings) {
         let c = &s.config;
         let mut lines = Vec::new();
-        egui::Grid::new("settings").num_columns(2).show(ui, |ui| {
-            ui.label("Name");
-            let mut name = c.player_name.clone();
-            if ui.text_edit_singleline(&mut name).changed() {
-                lines.push(format!("player_name \"{}\"", escape(&name)));
-            }
-            ui.end_row();
-            ui.label("Skin");
-            egui::ComboBox::from_id_salt("skin")
-                .selected_text(&c.player_skin)
-                .show_ui(ui, |ui| {
-                    for skin in &self.skins {
-                        if ui.selectable_label(*skin == c.player_skin, skin).clicked() {
-                            lines.push(format!("player_skin \"{}\"", escape(skin)));
+        // scrolls when the window is small; 160 pt leave room for the title bar, the
+        // window margins and the Back button below
+        let max_height = ui.ctx().content_rect().height() - 160.0;
+        egui::ScrollArea::vertical()
+            .max_height(max_height)
+            .show(ui, |ui| {
+                egui::Grid::new("settings").num_columns(2).show(ui, |ui| {
+                    ui.label("Name");
+                    let mut name = c.player_name.clone();
+                    if ui.text_edit_singleline(&mut name).changed() {
+                        lines.push(format!("player_name \"{}\"", escape(&name)));
+                    }
+                    ui.end_row();
+                    ui.label("Skin");
+                    egui::ComboBox::from_id_salt("skin")
+                        .selected_text(&c.player_skin)
+                        .show_ui(ui, |ui| {
+                            for skin in &self.skins {
+                                if ui.selectable_label(*skin == c.player_skin, skin).clicked() {
+                                    lines.push(format!("player_skin \"{}\"", escape(skin)));
+                                }
+                            }
+                        });
+                    ui.end_row();
+                    ui.label("Mouse sensitivity");
+                    let mut sens = c.inp_mousesens;
+                    if ui
+                        .add(egui::DragValue::new(&mut sens).range(1..=100000))
+                        .changed()
+                    {
+                        lines.push(format!("inp_mousesens {sens}"));
+                    }
+                    ui.end_row();
+                    for (label, name, value) in [
+                        (
+                            "Custom colours",
+                            "player_use_custom_color",
+                            c.player_use_custom_color,
+                        ),
+                        ("Dynamic camera", "cl_dyncam", c.cl_dyncam),
+                        ("Vsync", "gfx_vsync", c.gfx_vsync),
+                    ] {
+                        ui.label(label);
+                        let mut on = value != 0;
+                        if w::toggle(ui, &mut on).changed() {
+                            lines.push(format!("{name} {}", on as i32));
                         }
+                        ui.end_row();
+                    }
+                    ui.label("Glass");
+                    let mut glass = c.rs_glass.clamp(0, 2) as usize;
+                    if w::segmented(ui, &mut glass, &["Off", "Subtle", "Full"]).clicked() {
+                        lines.push(format!("rs_glass {glass}"));
+                    }
+                    ui.end_row();
+                    ui.label("UI scale %");
+                    let mut scale = c.rs_ui_scale;
+                    // applied when done, not on every drag step (it rescales the UI)
+                    let r = ui.add(egui::DragValue::new(&mut scale).range(50..=200));
+                    if r.drag_stopped() || r.lost_focus() {
+                        lines.push(format!("rs_ui_scale {scale}"));
+                    }
+                    ui.end_row();
+                    ui.label("Data dir (on restart)");
+                    let mut dir = c.rs_data_dir.clone();
+                    if ui.text_edit_singleline(&mut dir).changed() {
+                        lines.push(format!("rs_data_dir \"{}\"", escape(&dir)));
+                    }
+                    ui.end_row();
+                    for (label, command) in CONTROLS {
+                        ui.label(label);
+                        let text = if self.reading_key == Some(command) {
+                            "press a key (Esc cancels)".to_string()
+                        } else {
+                            s.binds
+                                .slot_of(command)
+                                .map_or("none".into(), |(k, m)| Binds::key_bind_name(k, m))
+                        };
+                        if ui.button(text).clicked() {
+                            self.reading_key = Some(command);
+                        }
+                        ui.end_row();
                     }
                 });
-            ui.end_row();
-            ui.label("Mouse sensitivity");
-            let mut sens = c.inp_mousesens;
-            if ui
-                .add(egui::DragValue::new(&mut sens).range(1..=100000))
-                .changed()
-            {
-                lines.push(format!("inp_mousesens {sens}"));
-            }
-            ui.end_row();
-            for (label, name, value) in [
-                (
-                    "Custom colours",
-                    "player_use_custom_color",
-                    c.player_use_custom_color,
-                ),
-                ("Dynamic camera", "cl_dyncam", c.cl_dyncam),
-                ("Vsync", "gfx_vsync", c.gfx_vsync),
-            ] {
-                ui.label(label);
-                let mut on = value != 0;
-                if ui.checkbox(&mut on, "").changed() {
-                    lines.push(format!("{name} {}", on as i32));
-                }
-                ui.end_row();
-            }
-            ui.label("Data dir (on restart)");
-            let mut dir = c.rs_data_dir.clone();
-            if ui.text_edit_singleline(&mut dir).changed() {
-                lines.push(format!("rs_data_dir \"{}\"", escape(&dir)));
-            }
-            ui.end_row();
-            for (label, command) in CONTROLS {
-                ui.label(label);
-                let text = if self.reading_key == Some(command) {
-                    "press a key (Esc cancels)".to_string()
-                } else {
-                    s.binds
-                        .slot_of(command)
-                        .map_or("none".into(), |(k, m)| Binds::key_bind_name(k, m))
-                };
-                if ui.button(text).clicked() {
-                    self.reading_key = Some(command);
-                }
-                ui.end_row();
-            }
-        });
+            });
         for line in lines {
             s.execute_line(&line);
         }

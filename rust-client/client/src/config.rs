@@ -274,6 +274,10 @@ pub struct Config {
     /// Ours (not a C++ variable): the DDNet data dir, used when neither `--data-dir`
     /// nor `DDNET_DATA_DIR` is given.
     pub rs_data_dir: String,
+    /// Ours: glass strength, 0 off, 1 subtle, 2 full (PLAN §10.2).
+    pub rs_glass: i32,
+    /// Ours: UI scale in percent on top of the window's DPI.
+    pub rs_ui_scale: i32,
 }
 
 impl Default for Config {
@@ -303,6 +307,8 @@ impl Default for Config {
             cl_race_binds_set: 0,
             gfx_vsync: 0,
             rs_data_dir: String::new(),
+            rs_glass: 1,
+            rs_ui_scale: 100,
         }
     }
 }
@@ -343,6 +349,8 @@ impl Config {
             "cl_race_binds_set" => Int(&mut self.cl_race_binds_set, 0, 3),
             "gfx_vsync" => Int(&mut self.gfx_vsync, 0, 1),
             "rs_data_dir" => Str(&mut self.rs_data_dir, 512),
+            "rs_glass" => Int(&mut self.rs_glass, 0, 2),
+            "rs_ui_scale" => Int(&mut self.rs_ui_scale, 50, 200),
             _ => return None,
         })
     }
@@ -403,7 +411,7 @@ impl Config {
 }
 
 /// Every variable name `Config::var` knows.
-pub const VAR_NAMES: [&str; 24] = [
+pub const VAR_NAMES: [&str; 26] = [
     "player_name",
     "player_skin",
     "player_use_custom_color",
@@ -428,6 +436,8 @@ pub const VAR_NAMES: [&str; 24] = [
     "cl_race_binds_set",
     "gfx_vsync",
     "rs_data_dir",
+    "rs_glass",
+    "rs_ui_scale",
 ];
 
 /// C++: `str_copy` into a buffer of `size` bytes (cut at `size - 1` bytes, then
