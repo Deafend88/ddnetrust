@@ -187,11 +187,15 @@ fn watermark_order_and_items() {
     c.execute("hud_set", r#"watermark order "fps, nope,ping,fps""#);
     assert_eq!(
         watermark::order(&c),
-        ["fps", "ping", "user", "server", "uid", "tps"]
+        ["fps", "ping", "user", "server", "time", "uid", "tps"]
     );
     c.execute("hud_set", "watermark user 0");
     c.execute("hud_set", "watermark tps 1");
     assert_eq!(on(&c), ["fps", "ping", "tps"]);
+    // the time item: local HH:MM, 24-hour, zero-padded
+    let t = |h, m| chrono::NaiveTime::from_hms_opt(h, m, 59).unwrap();
+    assert_eq!(watermark::clock(&t(7, 5)), "07:05");
+    assert_eq!(watermark::clock(&t(23, 59)), "23:59");
 }
 
 #[test]
@@ -402,4 +406,89 @@ fn editor_panel_and_popover_keep_out_of_the_way() {
     assert_eq!(p.min, pos2(400.0, 52.0));
     let moved = editor::panel_rect(vec2(320.0, 160.0), screen, &[widget, p]);
     assert_eq!(moved.min, pos2(24.0, 220.0));
+}
+
+/// 7.5 layout: the watermark's measurements as drawn (offset 16, pill paddings 16 x 8,
+/// 12 between items, 16 per separator dot, the type scale's sizes). Each text's place
+/// and size comes from egui's output shapes.
+#[test]
+fn watermark_layout_measurements() {
+    use ddnet_rs::style::{self, size, space};
+    let client = Client::new(PlayerInfo::default(), "", || [0; 16]);
+    let data = HudData {
+        client: &client,
+        server: "",
+        player_name: "brainless tee",
+        frame_time_average: 0.01,
+        glass: Glass::Off,
+        predictor: None,
+        tee: None,
+        events: &[],
+    };
+    let mut widgets: Vec<Box<dyn Widget>> = vec![Box::new(watermark::Watermark)];
+    let ctx = egui::Context::default();
+    style::install(&ctx, Glass::Off);
+    let mut shapes = Vec::new();
+    for _ in 0..3 {
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 600.0))),
+            ..Default::default()
+        };
+        let mut out = ctx.run_pass(input, |ctx| {
+            hud::show(ctx, &mut widgets, &data, &HudConfig::default())
+        });
+        out.textures_delta.clear();
+        shapes = out.shapes;
+    }
+    // (text, font size, rect) of every text shape, left to right
+    let texts: Vec<(String, f32, Rect)> = (shapes.iter())
+        .filter_map(|c| match &c.shape {
+            egui::Shape::Text(t) => Some((
+                t.galley.text().to_string(),
+                t.galley.job.sections[0].format.font_id.size,
+                t.galley.rect.translate(t.pos.to_vec2()),
+            )),
+            _ => None,
+        })
+        .collect();
+    let find = |s: &str| {
+        (texts.iter().find(|t| t.0 == s)).unwrap_or_else(|| panic!("{s} not in {texts:?}"))
+    };
+    let area = ctx
+        .memory(|m| m.area_rect(hud::area_id("watermark")))
+        .unwrap();
+    assert_eq!(area.min, pos2(16.0, 16.0));
+    // the logo icon: outer pill padding + logo pill padding from the area's corner
+    let logo_icon = find(ddnet_rs::icons::BOLT);
+    assert_eq!(logo_icon.1, size::ICON_SMALL);
+    assert_eq!(logo_icon.2.left(), 16.0 + 2.0 * space::L);
+    let logo = find("DDNet-rs");
+    assert_eq!(logo.1, size::CAPTION);
+    // stats: icon, 4 pt, value (body), unit right after it (body)
+    let user = find("brainless tee");
+    assert_eq!(user.1, size::BODY);
+    assert_eq!(
+        user.2.left() - find(ddnet_rs::icons::USER).2.right(),
+        space::XS
+    );
+    assert_eq!(find(ddnet_rs::icons::USER).1, size::ICON);
+    let fps = find("100");
+    let unit = find("fps");
+    assert_eq!((fps.1, unit.1), (size::BODY, size::BODY));
+    assert_eq!(unit.2.left(), fps.2.right());
+    // logo pill to first stat: its right padding and one item gap; stat to stat: gap,
+    // dot slot, gap (the ping is unknown offline, so user and fps are neighbours)
+    assert_eq!(
+        find(ddnet_rs::icons::USER).2.left() - logo.2.right(),
+        space::L + space::M
+    );
+    let user_end = user.2.right();
+    let fps_icon = texts
+        .iter()
+        .filter(|t| t.0 == ddnet_rs::icons::BOLT)
+        .nth(1)
+        .unwrap();
+    assert_eq!(fps_icon.2.left() - user_end, space::M + space::L + space::M);
+    // the pill hugs its content: 16 pt after the last unit, 8 above and below the row
+    assert_eq!(area.right() - unit.2.right(), space::L);
 }

@@ -14,11 +14,12 @@ use crate::widgets as w;
 
 /// Stat keys in their default order, whether each shows by default (SPEC §1) and the
 /// name in the editor.
-pub const ITEMS: [(&str, bool, &str); 6] = [
+pub const ITEMS: [(&str, bool, &str); 7] = [
     ("user", true, "Name"),
     ("server", false, "Server address"),
     ("ping", true, "Ping"),
     ("fps", true, "Framerate"),
+    ("time", false, "Local time"),
     ("uid", false, "Client ID"),
     ("tps", false, "Tick rate"),
 ];
@@ -114,9 +115,15 @@ pub fn stat(key: &str, data: &HudData) -> Option<Stat> {
             (icons::CLOUD, ms.to_string(), Some("ms"))
         }
         "server" => (icons::GLOBE, data.server.to_string(), None),
+        "time" => (icons::CLOCK, clock(&chrono::Local::now()), None),
         "tps" => (icons::PULSE, TICK_SPEED.to_string(), Some("tps")),
         _ => return None,
     })
+}
+
+/// HH:MM, 24-hour.
+pub fn clock(t: &impl chrono::Timelike) -> String {
+    format!("{:02}:{:02}", t.hour(), t.minute())
 }
 
 pub struct Watermark;
