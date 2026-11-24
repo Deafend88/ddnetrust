@@ -5,6 +5,7 @@ pub mod camera;
 pub mod config;
 pub mod controls;
 pub mod gfx;
+pub mod icons;
 pub mod image;
 pub mod keynames;
 pub mod render;
