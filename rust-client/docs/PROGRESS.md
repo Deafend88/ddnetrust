@@ -408,9 +408,8 @@ M5 is complete. Not ported (see Later): weapons, teams/tuning messages, the dumm
 #### M6 status (2026-11-24)
 Done and pushed: 6.1-6.8, M6 complete. After it: the 6.8 map-texture leak is fixed (map
 textures are freed when a connection ends; `tests/gfx.rs map_textures_are_freed`).
-Next: M7 (visual identity and HUD), planned in PLAN.md §10, waiting for the user's review
-(questions in §10.5); the roadmap after M7 (antiping first, before any public server)
-is in §11. Do not start M7 code before the review.
+M7 (visual identity and HUD) is approved (PLAN.md §10, answers §10.6); the roadmap after
+M7 (antiping first, before any public server) is in §11. M7 status: see below.
 
 Open items from 6.6 (not checked live, code ported line by line):
 - Flags: this repo's DDNet-Server only runs the "ddnet" game type, which never sends
@@ -425,9 +424,10 @@ Open from 6.7/6.8: the spectator camera (free view, auto-sync, smoothing),
 `+showhookcoll`, chat/emote/spectate/kill/vote binds (ignored), hex/named colours in
 configs, checking the aim against the C++ client by hand. Menus: name/skin changes
 apply on the next connect (no Cl_ChangeInfo yet), no colour pickers, no clipboard, the
-key readers change only a command's first bind; map textures and collision of earlier
-connections: textures freed since the fix above; the collision stays leaked
-(`ponytail:` in main.rs).
+key readers change only a command's first bind. Leaks fixed: map textures are freed when
+a connection ends, and the collision is shared with `Rc` (GameWorld and Predictor own an
+`Rc<Collision>`, no lifetime) and dropped with the last user (commit 4cf8235ef;
+`prediction_matches_server` checks it with a `Weak`).
 
 Screenshot workflow reminders: run a plain `cargo build` before
 `scripts/compare_screenshots.ps1` (integration-test builds overwrite
@@ -435,6 +435,87 @@ Screenshot workflow reminders: run a plain `cargo build` before
 for scenes that do not stay still, or `-RustSubject` to check what the server sends us;
 `examples/maprender.rs` renders a map at a given
 center for fixed-view checks; mask pickups (they bob on each client's own clock).
+
+### M7 — visual identity and HUD (in progress: 7.1 unfinished)
+
+Pushed and verified (origin/rust-client up to the commit with this text): the plan and
+its review answers (PLAN §10, §10.6), the collision leak fix.
+
+#### 7.1 status (2026-11-24): design system, NOT verified, local WIP commit only
+The 7.1 work is in a local commit "WIP 7.1 (unverified)" on top of this PROGRESS commit;
+it is NOT pushed. It contains:
+- `assets/fonts/`: Inter 4.1 Regular/Medium/SemiBold (from rsms/inter's Inter-4.1.zip,
+  `extras/ttf`) and Phosphor 2.1.2 regular (npm `@phosphor-icons/web`), with
+  `Inter-LICENSE.txt` (OFL 1.1) and `Phosphor-LICENSE.txt` (MIT); embedded with
+  `include_bytes!` in `style.rs`.
+- `scripts/gen_icons.py` -> `client/src/icons.rs` (40 icon constants + `ALL`); it needs
+  Phosphor's `src/regular/style.css` from the same npm package as an argument (the CSS
+  is not in the repo).
+- `style.rs` (tokens: colours with one blue accent, radii, spacing, type scale, motion;
+  `Glass` off/subtle/full with panel fills 100/85/70%; `fonts()`; `install()` builds the
+  egui style), `anim.rs` (critically damped `Spring` with exact solution, easing; unit
+  tests pass), `widgets.rs` (panel, pill, icon, text, stat, dot, button, accent_button,
+  toggle, slider, segmented, popover, paint_icon, text_size).
+- `ui.rs`: `Painter` (egui + egui-wgpu, no window; used headless by the gallery) split
+  from `Ui` (adds winit input); the menus always exist now (embedded fonts, no
+  DejaVuSans lookup); the 6.8 menus restyled with the components (accent Connect,
+  toggles, a Glass segmented control, UI scale).
+- `config.rs`: our variables `rs_glass` (0-2, default 1) and `rs_ui_scale` (50-200 %,
+  default 100) in `VAR_NAMES`; `main.rs` reinstalls the style / zoom factor when they
+  change.
+- `gallery.rs` + `examples/gallery.rs` (every component on one 960x640 page, drawn
+  headless; renders are byte-identical run to run) and `tests/gfx.rs
+  gallery_matches_reference` against `tests/golden/gallery.png` (within 2/255; it
+  passed and catches a 4/255 accent change). The gallery was reviewed by eye by me only.
+
+Checked so far: `tests/gfx.rs` (4 tests incl. the gallery) and `tests/input.rs` passed;
+the keyboard-driven menu check (connect, Esc menu, disconnect, reconnect, quit) passed.
+NOT done: the full gates (clippy, fmt --check, full `cargo test`) after the last edits.
+
+Known bugs (seen in the last captures, not fixed):
+1. Icons inside BUTTON labels draw as "ÿ" (seen: the gear in "Settings"; the codepoint
+   `e270` is right, and the gallery's icon grid draws the gear correctly with the
+   `icons` family). Likely cause: the button text is a `RichText` in the "medium"
+   family whose fallback list is ["Inter-Medium", "Phosphor"] and Inter-Medium maps
+   that private-use codepoint to a glyph of its own (or egui picks a replacement).
+   Next: draw the icon as its own `RichText` with `icon_font` (e.g. a `widgets::
+   icon_button(glyph, label)` that lays out icon + label as two text sections via
+   `egui::text::LayoutJob`), and drop the Phosphor fallback from the text families.
+2. The settings page is taller than a 600 px window (top cut off). Next: wrap the
+   settings grid in `egui::ScrollArea::vertical()` with the window's max height, or two
+   columns.
+
+#### Exact next actions
+1. Fix the two bugs above; re-render the gallery (`cargo run -p ddnet-rs --example
+   gallery -- tests/golden/gallery.png` only if the gallery changes on purpose; look at
+   it before committing a new reference).
+2. Re-run the keyboard menu check (the PowerShell script drives Esc/Tab/Enter against a
+   local server on port 8305 from a scratch dir with its own storage.cfg; recreate it
+   from this description if the scratchpad is gone) and capture the start screen, the
+   in-game menu and the settings page at 800x600; check icons and that nothing is cut.
+3. Full gates: `cargo build; cargo clippy --all-targets -- -D warnings; cargo fmt --check;
+   cargo test`, plus a plain `cargo build` before any screenshot run.
+4. `/ponytail-review` on the 7.1 diff, then replace the local WIP commit with proper
+   commits (e.g. assets+icons, design system+gallery, menus) and push.
+5. Show the user the gallery PNG (7.1 review point), then 7.2 (glass passes).
+
+#### Decisions and gotchas from 7.1
+- egui 0.37 panics in debug if a frame's `TexturesDelta` is dropped unapplied: drain
+  `set`/`free` (done in `Painter::paint`).
+- egui Areas fade in over time: headless renders must advance `RawInput::time` between
+  passes (the gallery uses 3 passes, time 0/10/20 s) or everything stays translucent.
+- `egui::Frame` content inherits the parent layout: `widgets::panel` wraps it in
+  `ui.vertical`, `widgets::pill` in `ui.horizontal` (`horizontal_centered` stretched
+  pills to the full height).
+- `egui::Id::new` is deprecated in 0.37: use `Id::unique` for areas.
+- `egui-phosphor` 0.14 does not support egui 0.37 (only an unofficial fork does): the
+  Phosphor TTF is loaded directly.
+- Writing Rust/PowerShell through bash heredocs or Python string literals kept mangling
+  `\n`, `\t`, `\r` and backslash paths (e.g. `C:\ddnetrust-master\rust-client` became a
+  carriage return): use the Write/Edit tools for such text, or check for control
+  characters afterwards.
+- F6 (HUD editor) and F7 (expand player) are free in stock DDNet; they get bound only if
+  still free, like `SetDDRaceBinds(true)`. Keyboard media keys are never handled in game.
 
 ## Later
 - Weapon prediction (`m_PredictWeapons`/AntiPingWeapons: FireWeapon, ninja dash,
