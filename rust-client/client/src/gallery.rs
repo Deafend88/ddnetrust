@@ -80,12 +80,13 @@ fn page(ctx: &egui::Context, glass: Glass) {
                         Weight::Regular,
                         color::TEXT,
                     );
+                    let weak = ui.visuals().weak_text_color();
                     w::text(
                         ui,
                         "Caption 12, secondary",
                         size::CAPTION,
                         Weight::Regular,
-                        color::TEXT_SECONDARY,
+                        weak,
                     );
                     ui.add_space(space::S);
                     ui.horizontal(|ui| {

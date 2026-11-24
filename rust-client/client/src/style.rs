@@ -14,7 +14,11 @@ pub mod color {
     pub const SURFACE_RAISED: Color32 = Color32::from_rgb(38, 38, 44);
     pub const SURFACE_HOVER: Color32 = Color32::from_rgb(52, 52, 60);
     pub const TEXT: Color32 = Color32::from_rgb(245, 245, 247);
-    pub const TEXT_SECONDARY: Color32 = Color32::from_rgb(142, 142, 147);
+    /// Secondary text (captions, units); widgets take it from the style
+    /// (`Visuals::weak_text_color`), which picks it per glass strength.
+    pub const TEXT_SECONDARY: Color32 = Color32::from_rgb(172, 172, 178);
+    /// Secondary text over full glass's lighter tint (4.5:1 over the dm1 review render).
+    pub const TEXT_SECONDARY_FULL: Color32 = Color32::from_rgb(204, 204, 210);
     pub const SEPARATOR: Color32 = Color32::from_rgba_premultiplied(14, 14, 14, 14);
     pub const BORDER: Color32 = Color32::from_rgba_premultiplied(8, 8, 8, 8);
     pub const ACCENT: Color32 = Color32::from_rgb(10, 132, 255);
@@ -22,8 +26,8 @@ pub mod color {
     pub const DANGER: Color32 = Color32::from_rgb(255, 69, 58);
     /// The logo pill of the watermark (white, SPEC §1).
     pub const LOGO: Color32 = Color32::from_rgb(250, 250, 252);
-    /// Icon and name on the logo pill: light grey, as in the references.
-    pub const LOGO_TEXT: Color32 = Color32::from_rgb(168, 168, 174);
+    /// Icon and name on the logo pill: grey, as in the references; 4.5:1 on `LOGO`.
+    pub const LOGO_TEXT: Color32 = Color32::from_rgb(114, 114, 122);
 }
 
 /// Corner radii in points; pills use `PILL` (fully rounded).
@@ -117,12 +121,20 @@ impl Glass {
     /// A panel's fill: opaque, ~85% (subtle, PLAN §10.6) or ~70%. The blur behind it
     /// comes with 7.2.
     pub fn panel_fill(self) -> Color32 {
-        let alpha = match self {
-            Self::Off => 255,
-            Self::Subtle => 217,
-            Self::Full => 178,
-        };
-        color::SURFACE.gamma_multiply_u8(alpha)
+        match self {
+            Self::Off => color::SURFACE,
+            Self::Subtle => color::SURFACE.gamma_multiply_u8(217),
+            // frosted: a lighter tint, more of the (saturated) blur shows
+            Self::Full => color::SURFACE_RAISED.gamma_multiply_u8(160),
+        }
+    }
+
+    /// Secondary text on this strength's panels.
+    pub fn text_secondary(self) -> Color32 {
+        match self {
+            Self::Full => color::TEXT_SECONDARY_FULL,
+            _ => color::TEXT_SECONDARY,
+        }
     }
 
     /// Liquid Glass's fill: light, the shader's tint does most of the darkening.
@@ -195,6 +207,7 @@ pub fn install(ctx: &egui::Context, glass: Glass) {
         let v = &mut s.visuals;
         *v = egui::Visuals::dark();
         v.override_text_color = Some(color::TEXT);
+        v.weak_text_color = Some(glass.text_secondary());
         v.panel_fill = glass.panel_fill();
         v.window_fill = glass.panel_fill();
         v.window_stroke = egui::Stroke::new(1.0, color::BORDER);

@@ -98,7 +98,8 @@ pub fn stat(ui: &mut Ui, glyph: &str, value: &str, unit: Option<&str>) {
         ui.add_space(space::XS);
         text(ui, value, size::BODY, Weight::Medium, color::TEXT);
         if let Some(unit) = unit {
-            text(ui, unit, size::BODY, Weight::Regular, color::TEXT_SECONDARY);
+            let weak = ui.visuals().weak_text_color();
+            text(ui, unit, size::BODY, Weight::Regular, weak);
         }
     });
 }
@@ -109,7 +110,7 @@ pub fn dot(ui: &mut Ui) {
     ui.painter().circle_filled(
         rect.center(),
         1.5,
-        color::TEXT_SECONDARY.gamma_multiply(0.5),
+        ui.visuals().weak_text_color().gamma_multiply(0.5),
     );
 }
 
@@ -186,16 +187,13 @@ pub fn segmented(ui: &mut Ui, selected: &mut usize, labels: &[&str]) -> Response
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = space::XS;
                 let mut changed: Option<Response> = None;
+                let weak = ui.visuals().weak_text_color();
                 for (i, l) in labels.iter().enumerate() {
                     let on = *selected == i;
                     let b = egui::Button::new(
                         RichText::new(*l)
                             .font(font(size::BODY, Weight::Medium))
-                            .color(if on {
-                                Color32::WHITE
-                            } else {
-                                color::TEXT_SECONDARY
-                            }),
+                            .color(if on { Color32::WHITE } else { weak }),
                     )
                     .fill(if on {
                         color::ACCENT
