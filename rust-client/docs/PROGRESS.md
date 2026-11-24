@@ -564,7 +564,7 @@ Built before the editor (the user chose this order) so the editor drags a real w
 - Not yet (rest of 7.5): time (needs a time zone source) and speed (7.6 movement info);
   the side-by-side captures with the two reference PNGs; the HUD on/off input test.
 
-#### 7.4 status (2026-11-24): HUD editor, done (commit f530ed00d), user review pending
+#### 7.4 status (2026-11-25): HUD editor, done (commit f530ed00d), review fixes open (below)
 - `hud_editor.rs`: `drop` = clamp on screen, snap (screen edges and centre, other
   widgets' left/right/top/bottom edges, within 8 pt; Shift = free), nearest anchor by
   screen thirds with the offset recomputed (same screen position), offsets on the 8 pt
@@ -582,7 +582,8 @@ Built before the editor (the user chose this order) so the editor drags a real w
 - Watermark settings: compact, items on/off, order with up/down carets (`icons` +
   `caret-up/down`). Deviation: SPEC's drag-to-reorder list is up/down buttons, and its
   "separator" entry is not there (in the friend's code it only groups the settings
-  list; it has no effect on the HUD). Ask the user if either is wanted.
+  list; it has no effect on the HUD). Accepted by the user on 2026-11-25: keep up/down,
+  no separator.
 - `gen_icons.py` now reads codepoints from the TTF's ligature table (fontTools), no
   Phosphor CSS needed; all 40 old codepoints came out identical. Gallery reference
   regenerated (two more icons, nothing else changed).
@@ -593,14 +594,42 @@ Built before the editor (the user chose this order) so the editor drags a real w
   `hud_widget "watermark" right 0 96 1`, found there after the restart. Synthetic mouse
   input needs the real cursor on our (topmost) window, or winit reports the pointer gone.
 
+#### User review of 7.4 (2026-11-25): fixes to make
+1. The "Edit HUD" panel must not cover widgets: place it bottom centre (or keep it
+   draggable but never over a widget). Today it opens in the screen centre
+   (`Editor::panel`, `default_pos` = centre).
+2. A widget's settings popover opens next to the widget and never overlaps the Edit HUD
+   panel. Today egui picks the side (`widgets::popover`, `Popup::from_response`); in an
+   800x600 window it fell back to beside-and-bottom-aligned and covered the panel. Pass
+   explicit `align_alternatives` and keep the panel's rect out of the way (e.g. choose
+   the side away from the panel, or move the panel).
+3. Selection and hover outline is always the blue accent: today idle widgets get a 1 px
+   `TEXT_SECONDARY` outline and only selected/dragged ones the accent. Make hovered,
+   selected and dragged all `color::ACCENT` (decide with the skill whether idle widgets
+   keep a neutral outline or none).
+4. Check the watermark name is the user's real name from settings: the item shows the
+   local `ClientInfo` name from the snapshot (what the server echoes from `player_name`,
+   from settings_ddnet.cfg or our settings.cfg). The live check runs with a scratch
+   APPDATA, so it showed "nameless tee"; verify once with the user's real (read-only)
+   settings, and consider a fallback to `config.player_name` before the first snapshot.
+5. Kept as is (user approved): up/down reordering, no separator.
+
 #### Exact next actions (next session starts here)
-1. Read CLAUDE.md, PLAN §10.3 7.5-7.6, this section, `git log`.
-2. User review of 7.4 (editor look, the reorder/separator deviation above).
-3. Rest of 7.5: time item (time zone source: e.g. the `windows` crate already approved
-   for SMTC, or `chrono`; ask before adding a dependency), speed item (after or with
-   7.6's movement information), layout measurement tests, side-by-side captures with
-   `hud-watermark-dark-bg.png`/`-light-bg.png` for review, and the HUD on/off input test
-   (run scripted with the HUD enabled and disabled, compare the sent inputs).
+1. Read CLAUDE.md, PLAN §10.3 7.4-7.6, this section, `git log`.
+2. Make the four 7.4 review fixes above (frontend-design skill, UI rules review),
+   extend tests/hud.rs where it is logic (panel/popover not overlapping widgets), rerun
+   `scripts/hud_editor_check.ps1` (plain `cargo build` first) and look at the captures,
+   then gates, `/ponytail-review`, commit, push.
+3. Rest of 7.5:
+   - time item HH:MM local time: a small well-known time zone crate is approved by the
+     user (pick the lightest that works on Windows and Linux; check with context7 and
+     crates.io, e.g. `time` with `local-offset` vs `chrono` `clock` vs `jiff`; note
+     `time`'s local offset is unsound/refused on multi-threaded Unix);
+   - speed item (tiles/s) with 7.6's movement information (`CHud::GetMovementInformation`);
+   - layout measurement unit tests (paddings, gaps, offset 16);
+   - side-by-side captures with `hud-watermark-dark-bg.png`/`-light-bg.png` for review;
+   - the HUD on/off input test (scripted runs with the HUD enabled and disabled,
+     compare the sent inputs).
 4. Before each commit: gates, `/ponytail-review`, UI rules review; update this file.
 
 The menu capture scripts (not in the repo) start `build-rs/DDNet-Server.exe` on port
