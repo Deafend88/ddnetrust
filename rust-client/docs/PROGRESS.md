@@ -436,7 +436,7 @@ for scenes that do not stay still, or `-RustSubject` to check what the server se
 `examples/maprender.rs` renders a map at a given
 center for fixed-view checks; mask pickups (they bob on each client's own clock).
 
-### M7 — visual identity and HUD (in progress: 7.1 approved, 7.2 done, review pending)
+### M7 — visual identity and HUD (in progress: 7.1 and 7.2 approved, 7.3 next)
 
 Pushed and verified: the plan and its review answers (PLAN §10, §10.6), the collision
 leak fix, and 7.1 (fonts + icons, design system, menus + gallery, the review tweaks,
@@ -490,7 +490,7 @@ are hidden; `Ui::hidden` drops it), and egui never got `Focused` events in a cli
 started straight into a server (now always forwarded). The frontend-design skill does
 not load as a skill in this setup; its SKILL.md is read from the path in CLAUDE.md.
 
-#### 7.2 status (2026-11-24): glass, done, waiting for the user's review of the strengths
+#### 7.2 status (2026-11-24): glass, done and approved by the user
 - `glass.rs`: dual-Kawase pyramid of the world target (Rgba16Float; subtle 3 levels =
   1/8 size, full 5), recorded in `Painter::paint` before egui's pass; panel backdrops
   are egui-wgpu paint callbacks (`glass::shape(rect, radius, liquid)`), so they keep
@@ -511,11 +511,18 @@ not load as a skill in this setup; its SKILL.md is read from the path in CLAUDE.
   at each strength over a map (review: dm1 at 900 500) and times the passes at
   2560x1440, release build: subtle 0.16 ms, full 0.19-0.22 ms (target 0.5 ms).
 
+Review round 2 (applied): full = 7 levels (soft colour fields), saturation x1.25, lighter
+tint (SURFACE_RAISED at 63 %); secondary text per strength via egui's
+`weak_text_color` (`Glass::text_secondary`: 172, 204 at full; captions >= 4.7:1 on the
+dm1 render); logo text 114 grey (4.6:1). Subtle unchanged, still the default. The user
+judges Liquid Glass live with the island animations in 7.9.
+
 #### Exact next actions
-1. The user reviews `glass-off/subtle/full.png` (from `examples/glass.rs` with dm1 900
-   500); tune the subtle blur and fills with them (PLAN §10.6 answer 4).
-2. Then 7.3 (HUD system and data, PLAN §10.3). Every UI step: frontend-design skill +
-   the CLAUDE.md UI rules review before it is done.
+1. 7.3 (HUD system and data, PLAN §10.3): `HudData` snapshot + event queue, `Widget`
+   (anchor + offset, settings), a small HUD painter on the widgets.rs components,
+   layout/settings as `hud_widget`/`hud_set` console lines in our settings.cfg; tests:
+   anchor/offset/DPI maths, console round trip, inputs byte-identical with the HUD on
+   and off.
 
 The menu capture scripts (not in the repo) start `build-rs/DDNet-Server.exe` on port
 8305 from `%TEMP%\ddnet-rs-menu\server` with its own storage.cfg, run
