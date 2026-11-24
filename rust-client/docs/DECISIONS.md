@@ -161,9 +161,8 @@ only matters for names so long that neither file can exist.
 - Binds run only the commands DDNet-rs implements (`+left`, `+right`, `+jump`, `+hook`,
   `+fire`, `+weapon1`-`5`, `+nextweapon`, `+prevweapon`, `zoom+`, `zoom-`, `zoom`); chat,
   emote, spectate, kill, vote and console binds do nothing yet.
-- Esc frees the mouse and a click grabs it again (C++ opens its menu); keys keep
-  working meanwhile. Comes with the 6.8 menus. winit's synthetic key events on focus
-  changes are ignored, like C++, which only clears its key states.
+- winit's synthetic key events on focus changes are ignored, like C++, which only
+  clears its key states.
 - The spectator camera (free view, auto-sync with the spectated player's camera,
   smoothing between targets) is not ported; while spectating the camera stays on the
   last position. The camera messages already keep their last values while spectating.
@@ -173,3 +172,17 @@ only matters for names so long that neither file can exist.
   functions it stubs (`CGameClient::IsWorldPaused`, `CScoreboard::IsActive`) are not
   reached on the exercised paths, and `cl_limit_max_zoom_level` is 0 there because the
   limit asks IGraphics.
+
+## 2026-11-24 — Menus (M6.8): minimal on purpose
+
+- egui, not a port of C++ `CMenus`: a start screen, the Esc menu and a settings page;
+  the full design comes later. Menu input follows C++ (`SnapInput` with
+  `PLAYERFLAG_IN_MENU`, binds while menus are open).
+- Our `settings.cfg` holds every variable and bind, so after the first save it
+  overrides the C++ `settings_ddnet.cfg` completely (C++ saves only non-default
+  values, which would let a value set back to its default lose against the C++ file).
+- Settings files: only the commands DDNet-rs uses are executed; others (stock settings
+  we do not use, other clients' such as TClient's) are skipped with one summary line.
+- Name and skin changes apply on the next connect; C++ sends `Cl_ChangeInfo` in game.
+- `rs_data_dir` is our own variable (not C++): the data dir when neither `--data-dir`
+  nor `DDNET_DATA_DIR` is given.

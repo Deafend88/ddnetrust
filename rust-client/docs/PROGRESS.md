@@ -122,7 +122,7 @@ Maps: coverage, LearnToPlay, Gold Mine, Tutorial, Tsunami, ctf1, dm1 (read from
 
 M5 is complete. Not ported (see Later): weapons, teams/tuning messages, the dummy.
 
-### M6 — rendering, input, basic UI (in progress: 6.1-6.7 done, 6.8 next)
+### M6 — rendering, input, basic UI (complete: 6.1-6.8)
 - Plan in `docs/PLAN.md` §9, approved 2026-11-22. The open questions (§9.6) are
   answered in §9.7.
 - 6.1 Window and quad renderer: new crate `client/` (binary `ddnet-rs`, wgpu 30.0.2,
@@ -374,8 +374,40 @@ M5 is complete. Not ported (see Later): weapons, teams/tuning messages, the dumm
   (the scaling itself is covered numerically); the spectator camera is not ported.
 - Golden/parity data is protected by `rust-client/.gitattributes` (`-text`): stored and
   checked out byte for byte (the C++-saved configs keep their CRLF).
+- 6.8 Minimal menus (egui 0.37 + egui-wgpu/egui-winit 0.37 without default features, on
+  wgpu 30 / winit 0.30.13; DDNet's `fonts/DejaVuSans.ttf` from the data dir, no menus
+  without it). `client/src/ui.rs`: the egui glue (drawn onto the frame after the world
+  composite) and three pages: a start screen (server address, loopback only, Connect,
+  Settings, Quit, the last connection error), the in-game Esc menu (Back to the game,
+  Disconnect, Settings, Quit) and the settings (name, skin from storage, mouse
+  sensitivity, custom colours on/off, dyncam, vsync applied live, data dir for the next
+  start, key readers for move left/right, jump, hook, fire: C++ menus_settings_controls.cpp
+  rebinding). Every setting change is a C++ console line, so it gets the config
+  clamping/truncation. Leaving the settings writes our `%APPDATA%\DDNet-rs\settings.cfg`
+  (every variable and bind, so it overrides the C++ file); `%APPDATA%\DDNet` is never
+  written. `main.rs` now has a `Session` per connection: connect from the start screen
+  or the command line, disconnect back to the start screen (also on server errors),
+  reconnect, quit. The address argument is optional.
+  C++ menu input rules: SnapInput while a menu is open (PLAYERFLAG_IN_MENU, ResetInput
+  unless the DDRace input bug, the sent copy keeps the previous target, sent once a
+  second or on flag change; `net/client.rs` also gained the ninja send rule), binds
+  while menus are open (presses go to the menu, releases end active binds without
+  running them). The mouse is grabbed only while playing with the menu closed.
+  Settings files: commands DDNet-rs does not use (other stock settings, TClient's) are
+  skipped silently, one summary line with the count; binds to unknown commands are kept
+  like stock DDNet does.
+  Verified: `tests/input.rs` `menu_input_follows_cpp` (SnapInput menu branch, binds with
+  menus open, the DDRace input bug) and `own_settings_file_round_trips` (our file
+  reloads to the same settings, on its own and over the C++ corpus, incl. a value set
+  back to its default); all gates. Live, driven by keyboard against a local server
+  (Esc, Tab, Enter): start screen and in-game menu render, Disconnect -> server logs the
+  leave, Connect from the start screen -> enters again, Quit -> leaves, process exits;
+  the settings page renders the current values and nothing was saved without Back.
+  Screenshots unchanged: LearnToPlay 99.86%, ctf1 `-RustSubject` 99.75%. Played by the
+  user: not yet for 6.8 (the 6.7 build was).
 #### M6 status (2026-11-24)
-Done and pushed: 6.1-6.7. Next: 6.8 menus (PLAN §9.3).
+Done and pushed: 6.1-6.8, M6 complete. Next milestone: to be agreed with the user
+(open items below; HUD, chat, particles and the full menus are not in M6).
 
 Open items from 6.6 (not checked live, code ported line by line):
 - Flags: this repo's DDNet-Server only runs the "ddnet" game type, which never sends
@@ -386,9 +418,12 @@ Open items from 6.6 (not checked live, code ported line by line):
   until `Sv_TuneParams` and the tune zone messages are handled.
 - Not in M6 at all: particles (trails, explosions, powerup shine), muzzle flashes,
   emoticon messages, the hook collision line, HUD and cursor.
-Open from 6.7: the spectator camera (free view, auto-sync, smoothing), Esc menu (6.8),
+Open from 6.7/6.8: the spectator camera (free view, auto-sync, smoothing),
 `+showhookcoll`, chat/emote/spectate/kill/vote binds (ignored), hex/named colours in
-configs, checking the aim against the C++ client by hand.
+configs, checking the aim against the C++ client by hand. Menus: name/skin changes
+apply on the next connect (no Cl_ChangeInfo yet), no colour pickers, no clipboard, the
+key readers change only a command's first bind; map textures and collision of earlier
+connections are not freed (`ponytail:` in main.rs).
 
 Screenshot workflow reminders: run a plain `cargo build` before
 `scripts/compare_screenshots.ps1` (integration-test builds overwrite

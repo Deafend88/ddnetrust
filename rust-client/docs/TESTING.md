@@ -204,9 +204,13 @@ cargo build --release -p ddnet-rs
 .\target\release\ddnet-rs.exe 127.0.0.1:8303 --size 1280x720 --vsync
 ```
 
+Without the address, DDNet-rs opens a start screen: type the address, Connect.
 DDNet-rs reads `%APPDATA%\DDNet\settings_ddnet.cfg` once (never writes it): your name,
-skin, colours, mouse sensitivity, dyncam/zoom settings and binds. Working binds: `+left`,
-`+right`, `+jump`, `+hook`, `+fire`, `+weapon1`-`5`, `+nextweapon`, `+prevweapon`,
-`zoom+`, `zoom-`, `zoom` (others are ignored). Esc frees the mouse, a click grabs it
-again, F12 saves a screenshot to `%APPDATA%\DDNet-rs\screenshots`. Only loopback
+skin, colours, mouse sensitivity, dyncam/zoom settings and binds; other clients'
+settings in it are skipped. Settings changed in its menu are saved to
+`%APPDATA%\DDNet-rs\settings.cfg`, which then overrides the C++ file. Working binds:
+`+left`, `+right`, `+jump`, `+hook`, `+fire`, `+weapon1`-`5`, `+nextweapon`,
+`+prevweapon`, `zoom+`, `zoom-`, `zoom` (others are ignored). Esc opens the menu (Back to
+the game, Disconnect, Settings, Quit) and frees the mouse; closing it grabs the mouse
+again. F12 saves a screenshot to `%APPDATA%\DDNet-rs\screenshots`. Only loopback
 servers are accepted.
