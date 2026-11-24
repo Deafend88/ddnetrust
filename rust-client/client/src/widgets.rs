@@ -7,7 +7,9 @@ use egui::{
     vec2,
 };
 
-use crate::style::{Glass, Weight, color, font, icon_font, motion, radius, size, space};
+use crate::style::{
+    Glass, POPUP_SHADOW, Weight, color, font, icon_font, motion, radius, size, space,
+};
 
 /// A card: rounded panel with the glass fill and a hairline border.
 pub fn panel<R>(ui: &mut Ui, glass: Glass, add: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R> {
@@ -15,7 +17,7 @@ pub fn panel<R>(ui: &mut Ui, glass: Glass, add: impl FnOnce(&mut Ui) -> R) -> In
         .fill(glass.panel_fill())
         .stroke(Stroke::new(1.0, color::BORDER))
         .corner_radius(CornerRadius::same(radius::CARD))
-        .inner_margin(Margin::same(space::L as i8))
+        .inner_margin(Margin::same(space::XL as i8))
         .show(ui, |ui| ui.vertical(add).inner)
 }
 
@@ -24,7 +26,7 @@ pub fn pill<R>(ui: &mut Ui, fill: Color32, add: impl FnOnce(&mut Ui) -> R) -> In
     Frame::new()
         .fill(fill)
         .corner_radius(CornerRadius::same(radius::PILL))
-        .inner_margin(Margin::symmetric(space::M as i8, (space::XS + 2.0) as i8))
+        .inner_margin(Margin::symmetric(space::L as i8, space::S as i8))
         .show(ui, |ui| ui.horizontal(add).inner)
 }
 
@@ -43,8 +45,8 @@ pub fn text(ui: &mut Ui, s: &str, size: f32, weight: Weight, color: Color32) -> 
 pub fn stat(ui: &mut Ui, glyph: &str, value: &str, unit: Option<&str>) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
-        icon(ui, glyph, size::ICON - 2.0, color::TEXT);
-        ui.add_space(space::XS + 1.0);
+        icon(ui, glyph, size::ICON, color::TEXT);
+        ui.add_space(space::XS + 2.0);
         text(ui, value, size::BODY, Weight::Medium, color::TEXT);
         if let Some(unit) = unit {
             ui.add_space(1.0);
@@ -55,7 +57,7 @@ pub fn stat(ui: &mut Ui, glyph: &str, value: &str, unit: Option<&str>) {
 
 /// The faint dot between stats.
 pub fn dot(ui: &mut Ui) {
-    let (rect, _) = ui.allocate_exact_size(vec2(space::M, size::BODY), Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(vec2(space::L, size::BODY), Sense::hover());
     ui.painter().circle_filled(
         rect.center(),
         1.5,
@@ -95,7 +97,7 @@ pub fn accent_button(ui: &mut Ui, glyph: Option<&str>, label: &str) -> Response 
 
 /// An on/off switch with an animated knob.
 pub fn toggle(ui: &mut Ui, on: &mut bool) -> Response {
-    let size = vec2(36.0, 20.0);
+    let size = vec2(44.0, 26.0);
     let (rect, mut response) = ui.allocate_exact_size(size, Sense::click());
     if response.clicked() {
         *on = !*on;
@@ -130,8 +132,8 @@ pub fn slider<N: egui::emath::Numeric>(
 pub fn segmented(ui: &mut Ui, selected: &mut usize, labels: &[&str]) -> Response {
     Frame::new()
         .fill(color::SURFACE_RAISED)
-        .corner_radius(CornerRadius::same(radius::SMALL))
-        .inner_margin(Margin::same(2))
+        .corner_radius(CornerRadius::same(radius::PILL))
+        .inner_margin(Margin::same(3))
         .show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 2.0;
@@ -175,12 +177,14 @@ pub fn popover<R>(
 ) -> Option<R> {
     egui::Popup::from_response(anchor)
         .open(open)
+        .gap(space::S)
         .frame(
             Frame::new()
                 .fill(glass.panel_fill())
                 .stroke(Stroke::new(1.0, color::BORDER))
-                .corner_radius(CornerRadius::same(radius::SMALL + 4))
-                .inner_margin(Margin::same(space::M as i8)),
+                .corner_radius(CornerRadius::same(radius::CARD - 4))
+                .inner_margin(Margin::same(space::L as i8))
+                .shadow(POPUP_SHADOW),
         )
         .show(add)
         .map(|r| r.inner)

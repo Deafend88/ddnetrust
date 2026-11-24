@@ -15,19 +15,21 @@ pub mod color {
     pub const SURFACE_HOVER: Color32 = Color32::from_rgb(52, 52, 60);
     pub const TEXT: Color32 = Color32::from_rgb(245, 245, 247);
     pub const TEXT_SECONDARY: Color32 = Color32::from_rgb(142, 142, 147);
-    pub const SEPARATOR: Color32 = Color32::from_rgba_premultiplied(30, 30, 30, 30);
-    pub const BORDER: Color32 = Color32::from_rgba_premultiplied(16, 16, 16, 16);
+    pub const SEPARATOR: Color32 = Color32::from_rgba_premultiplied(14, 14, 14, 14);
+    pub const BORDER: Color32 = Color32::from_rgba_premultiplied(8, 8, 8, 8);
     pub const ACCENT: Color32 = Color32::from_rgb(10, 132, 255);
     pub const SUCCESS: Color32 = Color32::from_rgb(48, 209, 88);
     pub const DANGER: Color32 = Color32::from_rgb(255, 69, 58);
     /// The logo pill of the watermark (white, SPEC §1).
     pub const LOGO: Color32 = Color32::from_rgb(250, 250, 252);
+    /// Icon and name on the logo pill: light grey, as in the references.
+    pub const LOGO_TEXT: Color32 = Color32::from_rgb(168, 168, 174);
 }
 
 /// Corner radii in points; pills use `PILL` (fully rounded).
 pub mod radius {
-    pub const SMALL: u8 = 8;
-    pub const CARD: u8 = 16;
+    pub const SMALL: u8 = 12;
+    pub const CARD: u8 = 24;
     pub const PILL: u8 = 255;
 }
 
@@ -42,12 +44,12 @@ pub mod space {
 
 /// Type scale in points.
 pub mod size {
-    pub const CAPTION: f32 = 11.0;
-    pub const BODY: f32 = 13.0;
-    pub const LABEL: f32 = 14.0;
-    pub const TITLE: f32 = 17.0;
-    pub const LARGE: f32 = 22.0;
-    pub const ICON: f32 = 14.0;
+    pub const CAPTION: f32 = 12.0;
+    pub const BODY: f32 = 15.0;
+    pub const LABEL: f32 = 16.0;
+    pub const TITLE: f32 = 19.0;
+    pub const LARGE: f32 = 26.0;
+    pub const ICON: f32 = 17.0;
 }
 
 /// Animation timing in seconds.
@@ -59,6 +61,14 @@ pub mod motion {
     /// Spring settle time of the island and other size changes.
     pub const SPRING: f32 = 0.45;
 }
+
+/// The soft shadow under popovers and menus.
+pub const POPUP_SHADOW: egui::Shadow = egui::Shadow {
+    offset: [0, 8],
+    blur: 28,
+    spread: 0,
+    color: Color32::from_black_alpha(110),
+};
 
 /// Font weights (egui font families).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -170,10 +180,10 @@ pub fn install(ctx: &egui::Context, glass: Glass) {
             ),
         ]
         .into();
-        s.spacing.item_spacing = egui::vec2(space::S, space::S);
-        s.spacing.button_padding = egui::vec2(space::M, space::XS + 2.0);
-        s.spacing.window_margin = egui::Margin::same(space::L as i8);
-        s.spacing.interact_size.y = 28.0;
+        s.spacing.item_spacing = egui::vec2(space::M, space::M);
+        s.spacing.button_padding = egui::vec2(space::L, space::S);
+        s.spacing.window_margin = egui::Margin::same(space::XL as i8);
+        s.spacing.interact_size.y = 34.0;
         let v = &mut s.visuals;
         *v = egui::Visuals::dark();
         v.override_text_color = Some(color::TEXT);
@@ -182,9 +192,10 @@ pub fn install(ctx: &egui::Context, glass: Glass) {
         v.window_stroke = egui::Stroke::new(1.0, color::BORDER);
         v.window_corner_radius = egui::CornerRadius::same(radius::CARD);
         v.window_shadow = egui::Shadow::NONE;
-        v.popup_shadow = egui::Shadow::NONE;
+        v.popup_shadow = POPUP_SHADOW;
         v.menu_corner_radius = egui::CornerRadius::same(radius::SMALL);
         v.selection.bg_fill = color::ACCENT;
+        v.handle_shape = egui::style::HandleShape::Circle;
         v.hyperlink_color = color::ACCENT;
         v.extreme_bg_color = color::SURFACE;
         for w in [
@@ -194,7 +205,7 @@ pub fn install(ctx: &egui::Context, glass: Glass) {
             &mut v.widgets.open,
             &mut v.widgets.noninteractive,
         ] {
-            w.corner_radius = egui::CornerRadius::same(radius::SMALL);
+            w.corner_radius = egui::CornerRadius::same(radius::PILL);
             w.bg_stroke = egui::Stroke::NONE;
             w.fg_stroke.color = color::TEXT;
         }

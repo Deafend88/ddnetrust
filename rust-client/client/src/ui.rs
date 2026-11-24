@@ -242,9 +242,9 @@ impl Menu {
     fn settings_page(&mut self, ui: &mut egui::Ui, s: &mut Settings) {
         let c = &s.config;
         let mut lines = Vec::new();
-        // scrolls when the window is small; 160 pt leave room for the title bar, the
+        // scrolls when the window is small; 200 pt leave room for the title bar, the
         // window margins and the Back button below
-        let max_height = ui.ctx().content_rect().height() - 160.0;
+        let max_height = ui.ctx().content_rect().height() - 200.0;
         egui::ScrollArea::vertical()
             .max_height(max_height)
             .show(ui, |ui| {

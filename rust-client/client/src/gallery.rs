@@ -1,7 +1,7 @@
 //! Every design-system component on one page, drawn headless (M7.1): for review
 //! (`examples/gallery.rs` writes a PNG) and as a regression test (`tests/gfx.rs`).
 
-use egui::{Align2, Color32, RichText};
+use egui::{Align2, RichText};
 
 use crate::gfx::batch::{Batch, QuadItem};
 use crate::gfx::{Gfx, Size};
@@ -62,45 +62,37 @@ fn page(ctx: &egui::Context) {
                     );
                     w::text(
                         ui,
-                        "Title 17 semibold",
+                        "Title 19 semibold",
                         size::TITLE,
                         Weight::SemiBold,
                         color::TEXT,
                     );
                     w::text(
                         ui,
-                        "Label 14 medium",
+                        "Label 16 medium",
                         size::LABEL,
                         Weight::Medium,
                         color::TEXT,
                     );
                     w::text(
                         ui,
-                        "Body 13 regular",
+                        "Body 15 regular",
                         size::BODY,
                         Weight::Regular,
                         color::TEXT,
                     );
                     w::text(
                         ui,
-                        "Caption 11, secondary",
+                        "Caption 12, secondary",
                         size::CAPTION,
                         Weight::Regular,
                         color::TEXT_SECONDARY,
                     );
-                    ui.separator();
+                    ui.add_space(space::S);
                     ui.horizontal(|ui| {
                         w::button(ui, None, "Button");
                         w::accent_button(ui, Some(icons::PLAY), "Connect");
-                        let settings = w::button(ui, Some(icons::GEAR), "Widget settings");
-                        w::popover(&settings, true, glass, |ui| {
-                            ui.horizontal(|ui| {
-                                w::toggle(ui, &mut true);
-                                ui.label("Compact");
-                            });
-                        });
                     });
-                    ui.add_space(space::XL + space::S);
                     ui.horizontal(|ui| {
                         w::toggle(ui, &mut true);
                         ui.label("On");
@@ -110,7 +102,7 @@ fn page(ctx: &egui::Context) {
                     let mut v = 60.0f32;
                     w::slider(ui, &mut v, 0.0..=100.0);
                     w::segmented(ui, &mut 1, &["Off", "Subtle", "Full"]);
-                    ui.separator();
+                    ui.add_space(space::S);
                     ui.horizontal_wrapped(|ui| {
                         for glyph in icons::ALL {
                             w::icon(ui, glyph, size::ICON + 4.0, color::TEXT);
@@ -121,13 +113,13 @@ fn page(ctx: &egui::Context) {
                     // the watermark's look (7.5 builds the real widget)
                     w::pill(ui, Glass::Subtle.panel_fill(), |ui| {
                         w::pill(ui, color::LOGO, |ui| {
-                            w::icon(ui, icons::BOLT, size::ICON - 2.0, Color32::from_gray(40));
+                            w::icon(ui, icons::BOLT, size::ICON - 1.0, color::LOGO_TEXT);
                             w::text(
                                 ui,
                                 "DDNet-rs",
-                                size::CAPTION,
-                                Weight::Medium,
-                                Color32::from_gray(40),
+                                size::BODY - 1.0,
+                                Weight::Regular,
+                                color::LOGO_TEXT,
                             );
                         });
                         w::stat(ui, icons::USER, "TeDeafe", None);
@@ -161,6 +153,15 @@ fn page(ctx: &egui::Context) {
                             color::TEXT,
                         );
                         w::text(ui, "-0:42.10", size::BODY, Weight::Medium, color::SUCCESS);
+                    });
+                    // last in the column: the open popover has nothing below it
+                    ui.add_space(space::M);
+                    let settings = w::button(ui, Some(icons::GEAR), "Widget settings");
+                    w::popover(&settings, true, glass, |ui| {
+                        ui.horizontal(|ui| {
+                            w::toggle(ui, &mut true);
+                            ui.label("Compact");
+                        });
                     });
                 });
             });
