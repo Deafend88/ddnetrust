@@ -145,6 +145,8 @@ pub struct MapRender {
     background: Vec<Entry>,
     foreground: Vec<Entry>,
     envelopes: Envelopes,
+    /// The map images' textures (C++ `CMapImages::Unload` frees them).
+    textures: Vec<TextureId>,
 }
 
 fn fx2f(v: i32) -> f32 {
@@ -177,6 +179,18 @@ impl MapRender {
             background: entries(false),
             foreground: entries(true),
             envelopes: Envelopes::from_map(map),
+            textures: textures
+                .iter()
+                .flat_map(|&(a, f)| [a, f])
+                .flatten()
+                .collect(),
+        }
+    }
+
+    /// Frees the map's textures (C++: `CMapImages::Unload` on map change/disconnect).
+    pub fn free(self, gfx: &mut Gfx) {
+        for t in self.textures {
+            gfx.free_texture(t);
         }
     }
 

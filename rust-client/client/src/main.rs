@@ -244,8 +244,19 @@ impl App {
     }
 
     fn disconnect(&mut self) {
-        if let Some(mut s) = self.session.take() {
+        if let Some(s) = &mut self.session {
             s.disconnect(self.start);
+        }
+        self.end_session();
+    }
+
+    /// Drops the session and frees its map textures (the collision stays leaked, see
+    /// `update_session`).
+    fn end_session(&mut self) {
+        if let Some(s) = self.session.take()
+            && let (Some((map, _)), Some(r)) = (s.map, &mut self.running)
+        {
+            map.free(&mut r.gfx);
         }
         self.menu.open = false;
     }
@@ -337,8 +348,8 @@ impl App {
             && let Some(m) = (s.client.map()).and_then(|m| Map::load(m.data.clone()).ok())
         {
             let images = assets::load_map_images(&self.storage, &m);
-            // ponytail: leaked once per connection so the predictor can borrow it, and
-            // the map textures stay in gfx; free both when that matters
+            // ponytail: leaked once per connection so the predictor can borrow it (freeing
+            // it needs an owning predictor); the map textures are freed in end_session
             let collision: &'static Collision = Box::leak(Box::new(Collision::new(&m)));
             s.map = Some((MapRender::new(&mut r.gfx, &m, &images), collision));
             s.predictor = Some(Predictor::new(collision));
@@ -369,7 +380,7 @@ impl App {
             r.surface.configure(&r.gfx.device, &r.config);
         }
         if let Err(e) = self.update_session() {
-            self.session = None;
+            self.end_session();
             self.menu.error = Some(e);
             if self.running.as_ref().is_none_or(|r| r.ui.is_none()) {
                 // no menus to go back to

@@ -190,3 +190,62 @@ fn test_pattern(b: &mut Batch, texture: TextureId) {
     );
     b.quads_draw_tl(&[q(0.0, 16.0, 16.0, 16.0)]);
 }
+
+/// M6.8 follow-up: a map's textures are freed when its connection ends (C++
+/// `CMapImages::Unload`), and a resized world target replaces the old one: loading dm1
+/// three times and resizing leaves the texture count where it was, and the last map
+/// still draws.
+#[test]
+fn map_textures_are_freed() {
+    use ddnet::map::Map;
+    use ddnet_rs::render::map::{MapRender, View};
+    use ddnet_rs::storage::Storage;
+
+    let Some(mut g) = Gfx::headless(Size {
+        width: 64,
+        height: 64,
+    }) else {
+        eprintln!("SKIPPED: no graphics adapter");
+        return;
+    };
+    let repo = format!("{}/../..", env!("CARGO_MANIFEST_DIR"));
+    let cfg = b"add_path $DATADIR\n";
+    let storage =
+        Storage::from_parts(None, Some(format!("{repo}/data").into()), Some(cfg)).unwrap();
+    let map = Map::load(std::fs::read(format!("{repo}/data/maps/dm1.map")).unwrap()).unwrap();
+    let images = ddnet_rs::assets::load_map_images(&storage, &map);
+    let before = g.texture_count();
+    let first = MapRender::new(&mut g, &map, &images);
+    let per_map = g.texture_count() - before;
+    assert!(per_map > 0);
+    first.free(&mut g);
+    assert_eq!(g.texture_count(), before);
+    MapRender::new(&mut g, &map, &images).free(&mut g);
+    g.resize(Size {
+        width: 32,
+        height: 32,
+    });
+    let last = MapRender::new(&mut g, &map, &images);
+    assert_eq!(g.texture_count(), before + per_map);
+    let mut batch = Batch::default();
+    batch.clear(0.0, 0.0, 0.0);
+    let view = View {
+        center: (1000.0, 500.0),
+        zoom: 1.0,
+        width: 32,
+        height: 32,
+        envelope_time: 0,
+    };
+    last.render_background(&mut batch, &view);
+    last.render_foreground(&mut batch, &view);
+    let world = g.world_view();
+    g.render(
+        &mut batch,
+        &world,
+        Size {
+            width: 32,
+            height: 32,
+        },
+    );
+    assert!(g.read_world().chunks(4).any(|p| p[..3] != [0, 0, 0]));
+}

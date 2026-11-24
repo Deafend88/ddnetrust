@@ -125,6 +125,8 @@ pub struct Gfx {
     /// [2D, 2D array, 2D array map border][blend none, normal, additive]
     pipelines: [[wgpu::RenderPipeline; 3]; 3],
     textures: Vec<TextureEntry>,
+    /// Slots of freed textures, reused by the next ones.
+    free: Vec<usize>,
     white: TextureId,
     vertex_buffer: Option<wgpu::Buffer>,
     index_buffer: Option<wgpu::Buffer>,
@@ -238,6 +240,7 @@ impl Gfx {
             layouts,
             pipelines,
             textures: Vec::new(),
+            free: Vec::new(),
             white: TextureId(0),
             vertex_buffer: None,
             index_buffer: None,
@@ -304,12 +307,29 @@ impl Gfx {
                 ],
             })
         });
-        self.textures.push(TextureEntry {
+        let entry = TextureEntry {
             texture,
             array,
             bind_groups,
-        });
+        };
+        if let Some(i) = self.free.pop() {
+            self.textures[i] = entry;
+            return TextureId(i);
+        }
+        self.textures.push(entry);
         TextureId(self.textures.len() - 1)
+    }
+
+    /// Frees a texture's GPU memory now; `id` must not be drawn again (its slot is
+    /// reused).
+    pub fn free_texture(&mut self, id: TextureId) {
+        self.textures[id.0].texture.destroy();
+        self.free.push(id.0);
+    }
+
+    /// Textures currently allocated.
+    pub fn texture_count(&self) -> usize {
+        self.textures.len() - self.free.len()
     }
 
     /// Uploads layers of RGBA8 images of one size, with their mipmaps.
@@ -407,8 +427,8 @@ impl Gfx {
     /// Resizes the world target (window resize).
     pub fn resize(&mut self, size: Size) {
         let id = self.create_target(size);
-        self.textures.swap(self.world.0, id.0);
-        self.textures.pop();
+        self.free_texture(self.world);
+        self.world = id;
     }
 
     pub fn world_size(&self) -> Size {
