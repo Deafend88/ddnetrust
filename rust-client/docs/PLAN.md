@@ -480,7 +480,7 @@ client binary, like the server tests do without a server binary.
 
 ---
 
-## 10. M7 plan: visual identity and HUD (draft for review, 2026-11-24)
+## 10. M7 plan: visual identity and HUD (approved 2026-11-24, answers in §10.6)
 
 Goal: DDNet-rs gets its own look (one style, no "classic DDNet" mode) and a HUD built on
 it: a shared design system, movable HUD widgets with an editor, the Dynamic Island,
@@ -636,7 +636,8 @@ compact, hide). Binds `media_play_pause`, `media_next`, `media_prev`. Without a 
 or on other OSes everything media-related hides.
 Verify: state mapping and time formatting unit tests; live with your player (Spotify,
 Yandex Music or a browser): title/cover/progress update, the controls act on the chosen
-session, closing the source hides the player (a checklist done by you).
+session, closing the source hides the player (a checklist done by you). The keyboard
+media keys are not handled in game (§10.6).
 
 **7.11 Settings and finish.** Settings page entries (glass strength, UI scale, HUD
 editor, media on/off), the default HUD layout, a frame time check with everything on
@@ -671,6 +672,22 @@ Verify: all gates; the M6 screenshot comparisons still pass with the HUD disable
 5. **Review points:** the gallery (7.1), the three glass strengths (7.2), the watermark
    next to the references (7.5) and the island states (7.9). Anything else you want to
    see before the code is final?
+
+### 10.6 Answers (2026-11-24)
+
+1. **Fonts and icons:** Inter and Phosphor are committed under `rust-client/assets/`
+   with their licence files (SIL OFL 1.1, MIT).
+2. **`windows` crate:** yes, with only the features SMTC needs.
+3. **Binds:** F6 opens the HUD editor, F7 expands the media player. Checked: stock
+   DDNet binds neither (its defaults, `CBinds::SetDefaults` + `SetDDRaceBinds`, use F1-F4
+   and F10; the only hard-coded F key is F5 for refreshing lists in menus). They are
+   added like C++ `SetDDRaceBinds(true)`: only when the key is still free. The keyboard
+   media keys are NOT handled in game: Windows already sends them to the media app, so
+   handling them too would toggle playback twice.
+4. **Glass "subtle":** starts with a small blur and ~85% opaque panels, tuned with you
+   in 7.2.
+5. **Review material:** also a short screen recording (GIF or video) of the island
+   transitions in 7.9, since animations cannot be judged from stills.
 
 ---
 
