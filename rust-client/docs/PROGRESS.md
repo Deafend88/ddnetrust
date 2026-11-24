@@ -436,12 +436,13 @@ for scenes that do not stay still, or `-RustSubject` to check what the server se
 `examples/maprender.rs` renders a map at a given
 center for fixed-view checks; mask pickups (they bob on each client's own clock).
 
-### M7 — visual identity and HUD (in progress: 7.1 done, waiting for the user's review)
+### M7 — visual identity and HUD (in progress: 7.1 done and approved, 7.2 started)
 
 Pushed and verified: the plan and its review answers (PLAN §10, §10.6), the collision
-leak fix, and 7.1 (three commits: fonts + icons, design system, menus + gallery).
+leak fix, and 7.1 (fonts + icons, design system, menus + gallery, the review tweaks,
+the UI-rules review).
 
-#### 7.1 status (2026-11-24): design system, done, gallery review by the user pending
+#### 7.1 status (2026-11-24): design system, done, gallery approved by the user
 - `assets/fonts/`: Inter 4.1 Regular/Medium/SemiBold (rsms/inter's Inter-4.1.zip,
   `extras/ttf`) and Phosphor 2.1.2 regular (npm `@phosphor-icons/web`), with
   `Inter-LICENSE.txt` (OFL 1.1) and `Phosphor-LICENSE.txt` (MIT); embedded with
@@ -457,7 +458,7 @@ leak fix, and 7.1 (three commits: fonts + icons, design system, menus + gallery)
 - `ui.rs`: `Painter` (egui + egui-wgpu, no window; used headless by the gallery) split
   from `Ui` (adds winit input); the menus always exist (embedded fonts); the 6.8 menus
   restyled with the components; the settings grid is in a vertical `ScrollArea`
-  (window height - 160 pt), Back stays below it.
+  (window height - 200 pt), Back stays below it.
 - `config.rs`: our variables `rs_glass` (0-2, default 1) and `rs_ui_scale` (50-200 %,
   default 100); `main.rs` reinstalls the style / zoom factor when they change.
 - `gallery.rs` + `examples/gallery.rs` (every component on one 960x640 page, headless,
@@ -478,17 +479,39 @@ Verified: `cargo build`, `clippy --all-targets -D warnings`, `fmt --check`,
 Esc menu, settings: icons right, nothing cut) and the keyboard connect / Esc menu /
 disconnect / reconnect / quit flow on a local server (port 8305, scratch dir).
 
+User review round (applied, pushed): pill-shaped controls, card radius 24, more
+padding, larger type (body 15) and icons (17), grey regular logo-pill text, popover
+shadow and gap, fainter borders, no separators. Then the CLAUDE.md UI rules (spacing
+scale 4..32 only, tokens only, one accent, essential info, frontend-design skill) and a
+review of the gallery and menus against them: menus are one column of full-width
+controls without the egui title bar; keyboard focus is a 1 px ring. Two focus bugs
+fixed on the way: a reopened menu kept a stale focus (egui runs no passes while menus
+are hidden; `Ui::hidden` drops it), and egui never got `Focused` events in a client
+started straight into a server (now always forwarded). The frontend-design skill does
+not load as a skill in this setup; its SKILL.md is read from the path in CLAUDE.md.
+
 #### Exact next actions
-1. Wait for the user's review of the gallery (`cargo run -p ddnet-rs --example gallery --
-   gallery.png` from `rust-client/`). Apply their changes; regenerate
-   `tests/golden/gallery.png` only for intended changes, after looking at it.
-2. Then 7.2 (glass passes, PLAN §10.3).
+1. 7.2 glass (PLAN §10.3). Design chosen: glass is drawn through egui-wgpu paint
+   callbacks (`egui_wgpu::Callback`, `CallbackTrait::paint` gets egui's render pass),
+   so each panel's blurred backdrop is drawn in egui's z-order and clip (a popover over
+   a panel stays right). `Painter::paint` builds the dual-Kawase pyramid from the world
+   texture (`Gfx::world`) before `renderer.render`, and puts its bind group into
+   `renderer.callback_resources`; `widgets::panel`/`pill`/`popover` add a callback shape
+   at their rect before their fill (glass off: none). egui's pass uses premultiplied
+   alpha, no depth, msaa 1: the glass pipeline must match. Liquid Glass (island):
+   refraction along the SDF normal near the edge, specular rim, tint from the mean
+   luminance of the deepest pyramid level.
+2. Verify as PLAN 7.2 lists (GPU tests on synthetic backdrops, frame time at 1440p),
+   and render the three strengths over a busy real map (`examples/maprender.rs` code
+   as the backdrop) for the user's review.
 
 The menu capture scripts (not in the repo) start `build-rs/DDNet-Server.exe` on port
 8305 from `%TEMP%\ddnet-rs-menu\server` with its own storage.cfg, run
 `target/debug/ddnet-rs.exe --size 800x600 --no-grab` from `%TEMP%\ddnet-rs-menu`, send
 keys with `SendKeys` (Esc, Tab x2 + Enter = Disconnect/Connect, Tab x3 + Enter on the
-start screen = Settings) and capture the window with `PrintWindow`.
+start screen = Settings, Esc + Tab x4 + Enter in game = Quit) and capture the window
+with `PrintWindow`. Run each script in its own PowerShell call (`Add-Type` of the same
+type twice in one session fails).
 
 #### Decisions and gotchas from 7.1
 - egui 0.37 panics in debug if a frame's `TexturesDelta` is dropped unapplied: drain
