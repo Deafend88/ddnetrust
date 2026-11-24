@@ -90,6 +90,7 @@ fn place(placement: Placement, ppp: f32, screen: egui::Vec2) -> Rect {
     let data = HudData {
         client: &client,
         server: "127.0.0.1:8303",
+        player_name: "",
         frame_time_average: 0.0001,
         glass: Glass::Subtle,
         predictor: None,
@@ -199,6 +200,7 @@ fn watermark_fps_rounds_like_cpp() {
     let data = |avg| HudData {
         client: &client,
         server: "",
+        player_name: "brainless tee",
         frame_time_average: avg,
         glass: Glass::Off,
         predictor: None,
@@ -210,8 +212,10 @@ fn watermark_fps_rounds_like_cpp() {
     assert_eq!(fps(0.0001).as_deref(), Some("10000"));
     assert_eq!(fps(1.0 / 59.6).as_deref(), Some("60"));
     assert_eq!(fps(1.0 / 144.4).as_deref(), Some("144"));
-    // nothing known offline: no name, no id, no ping
-    for k in ["user", "uid", "ping"] {
+    // offline the name is the one we asked for; no id, no ping
+    let user = watermark::stat("user", &data(1.0)).map(|s| s.1);
+    assert_eq!(user.as_deref(), Some("brainless tee"));
+    for k in ["uid", "ping"] {
         assert!(watermark::stat(k, &data(1.0)).is_none(), "{k}");
     }
 }
@@ -287,6 +291,7 @@ fn editor_drags_a_widget_into_the_config() {
     let data = HudData {
         client: &client,
         server: "",
+        player_name: "",
         frame_time_average: 0.01,
         glass: Glass::Off,
         predictor: None,
@@ -346,4 +351,55 @@ fn editor_drags_a_widget_into_the_config() {
     let p = config.placements["probe"];
     assert_eq!((p.anchor, p.x, p.y), (Anchor::Right, -64, 40), "{p:?}");
     assert_eq!(rect.get().min, pos2(616.0, 320.0));
+}
+
+/// 7.4 review: the editor panel covers no widget, and a settings popover opens next to
+/// its widget without covering the panel.
+#[test]
+fn editor_panel_and_popover_keep_out_of_the_way() {
+    let screen = Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 600.0));
+    let panel = vec2(320.0, 240.0);
+    // nothing in the way: bottom centre, 24 pt from the edge
+    let r = editor::panel_rect(panel, screen, &[]);
+    assert_eq!(r, Rect::from_min_size(pos2(240.0, 336.0), panel));
+    // a widget at the bottom centre: the next free place (top centre)
+    let bottom = Rect::from_min_size(pos2(350.0, 560.0), vec2(100.0, 24.0));
+    let r = editor::panel_rect(panel, screen, &[bottom]);
+    assert_eq!(r.min, pos2(240.0, 24.0));
+    // a widget near the bottom centre, touching it only with its outline: avoided too
+    let near = Rect::from_min_size(pos2(350.0, 300.0), vec2(100.0, 33.0));
+    let r = editor::panel_rect(panel, screen, &[near]);
+    assert!(!r.intersects(near.expand(4.0)), "{r:?}");
+    // every place taken: bottom centre
+    let all = [screen.shrink(30.0)];
+    let r = editor::panel_rect(panel, screen, &all);
+    assert_eq!(r.min, pos2(240.0, 336.0));
+
+    // the popover of a widget top left: below it, off the panel
+    let size = vec2(260.0, 300.0);
+    let panel = editor::panel_rect(vec2(320.0, 240.0), screen, &[]);
+    let widget = Rect::from_min_size(pos2(16.0, 16.0), vec2(300.0, 28.0));
+    let at = |w: Rect| editor::popover_align(w, size, screen, panel).align_rect(&w, size, 8.0);
+    let p = at(widget);
+    assert!(screen.contains_rect(p) && !p.intersects(panel), "{p:?}");
+    // a widget just above the panel (where egui put the popover over it in an 800x600
+    // window): beside it, on a side that keeps the panel free
+    for x in [16.0, 484.0] {
+        let widget = Rect::from_min_size(pos2(x, 300.0), vec2(300.0, 28.0));
+        let p = at(widget);
+        assert!(!p.intersects(panel), "{x}: {p:?}");
+        assert!(screen.contains_rect(p), "{x}: {p:?}");
+    }
+    // no side on screen keeps a small panel free: below the widget, and the panel moves
+    // out of its way (the editor passes the popover to panel_rect)
+    let panel = editor::panel_rect(vec2(320.0, 160.0), screen, &[]);
+    let (widget, size) = (
+        Rect::from_min_size(pos2(400.0, 16.0), vec2(300.0, 28.0)),
+        vec2(260.0, 450.0),
+    );
+    let a = editor::popover_align(widget, size, screen, panel);
+    let p = a.align_rect(&widget, size, 8.0);
+    assert_eq!(p.min, pos2(400.0, 52.0));
+    let moved = editor::panel_rect(vec2(320.0, 160.0), screen, &[widget, p]);
+    assert_eq!(moved.min, pos2(24.0, 220.0));
 }

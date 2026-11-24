@@ -532,6 +532,7 @@ impl App {
         // the HUD draws once the map is there, under the menus
         let follow = self.options.follow;
         let hud_on = !self.hud.is_empty();
+        let player_name = player_info(&self.settings).name;
         let data = (self.session.as_ref())
             .filter(|s| hud_on && s.map.is_some())
             .map(|s| {
@@ -539,6 +540,7 @@ impl App {
                 HudData {
                     client: &s.client,
                     server: &s.server,
+                    player_name: &player_name,
                     frame_time_average: self.frame_time_average,
                     glass: Glass::from_setting(self.settings.config.rs_glass),
                     predictor: s.predictor.as_ref(),

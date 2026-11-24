@@ -13,6 +13,7 @@ public class W {
   [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out RECT r);
   [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr h, ref POINT p);
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+  [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT p);
   [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
   [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint f);
   [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
@@ -42,8 +43,8 @@ function Capture($h, $out) {
   [W]::PrintWindow($h, $dc, 3) | Out-Null
   $g.ReleaseHdc($dc); $g.Dispose(); $bmp.Save($out); $bmp.Dispose()
 }
-function Start-Client {
-  $cl = Start-Process "$root\rust-client\target\debug\ddnet-rs.exe" -ArgumentList "127.0.0.1:8305", "--size", "800x600", "--no-grab" -WorkingDirectory $dir -PassThru -RedirectStandardOutput "$dir\rs.log"
+function Start-Client($log = "rs.log") {
+  $cl = Start-Process "$root\rust-client\target\debug\ddnet-rs.exe" -ArgumentList "127.0.0.1:8305", "--size", "800x600", "--no-grab" -WorkingDirectory $dir -PassThru -RedirectStandardOutput "$dir\$log"
   Start-Sleep 6; $cl.Refresh(); $cl
 }
 
@@ -55,8 +56,10 @@ try {
   [W]::SetWindowPos($h, [IntPtr](-1), 0, 0, 0, 0, 3) | Out-Null
   $o = New-Object W+POINT; [W]::ClientToScreen($h, [ref]$o) | Out-Null; [W]::Origin = $o
   [W]::PostMessage($h, 0x0007, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null; Start-Sleep -Milliseconds 300; [W]::Key($h, 0x75, 0x40); Start-Sleep 1   # F6
+  Capture $h "$dir\ed_open.png"
   # drag the watermark from (60, 48) to (60 + 400, 48 + 350) in client pixels
   [W]::Mouse($h, 0x200, 60, 48, 0); Start-Sleep -Milliseconds 200
+  $pt = New-Object W+POINT; $pt.X = $o.X + 60; $pt.Y = $o.Y + 48; "window under the cursor: $([W]::WindowFromPoint($pt)) (ours: $h)"
   [W]::Mouse($h, 0x201, 60, 48, 1); Start-Sleep -Milliseconds 100
   for ($i = 1; $i -le 20; $i++) {
     [W]::Mouse($h, 0x200, 60 + 20 * $i, 48 + [int](17.5 * $i), 1); Start-Sleep -Milliseconds 50
@@ -70,7 +73,7 @@ try {
   [W]::Key($h, 0x1B, 0x01); Start-Sleep 1   # Esc
   Stop-Process -Id $cl.Id
   "settings.cfg hud lines:"; Get-Content "$appdata\DDNet-rs\settings.cfg" | Select-String "hud_|f6"
-  $cl = Start-Client; Capture $cl.MainWindowHandle "$dir\ed_restart.png"; Stop-Process -Id $cl.Id
+  $cl = Start-Client "rs2.log"; Capture $cl.MainWindowHandle "$dir\ed_restart.png"; Stop-Process -Id $cl.Id
   "done"
 } finally {
   Get-Process ddnet-rs -ErrorAction SilentlyContinue | Stop-Process

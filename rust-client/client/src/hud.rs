@@ -182,6 +182,9 @@ pub struct HudData<'a> {
     pub client: &'a Client,
     /// The server's address as typed.
     pub server: &'a str,
+    /// The name we asked for (`player_name`, else C++'s default), shown until the
+    /// server's `ClientInfo` (which may rename us) arrives.
+    pub player_name: &'a str,
     /// C++ `CClient::m_FrameTimeAverage` (seconds).
     pub frame_time_average: f32,
     /// The glass strength panels are drawn with.

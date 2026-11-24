@@ -89,10 +89,11 @@ pub fn stat(key: &str, data: &HudData) -> Option<Stat> {
     let snap = data.client.snapshot();
     Some(match key {
         "user" => {
-            let info = snap
+            let name = snap
                 .iter()
-                .find(|it| it.type_id == g::NETOBJTYPE_CLIENTINFO && Some(it.id) == local)?;
-            let name = ints_to_str(&g::ObjClientInfo::from_ints(&info.data).name)?;
+                .find(|it| it.type_id == g::NETOBJTYPE_CLIENTINFO && Some(it.id) == local)
+                .and_then(|info| ints_to_str(&g::ObjClientInfo::from_ints(&info.data).name));
+            let name = name.unwrap_or_else(|| data.player_name.to_string());
             (icons::USER, name, None)
         }
         "uid" => (icons::FINGERPRINT, local?.to_string(), Some("uid")),

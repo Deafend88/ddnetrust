@@ -5,7 +5,8 @@
 //! window size changes. The caller saves settings.cfg when the editor closes.
 
 use egui::{
-    Align2, CornerRadius, Id, LayerId, Order, Pos2, Rect, Sense, Stroke, StrokeKind, Vec2, vec2,
+    Align2, CornerRadius, Id, LayerId, Order, Pos2, Rect, RectAlign, Sense, Stroke, StrokeKind,
+    Vec2, vec2,
 };
 
 use crate::hud::{Anchor, HudConfig, HudData, Placement, Widget, area_id};
@@ -107,6 +108,53 @@ pub fn drop(
     (p, guides)
 }
 
+/// How far a widget's outline lies outside it.
+const OUTLINE: f32 = space::XS;
+
+/// Where the editor panel goes (its rectangle, `XL` from the screen edge): bottom centre,
+/// else the first of top centre, centre, left, right and the four corners that covers
+/// nothing in `avoid` (widgets with their outline, the open settings popover); bottom
+/// centre when every place does.
+pub fn panel_rect(size: Vec2, screen: Rect, avoid: &[Rect]) -> Rect {
+    let inner = screen.shrink(space::XL);
+    let at = |a: Align2| a.align_size_within_rect(size, inner);
+    [
+        Align2::CENTER_BOTTOM,
+        Align2::CENTER_TOP,
+        Align2::CENTER_CENTER,
+        Align2::LEFT_CENTER,
+        Align2::RIGHT_CENTER,
+        Align2::LEFT_BOTTOM,
+        Align2::RIGHT_BOTTOM,
+        Align2::LEFT_TOP,
+        Align2::RIGHT_TOP,
+    ]
+    .into_iter()
+    .map(at)
+    .find(|r| !avoid.iter().any(|w| w.expand(OUTLINE).intersects(*r)))
+    .unwrap_or_else(|| at(Align2::CENTER_BOTTOM))
+}
+
+/// The side of `widget` its settings popover (of `size`) opens on: the first of egui's
+/// menu positions that fits on screen and stays off the editor panel, else the first
+/// that fits on screen (the panel then moves out of its way, see `panel_rect`).
+pub fn popover_align(widget: Rect, size: Vec2, screen: Rect, panel: Rect) -> RectAlign {
+    let rect = |a: &RectAlign| a.align_rect(&widget, size, w::POPOVER_GAP);
+    let fits = |a: &&RectAlign| screen.contains_rect(rect(a));
+    let aligns = RectAlign::MENU_ALIGNS;
+    (aligns
+        .iter()
+        .filter(fits)
+        .find(|a| !rect(a).intersects(panel)))
+    .or_else(|| aligns.iter().find(fits))
+    .copied()
+    .unwrap_or(RectAlign::BOTTOM_START)
+}
+
+fn panel_id() -> Id {
+    Id::unique("hud_editor")
+}
+
 /// The editor's state while it is open.
 #[derive(Default)]
 pub struct Editor {
@@ -117,6 +165,10 @@ pub struct Editor {
     /// motion since.
     drag: Option<(&'static str, Rect, Vec2)>,
     guides: [Option<f32>; 2],
+    /// Where the panel is; kept while a widget is dragged, so it does not jump about.
+    panel: Option<Rect>,
+    /// The settings popover's rectangle last frame, if it was open.
+    popover: Option<Rect>,
 }
 
 impl Editor {
@@ -143,6 +195,16 @@ impl Editor {
             .filter(|(_, p)| p.enabled)
             .filter_map(|(w, _)| Some((w.id(), ctx.memory(|m| m.area_rect(area_id(w.id())))?)))
             .collect();
+        if self.drag.is_none() || self.panel.is_none() {
+            let size = (ctx.memory(|m| m.area_rect(panel_id()))).map_or(Vec2::ZERO, |r| r.size());
+            let avoid: Vec<Rect> = (rects.iter().map(|(_, r)| *r))
+                .chain(self.popover)
+                .collect();
+            self.panel = Some(panel_rect(size, screen, &avoid));
+        }
+        let panel = self.panel.unwrap_or(Rect::NOTHING);
+        let popover_size = self.popover.map_or(Vec2::ZERO, |r| r.size());
+        self.popover = None;
         for (w, p) in widgets.iter_mut().zip(placements) {
             if !p.enabled {
                 continue;
@@ -183,25 +245,33 @@ impl Editor {
             if response.clicked() {
                 self.selected = (self.selected != Some(id)).then_some(id);
             }
-            let active = self.selected == Some(id) || response.dragged();
-            let outline = if active {
+            // idle: a faint neutral outline says "movable"; hovered, selected and
+            // dragged widgets are outlined in the accent
+            let selected = self.selected == Some(id);
+            let outline = if selected || response.dragged() {
                 Stroke::new(2.0, color::ACCENT)
+            } else if response.hovered() {
+                Stroke::new(1.0, color::ACCENT)
             } else {
                 Stroke::new(1.0, color::TEXT_SECONDARY)
             };
             ctx.layer_painter(response.layer_id).rect_stroke(
-                response.rect.expand(space::XS),
+                response.rect.expand(OUTLINE),
                 CornerRadius::same(radius::PILL),
                 outline,
                 StrokeKind::Outside,
             );
-            w::popover(&response, self.selected == Some(id), data.glass, |ui| {
+            let align = popover_align(response.rect, popover_size, screen, panel);
+            let shown = w::popover(&response, selected, data.glass, Some(align), |ui| {
                 w::text(ui, w.name(), size::LABEL, Weight::SemiBold, color::TEXT);
                 w.settings(ui, config);
                 if w::button(ui, Some(icons::RESET), "Reset").clicked() {
                     config.reset(id);
                 }
             });
+            if let Some(((), rect)) = shown {
+                self.popover = Some(rect);
+            }
         }
         // a click on the game closes the settings popover
         if ctx.input(|i| i.pointer.primary_clicked()) && !ctx.is_pointer_over_egui() {
@@ -227,16 +297,16 @@ impl Editor {
         glass: Glass,
     ) -> bool {
         let mut done = false;
-        egui::Area::new(Id::unique("hud_editor"))
-            .pivot(Align2::CENTER_CENTER)
-            .default_pos(ctx.content_rect().center())
+        egui::Area::new(panel_id())
+            .fixed_pos(self.panel.map_or(Pos2::ZERO, |r| r.min))
+            .order(Order::Middle)
             .show(ctx, |ui| {
                 w::panel(ui, glass, |ui| {
                     w::text(ui, "Edit HUD", size::TITLE, Weight::SemiBold, color::TEXT);
                     let weak = ui.visuals().weak_text_color();
                     w::text(
                         ui,
-                        "Drag to move, hold Shift to move freely. Click a widget for its settings.",
+                        "Drag to move, Shift for no snapping.\nClick a widget for its settings.",
                         size::CAPTION,
                         Weight::Regular,
                         weak,

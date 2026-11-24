@@ -137,7 +137,7 @@ fn page(ctx: &egui::Context, glass: Glass) {
                     // last in the column: the open popover has nothing below it
                     ui.add_space(space::M);
                     let settings = w::button(ui, Some(icons::GEAR), "Widget settings");
-                    w::popover(&settings, true, glass, |ui| {
+                    w::popover(&settings, true, glass, None, |ui| {
                         ui.horizontal(|ui| {
                             w::toggle(ui, &mut true);
                             ui.label("Compact");

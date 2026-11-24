@@ -221,23 +221,33 @@ pub fn segmented(ui: &mut Ui, selected: &mut usize, labels: &[&str]) -> Response
         .inner
 }
 
-/// A popover under `anchor`, open while `open` is set (e.g. a widget's settings).
+/// The gap between a popover and what it belongs to.
+pub const POPOVER_GAP: f32 = space::S;
+
+/// A popover next to `anchor`, open while `open` is set (e.g. a widget's settings); on
+/// the side `align` names, else where egui finds room. Returns the content's result and
+/// the popover's rectangle.
 pub fn popover<R>(
     anchor: &Response,
     open: bool,
     glass: Glass,
+    align: Option<egui::RectAlign>,
     add: impl FnOnce(&mut Ui) -> R,
-) -> Option<R> {
+) -> Option<(R, egui::Rect)> {
     let frame = Frame::new()
         .fill(glass.panel_fill())
         .stroke(Stroke::new(1.0, color::BORDER))
         .corner_radius(CornerRadius::same(radius::CARD))
         .inner_margin(Margin::same(space::L as i8))
         .shadow(POPUP_SHADOW);
-    egui::Popup::from_response(anchor)
+    let mut popup = egui::Popup::from_response(anchor);
+    if let Some(align) = align {
+        popup = popup.align(align).align_alternatives(&[]);
+    }
+    popup
         .open(open)
-        .gap(space::S)
+        .gap(POPOVER_GAP)
         .frame(Frame::NONE)
         .show(|ui| glass_frame(ui, glass, false, frame, add).inner)
-        .map(|r| r.inner)
+        .map(|r| (r.inner, r.response.rect))
 }
