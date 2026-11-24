@@ -8,6 +8,7 @@ use crate::gfx::{Gfx, Size};
 use crate::icons;
 use crate::style::{Glass, Weight, color, size, space};
 use crate::ui::Painter;
+use crate::watermark;
 use crate::widgets as w;
 
 pub const SIZE: Size = Size {
@@ -110,24 +111,16 @@ fn page(ctx: &egui::Context, glass: Glass) {
                     });
                 });
                 ui.vertical(|ui| {
-                    // the watermark's look (7.5 builds the real widget)
-                    w::glass_pill(ui, glass, false, |ui| {
-                        w::pill(ui, color::LOGO, |ui| {
-                            w::icon(ui, icons::BOLT, size::ICON_SMALL, color::LOGO_TEXT);
-                            w::text(
-                                ui,
-                                "DDNet-rs",
-                                size::CAPTION,
-                                Weight::Regular,
-                                color::LOGO_TEXT,
-                            );
-                        });
-                        w::stat(ui, icons::USER, "TeDeafe", None);
-                        w::dot(ui);
-                        w::stat(ui, icons::CLOUD, "27", Some("ms"));
-                        w::dot(ui);
-                        w::stat(ui, icons::BOLT, "372", Some("fps"));
-                    });
+                    watermark::draw(
+                        ui,
+                        glass,
+                        false,
+                        &[
+                            (icons::USER, "TeDeafe".into(), None),
+                            (icons::CLOUD, "27".into(), Some("ms")),
+                            (icons::BOLT, "372".into(), Some("fps")),
+                        ],
+                    );
                     ui.add_space(space::M);
                     // the island's look (7.9): Liquid Glass at full strength
                     w::glass_pill(ui, glass, true, |ui| {

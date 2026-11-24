@@ -17,4 +17,5 @@ pub mod skin;
 pub mod storage;
 pub mod style;
 pub mod ui;
+pub mod watermark;
 pub mod widgets;

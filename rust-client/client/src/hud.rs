@@ -13,6 +13,7 @@ use ddnet::protocol::generated::GameMsg;
 use egui::Align2;
 
 use crate::config::{escape, parse_args, str_toint};
+use crate::style::Glass;
 
 /// One of the nine anchor points a widget sits at.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -164,9 +165,15 @@ impl HudConfig {
 
 /// What widgets read each frame: a read-only view of the game (the ping is the local
 /// player's `PlayerInfo` latency in `client.snapshot()`, as the C++ scoreboard shows
-/// it). The fps and the server address join with the watermark (7.5).
+/// it).
 pub struct HudData<'a> {
     pub client: &'a Client,
+    /// The server's address as typed.
+    pub server: &'a str,
+    /// C++ `CClient::m_FrameTimeAverage` (seconds).
+    pub frame_time_average: f32,
+    /// The glass strength panels are drawn with.
+    pub glass: Glass,
     pub predictor: Option<&'a Predictor>,
     /// The followed tee (the local one, or the one followed with `--follow`); the
     /// spectator camera is not ported yet, so spectating keeps the local id.

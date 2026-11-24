@@ -34,6 +34,7 @@ use ddnet_rs::render::players::Players;
 use ddnet_rs::storage::{self, Storage};
 use ddnet_rs::style::Glass;
 use ddnet_rs::ui::{Action, Menu, Ui};
+use ddnet_rs::watermark::Watermark;
 use winit::application::ApplicationHandler;
 use winit::event::{DeviceEvent, DeviceId, ElementState, KeyEvent, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
@@ -80,6 +81,8 @@ struct Running {
 /// `CGameClient::OnReset` clear).
 struct Session {
     socket: UdpSocket,
+    /// The server address (the watermark shows it).
+    server: String,
     client: Client,
     /// The map's collision is shared with the predictor; both drop with the session.
     map: Option<(MapRender, Rc<Collision>)>,
@@ -102,6 +105,7 @@ impl Session {
         camera.on_reset(&settings.config);
         Ok(Self {
             socket,
+            server: addr.to_string(),
             client,
             map: None,
             predictor: None,
@@ -159,8 +163,10 @@ struct App {
     running: Option<Running>,
     session: Option<Session>,
     menu: Menu,
-    /// The HUD widgets (7.5 on add the first ones).
+    /// The HUD widgets.
     hud: Vec<Box<dyn Widget>>,
+    /// C++ `CClient::m_FrameTimeAverage`.
+    frame_time_average: f32,
     /// C++ `m_aCurrentKeyStates`.
     pressed: Vec<bool>,
     /// Raw mouse motion since the last frame (C++ `SDL_GetRelativeMouseState`).
@@ -375,6 +381,8 @@ impl App {
     fn frame(&mut self, event_loop: &ActiveEventLoop) {
         let frame_time = self.last_frame.elapsed().as_secs_f32().max(0.0001);
         self.last_frame = Instant::now();
+        // C++: CClient::Run
+        self.frame_time_average = self.frame_time_average * 0.9 + frame_time * 0.1;
         let o = &self.options;
         let want_grab = self.session.is_some()
             && !self.menu_visible()
@@ -500,6 +508,9 @@ impl App {
                 let id = follow.or(s.client.local_id());
                 HudData {
                     client: &s.client,
+                    server: &s.server,
+                    frame_time_average: self.frame_time_average,
+                    glass: Glass::from_setting(self.settings.config.rs_glass),
                     predictor: s.predictor.as_ref(),
                     tee: rendered.iter().find(|t| Some(t.id) == id),
                     events: &events,
@@ -817,7 +828,8 @@ fn main() {
     let vsync = options.vsync || settings.config.gfx_vsync != 0;
     let mut app = App {
         menu: Menu::new(options.server, &storage),
-        hud: Vec::new(),
+        hud: vec![Box::new(Watermark)],
+        frame_time_average: 0.0001,
         options,
         storage,
         settings,

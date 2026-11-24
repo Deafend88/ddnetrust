@@ -7,6 +7,8 @@ use std::rc::Rc;
 use ddnet::net::client::{Client, PlayerInfo};
 use ddnet_rs::config::Settings;
 use ddnet_rs::hud::{self, Anchor, HudConfig, HudData, Placement, Widget};
+use ddnet_rs::style::Glass;
+use ddnet_rs::watermark;
 use egui::{Rect, pos2, vec2};
 
 #[test]
@@ -78,6 +80,9 @@ fn place(placement: Placement, ppp: f32, screen: egui::Vec2) -> Rect {
     let client = Client::new(PlayerInfo::default(), "", || [0; 16]);
     let data = HudData {
         client: &client,
+        server: "127.0.0.1:8303",
+        frame_time_average: 0.0001,
+        glass: Glass::Subtle,
         predictor: None,
         tee: None,
         events: &[],
@@ -155,4 +160,49 @@ fn widgets_stay_on_screen() {
         place(placement, 1.0, vec2(800.0, 600.0)).min,
         pos2(0.0, 0.0)
     );
+}
+
+#[test]
+fn watermark_order_and_items() {
+    let mut c = HudConfig::default();
+    // SPEC §1 defaults: user, ping and fps on, in the default order
+    let on = |c: &HudConfig| -> Vec<&str> {
+        watermark::order(c)
+            .into_iter()
+            .filter(|k| watermark::shown(c, k))
+            .collect()
+    };
+    assert_eq!(on(&c), ["user", "ping", "fps"]);
+    // a saved order (with an unknown key and a duplicate) comes first, the rest follow
+    c.execute("hud_set", r#"watermark order "fps, nope,ping,fps""#);
+    assert_eq!(
+        watermark::order(&c),
+        ["fps", "ping", "user", "server", "uid", "tps"]
+    );
+    c.execute("hud_set", "watermark user 0");
+    c.execute("hud_set", "watermark tps 1");
+    assert_eq!(on(&c), ["fps", "ping", "tps"]);
+}
+
+#[test]
+fn watermark_fps_rounds_like_cpp() {
+    let client = Client::new(PlayerInfo::default(), "", || [0; 16]);
+    let data = |avg| HudData {
+        client: &client,
+        server: "",
+        frame_time_average: avg,
+        glass: Glass::Off,
+        predictor: None,
+        tee: None,
+        events: &[],
+    };
+    let fps = |avg| watermark::stat("fps", &data(avg)).map(|s| s.1);
+    // C++ round_to_int(1.0f / m_FrameTimeAverage); the start value 0.0001 is 10000 fps
+    assert_eq!(fps(0.0001).as_deref(), Some("10000"));
+    assert_eq!(fps(1.0 / 59.6).as_deref(), Some("60"));
+    assert_eq!(fps(1.0 / 144.4).as_deref(), Some("144"));
+    // nothing known offline: no name, no id, no ping
+    for k in ["user", "uid", "ping"] {
+        assert!(watermark::stat(k, &data(1.0)).is_none(), "{k}");
+    }
 }
