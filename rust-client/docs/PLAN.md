@@ -477,3 +477,220 @@ client binary, like the server tests do without a server binary.
    in `build-rs-client`.
 4. **Threshold:** 99.5% of pixels within 8/255. A step that needs a different
    threshold says so to the user with the reason, and logs it in DECISIONS.md.
+
+---
+
+## 10. M7 plan: visual identity and HUD (draft for review, 2026-11-24)
+
+Goal: DDNet-rs gets its own look (one style, no "classic DDNet" mode) and a HUD built on
+it: a shared design system, movable HUD widgets with an editor, the Dynamic Island,
+the watermark, a DDRace status bar, a position/speed widget and killfeed capsules.
+Stock DDNet stays only where it must: physics, protocol and prediction; map rendering;
+tee skins; and the gameplay meaning of every indicator (each new widget shows the same
+information the C++ HUD shows, decided by ported C++ logic).
+
+Reference material lives outside the repo (`C:\ddnet-hud-refs`: SPEC.md, screenshots,
+a friend's partial Kotlin code). Design and behaviour are ported; no code, text or
+image from it enters the repository.
+
+Not in M7 (later milestones, §11): chat, scoreboard, votes, emote wheel, name plates,
+spectator HUD, menu redesign, server browser, Lua scripting. The HUD API is shaped so
+Lua can drive it later (7.3).
+
+### 10.1 Stack
+
+| Need | Choice | Why |
+|---|---|---|
+| Layout, text, shapes, input in widgets | egui 0.37 (already used by the 6.8 menus) | rounded shapes, text layout, hit testing, animation helpers; one UI stack for HUD, island and later menus |
+| Glass / Liquid Glass | own wgpu passes on the offscreen world image, drawn behind egui shapes | the world is already an offscreen texture (6.1); egui cannot sample what is behind it |
+| Font | Inter (SIL OFL) | SPEC: SF Pro is Apple-only; Inter is the look-alike |
+| Icons | Phosphor (MIT) as an icon font | one consistent line-icon set; `egui-phosphor` does not support egui 0.37 yet, so the TTF is loaded directly |
+| Now playing (Windows) | `windows` crate, `Media_Control` (SMTC session manager) on a background thread | the only way to read and control the OS media session; read-only except the user's own play/pause/next/previous/seek |
+| Springs, easing | own few lines (critically damped spring) | no dependency for one formula |
+
+Linux MPRIS (`mpris`) and macOS come later; without a backend the media parts hide.
+
+### 10.2 Design rules (from SPEC.md §1, §5, §6)
+
+- Tokens in one place (`client/src/style.rs`): colours (dark surfaces, high-contrast
+  text, grey secondary text, ONE accent: blue), radii (fully rounded pills, card
+  radius), spacing scale, type scale (Inter regular/medium/semibold), icon sizes,
+  shadows, animation durations and spring constants. Light surfaces are a later theme;
+  the tokens allow it.
+- Glass strength setting `rs_glass` = off / subtle / full, default subtle:
+  off = opaque panels; subtle = mostly opaque dark panels over a light blur of the
+  game; full = stronger blur, and the Dynamic Island uses Liquid Glass (refraction,
+  specular rim, adaptive tint). Everything inside panels stays flat.
+- UI scale follows the window DPI plus `rs_ui_scale`; all widget sizes are in points.
+- Nothing gives a gameplay advantage: widgets show only what stock DDNet already shows
+  or what the client legitimately has (SPEC §3).
+
+### 10.3 Steps
+
+**7.1 Design system.** `style.rs` tokens; Inter and Phosphor loaded at start (egui
+font families "regular", "medium", "semibold", "icons"); components on egui: glass
+panel, pill/capsule, icon + value + unit stat, separator dot, button (plain, accent),
+toggle, slider, segmented control, popover, tooltip; spring and ease helpers. A
+component gallery `examples/gallery.rs` renders every component headless to PNG.
+The 6.8 menus switch to these components (same functions, new look).
+Verify: spring/ease unit tests (critically damped: no overshoot, settles within the
+configured time); the gallery rendered on the GPU and compared pixel-exact with its own
+committed reference image (catches regressions, like `tests/gfx.rs`); the gallery PNG
+reviewed by you.
+
+**7.2 Glass rendering.** Per frame: a blur pyramid of the world target (dual-Kawase
+downsample/upsample, strength by `rs_glass`); a glass pass per panel rectangle
+(rounded-rect SDF mask with an anti-aliased edge, blurred backdrop, tint, 1 px border);
+Liquid Glass for the island (refraction offset along the SDF normal near the edge,
+specular rim, tint from the backdrop's mean luminance). Components register their panel
+rectangles; the frame draws world -> glass -> egui -> present.
+Verify: GPU tests on synthetic backdrops: `off` gives the exact opaque colour, the blur
+keeps the mean colour of a flat area and stays inside the SDF mask, the SDF corner
+coverage matches the analytic area, refraction moves samples inward along the normal,
+the tint follows a dark or bright backdrop; frame time of the passes measured at 1440p
+(target under 0.5 ms on this GPU); screenshots of all three strengths for your review.
+
+**7.3 HUD system and data.** `HudData`: a read-only snapshot built each frame from the
+client (local or spectated tee: position, velocity, weapons, DDNet character flags,
+freeze/ninja ticks, jumps; race time inputs; fps; ping = the local `PlayerInfo`
+latency, as the C++ scoreboard shows it; server address; local time; now playing),
+plus an event queue (broadcast, finish, record, kill/finish messages, track change).
+`Widget`: id, name, icon, anchor (9 points) + offset, enabled, own settings
+(bool / int / choice / ordered list), rendered through a small `Painter` (glass panel,
+pill, text, icon, image, progress, opacity/transform for animations). Layout and
+widget settings are stored as console lines in our `settings.cfg`
+(`hud_widget <id> <anchor> <x> <y> <enabled>`, `hud_set <id> <key> <value>`), parsed by
+the 6.7 console code. `HudData`, the events and `Painter` are the surface a later Lua
+API exposes (read-only data in, drawing out, no input or commands).
+Verify: anchor/offset maths and DPI scaling tests; settings round trip through the
+console parser (like 6.8); a `tests/server.rs`-style check that the sent inputs are
+byte-identical with every widget on and off (the HUD only draws).
+
+**7.4 HUD editor.** Opened from the Esc menu or a bind (`hud_editor`): game input goes
+to menu mode (6.8 rules), the cursor is free, widgets show outlines; drag to move with
+snapping (screen edges and centre, other widgets' edges, 8 pt grid; Shift disables),
+click for the widget's settings popover (toggles, order, compact mode), reset one /
+reset all, enable/disable list. Changes are saved when the editor closes.
+Verify: snapping and anchor-reassignment unit tests (a widget dragged to the right edge
+gets the right anchor and keeps its screen position on resize); a scripted live run
+(keyboard and mouse events sent to our window only) that moves a widget, closes the
+editor, restarts and finds it at the saved place.
+
+**7.5 Watermark widget** (SPEC §1; the look as close to 1:1 with the friend's HUD as
+the two PNG references allow). One dark glass pill top-left (offset 16, 16); inside, a
+white logo pill with a soft glow (icon + "DDNet-rs", icon only in compact mode); stats
+as icon + white value + grey unit, separated by faint dots. Items and defaults as in
+SPEC §1's table: user (on), uid = client id (off), fps (on), ping ms (on), server
+(off), time HH:MM (off), tps 50 (off), speed in tiles/s (off); reorderable, with a
+separator.
+Verify: the stat values against their C++ sources (fps averaged like the C++ debug
+FPS, ping as above, speed as the movement information of 7.6); layout measurements
+(paddings, font sizes 10/9, gaps 8, offset 16) as unit tests; side-by-side captures
+with `hud-watermark-dark-bg.png` and `hud-watermark-light-bg.png` at the same scale for
+your review (the references are video crops, so no pixel threshold).
+
+**7.6 Position/speed widget** (replaces the C++ movement information panel, bottom
+right): position in tiles, speed in tiles/s, aim angle, each toggleable, watermark
+style. Values ported from `CHud::GetMovementInformation` (hud.cpp:1475 ff.).
+Verify: numeric parity with the real C++ function through the `rs_parity` harness used
+for CCamera in 6.7 (CHud constructed in the zeroed CGameClient block), 100% identical.
+If CHud cannot be run that way, I come back to you before choosing another method.
+
+**7.7 DDRace status bar** (replaces `CHud::RenderPlayerState`, hud.cpp:842): one
+compact bar with the same indicators and meaning: jumps left, weapons owned and active,
+ninja and freeze progress, deep/live freeze, jetpack, endless hook and jump, solo,
+collision/hook/hammer/gun/shotgun/grenade/laser disabled, teleport guns, practice and
+the other DDNet character flags C++ shows; new icons, readability first.
+Verify: the decision logic (which indicators, the jump count, progress values) as a
+pure function ported line by line and tested on cases built from the C++ code; live on
+the local server with test commands (jetpack, endless, solo, super, freeze tiles) while
+the C++ client spectates our tee: in each state the set of indicators it shows equals
+ours (checked from captures).
+
+**7.8 Killfeed capsules** (replaces `CInfoMessages`): kill, team kill and finish
+messages as capsules top right that slide in and fade out, with the same entries,
+count limit and lifetime as C++ (`Sv_KillMsg`, `Sv_KillMsgTeam`, `Sv_RaceFinish`).
+Verify: message handling (grouping, order, limit, expiry) as unit tests against the
+C++ rules; live with two clients (kill command, a finish on a race map).
+
+**7.9 Dynamic Island** (top centre; states from `island-concept.png`): idle = race
+timer + mini cover when music plays; track change = cover, title and artist for 3 s,
+then back; broadcast = the server's centre message; finish/record = check icon, time
+and the difference to the record; pause/spectate notices. A priority queue decides what
+shows; size changes animate with springs. Liquid Glass when `rs_glass` is full.
+Logic ported exactly: the timer (`CHud::RenderGameTimer`, hud.cpp:118, incl.
+`GAMESTATEFLAG_RACETIME` and `Sv_DDRaceTime`), the broadcast (`CBroadcast`: duration and
+colour codes), finish/record text (`Sv_RaceFinish`, `Sv_Record`) with C++ `str_time`
+formatting.
+Verify: `str_time` golden vectors from `rs_golden` (every format and edge value); timer
+values against vectors from the same C++ formula with recorded GameInfo objects; live:
+the island shows the same timer text as the C++ client on the same server at the same
+tick (side-by-side capture), an rcon `broadcast`, a finish on a race map.
+
+**7.10 Media player.** SMTC on a background thread: sessions, title, artist, cover
+thumbnail, position, duration, playback state; previous / play-pause / next / seek.
+In the island: the mini cover in idle, the track-change state, and the expanded player
+(cover, title, artist, progress with elapsed/remaining, controls) opened by a bind,
+which frees the cursor like a menu; a compact capsule; the "⋯" menu (source session,
+compact, hide). Binds `media_play_pause`, `media_next`, `media_prev`. Without a session
+or on other OSes everything media-related hides.
+Verify: state mapping and time formatting unit tests; live with your player (Spotify,
+Yandex Music or a browser): title/cover/progress update, the controls act on the chosen
+session, closing the source hides the player (a checklist done by you).
+
+**7.11 Settings and finish.** Settings page entries (glass strength, UI scale, HUD
+editor, media on/off), the default HUD layout, a frame time check with everything on
+(target: M6 frame time + under 1 ms at 1440p), docs.
+Verify: all gates; the M6 screenshot comparisons still pass with the HUD disabled
+(map, tees and entities unchanged); a review session with you.
+
+### 10.4 Risks
+
+1. **Text quality.** egui's text is good but not pixel-identical to the references;
+   the references are blurry crops, so the target is "same look", reviewed by eye.
+2. **Glass cost.** Blur passes every frame at high resolutions; measured in 7.2 and
+   scaled down (fewer pyramid levels) if needed.
+3. **SMTC.** WinRT is asynchronous and some players report no timeline; the progress
+   row then hides (SPEC §2). The `windows` crate is large; only the needed features.
+4. **C++ HUD logic in harnesses.** CHud depends on more of CGameClient than CCamera
+   did; 7.6/7.7 may need a different harness or parity method.
+5. **Missing material from the friend** (MISSING.md: the rest of the watermark code,
+   theme colours, glass parameters, icon names): values taken from the screenshots.
+
+### 10.5 Questions for review
+
+1. **Fonts and icons in the repo:** Inter (OFL) and Phosphor (MIT) are not DDNet
+   assets. Commit the TTF files under `rust-client/assets/` with their licences
+   (embedded with `include_bytes!`), or load them from a user folder?
+2. **`windows` crate** for SMTC (Microsoft's official crate, large but feature-gated):
+   OK?
+3. **Default binds** for the HUD editor and the media player (C++ has none): e.g. F6
+   editor, F7 expanded player, the keyboard media keys for play/pause/next/previous?
+4. **Glass "subtle" level:** start with a small blur and ~85% opaque panels, tuned
+   with your review in 7.2?
+5. **Review points:** the gallery (7.1), the three glass strengths (7.2), the watermark
+   next to the references (7.5) and the island states (7.9). Anything else you want to
+   see before the code is final?
+
+---
+
+## 11. Roadmap after M7 (recorded 2026-11-24, not planned in detail yet)
+
+- **Antiping: HIGH PRIORITY, required before playing on public servers.** Port the C++
+  antiping exactly: `cl_antiping` and all its sub-settings (players, weapons, grenade,
+  ...), the anti-ping smoothing, weapon and projectile prediction (FireWeapon, ninja,
+  grenade and laser bounces) and the player prediction margins; verified against C++
+  like the rest of the physics (`rs_parity` worlds, 100% identical).
+- **Full feature parity with stock DDNet,** in the new style (not the stock look): every
+  client feature a player uses: chat, scoreboard, votes, emotes and the emote wheel,
+  spectating (incl. the spectator camera), dummy, demos (record and play), ghost,
+  kill/pause, name plates, and all relevant settings.
+- **Effects and particles** with C++ behaviour (explosions, hammer hits, freeze, death,
+  trails, powerup shine, muzzle flashes, ...).
+- **Menu redesign and server browser** (SPEC §4-5), together with public-server
+  support (master servers, server info) and HTTP map download.
+- **Lua scripting for visuals** (SPEC §7) after those: the 7.3 HUD API exposed to
+  sandboxed scripts, read-only data in, drawing out, never input or commands.
+
+The order between them is decided when M7 is done; antiping comes before any public
+server.

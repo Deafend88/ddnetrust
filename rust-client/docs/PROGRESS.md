@@ -406,8 +406,11 @@ M5 is complete. Not ported (see Later): weapons, teams/tuning messages, the dumm
   Screenshots unchanged: LearnToPlay 99.86%, ctf1 `-RustSubject` 99.75%. Played by the
   user: not yet for 6.8 (the 6.7 build was).
 #### M6 status (2026-11-24)
-Done and pushed: 6.1-6.8, M6 complete. Next milestone: to be agreed with the user
-(open items below; HUD, chat, particles and the full menus are not in M6).
+Done and pushed: 6.1-6.8, M6 complete. After it: the 6.8 map-texture leak is fixed (map
+textures are freed when a connection ends; `tests/gfx.rs map_textures_are_freed`).
+Next: M7 (visual identity and HUD), planned in PLAN.md §10, waiting for the user's review
+(questions in §10.5); the roadmap after M7 (antiping first, before any public server)
+is in §11. Do not start M7 code before the review.
 
 Open items from 6.6 (not checked live, code ported line by line):
 - Flags: this repo's DDNet-Server only runs the "ddnet" game type, which never sends
@@ -423,7 +426,8 @@ Open from 6.7/6.8: the spectator camera (free view, auto-sync, smoothing),
 configs, checking the aim against the C++ client by hand. Menus: name/skin changes
 apply on the next connect (no Cl_ChangeInfo yet), no colour pickers, no clipboard, the
 key readers change only a command's first bind; map textures and collision of earlier
-connections are not freed (`ponytail:` in main.rs).
+connections: textures freed since the fix above; the collision stays leaked
+(`ponytail:` in main.rs).
 
 Screenshot workflow reminders: run a plain `cargo build` before
 `scripts/compare_screenshots.ps1` (integration-test builds overwrite
