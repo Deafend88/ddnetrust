@@ -59,16 +59,6 @@ struct Panel {
     screen: vec2f, // target size in pixels
     radius: f32,   // pixels
     liquid: f32,   // 1 for Liquid Glass
-    saturation: f32,
-    pad0: f32,
-    pad1: f32,
-    pad2: f32,
-}
-
-// more (> 1) or less colour, around the pixel's own luma
-fn saturate(c: vec3f) -> vec3f {
-    let l = dot(c, vec3f(0.299, 0.587, 0.114));
-    return max(mix(vec3f(l), c, g.saturation), vec3f(0.0));
 }
 
 @group(0) @binding(0) var blurred: texture_2d<f32>;
@@ -103,7 +93,7 @@ fn fs_panel(@builtin(position) pos: vec4f) -> @location(0) vec4f {
     let d = sd(p, half, r);
     let cover = clamp(0.5 - d, 0.0, 1.0);
     if g.liquid < 0.5 {
-        let col = saturate(textureSampleLevel(blurred, lin, pos.xy / g.screen, 0.0).rgb);
+        let col = textureSampleLevel(blurred, lin, pos.xy / g.screen, 0.0).rgb;
         return vec4f(col * cover, cover);
     }
     // outward normal of the distance field
@@ -113,7 +103,7 @@ fn fs_panel(@builtin(position) pos: vec4f) -> @location(0) vec4f {
     let band = min(REFRACT_BAND, min(half.x, half.y));
     let t = clamp(1.0 + d / band, 0.0, 1.0); // 1 at the edge, 0 at the band's depth
     let at = pos.xy - n * REFRACT * t * t;
-    var col = saturate(textureSampleLevel(blurred, lin, at / g.screen, 0.0).rgb);
+    var col = textureSampleLevel(blurred, lin, at / g.screen, 0.0).rgb;
     // the backdrop's mean over the panel: darker over bright backdrops, so text stays legible
     var mean = vec3f(0.0);
     for (var i = -2; i <= 2; i++) {
@@ -131,21 +121,12 @@ fn fs_panel(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 /// The pyramid's format: 16-bit float, so blurred gradients do not band.
 const LEVEL_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
-/// Pyramid depth per strength: subtle is a light blur (1/8 size), full turns the game
-/// into soft colour fields (1/128).
+/// Pyramid depth per strength: subtle is a light blur (1/8 size), full a strong one.
 fn levels(glass: Glass) -> usize {
     match glass {
         Glass::Off => 0,
         Glass::Subtle => 3,
-        Glass::Full => 7,
-    }
-}
-
-/// Colour of the blurred backdrop: full is frosted glass, a little more saturated.
-fn saturation(glass: Glass) -> f32 {
-    match glass {
-        Glass::Full => 1.25,
-        _ => 1.0,
+        Glass::Full => 5,
     }
 }
 
@@ -394,7 +375,6 @@ impl GlassRenderer {
             pipeline: self.panel.clone(),
             uniform_layout: self.panel_layouts[1].clone(),
             textures,
-            saturation: saturation(glass),
             draws: Vec::new(),
         })
     }
@@ -405,7 +385,6 @@ pub struct GlassFrame {
     pipeline: wgpu::RenderPipeline,
     uniform_layout: wgpu::BindGroupLayout,
     textures: wgpu::BindGroup,
-    saturation: f32,
     /// One uniform bind group per panel, in paint order.
     draws: Vec<wgpu::BindGroup>,
 }
@@ -457,10 +436,6 @@ impl CallbackTrait for Backdrop {
             h as f32,
             self.radius * ppp,
             self.liquid as u32 as f32,
-            frame.saturation,
-            0.0,
-            0.0,
-            0.0,
         ];
         // ponytail: one small buffer per panel per frame; a shared buffer with dynamic
         // offsets if panels ever number in the hundreds

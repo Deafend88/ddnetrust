@@ -93,8 +93,8 @@ fn off_panel_is_the_exact_opaque_colour() {
 }
 
 /// Outside the mask nothing changes (left half red, right half blue); inside, a flat
-/// area keeps its colour (a grey: full glass's saturation leaves greys alone, and its
-/// blur reaches across this whole target, so the flat area is all of it).
+/// area keeps its colour (a flat grey over the whole target, so the result does not
+/// depend on how far the blur reaches).
 #[test]
 fn blur_keeps_flat_colour_and_stays_inside_the_mask() {
     let rect = Rect::from_min_max(pos2(40.0, 40.0), pos2(150.0, 200.0));
@@ -209,31 +209,4 @@ fn liquid_tint_follows_the_backdrop() {
         return;
     };
     assert!(bright < dark && dark < 1.0, "dark {dark}, bright {bright}");
-}
-
-/// Full glass is a little more saturated than its backdrop; subtle keeps the colour.
-#[test]
-fn full_glass_saturates() {
-    let rect = Rect::from_min_size(pos2(60.0, 60.0), vec2(280.0, 120.0));
-    let chroma = |glass| {
-        let img = render(
-            glass,
-            |b| {
-                quad(
-                    b,
-                    0.0,
-                    400.0,
-                    [200.0 / 255.0, 80.0 / 255.0, 60.0 / 255.0, 1.0],
-                )
-            },
-            backdrop_only(rect, 24.0, false),
-        )?;
-        let p = px(&img, 200, 120);
-        Some(p[..3].iter().max().unwrap() - p[..3].iter().min().unwrap())
-    };
-    let (Some(subtle), Some(full)) = (chroma(Glass::Subtle), chroma(Glass::Full)) else {
-        return;
-    };
-    assert_eq!(subtle, 140);
-    assert!(full > subtle + 20, "full {full}, subtle {subtle}");
 }

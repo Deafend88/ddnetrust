@@ -17,7 +17,8 @@ pub mod color {
     /// Secondary text (captions, units); widgets take it from the style
     /// (`Visuals::weak_text_color`), which picks it per glass strength.
     pub const TEXT_SECONDARY: Color32 = Color32::from_rgb(172, 172, 178);
-    /// Secondary text over full glass's lighter tint (4.5:1 over the dm1 review render).
+    /// Secondary text over full glass, where more of the game shows (5.6:1 on the dm1
+    /// review render; 172 grey would be 4.0:1).
     pub const TEXT_SECONDARY_FULL: Color32 = Color32::from_rgb(204, 204, 210);
     pub const SEPARATOR: Color32 = Color32::from_rgba_premultiplied(14, 14, 14, 14);
     pub const BORDER: Color32 = Color32::from_rgba_premultiplied(8, 8, 8, 8);
@@ -121,12 +122,12 @@ impl Glass {
     /// A panel's fill: opaque, ~85% (subtle, PLAN §10.6) or ~70%. The blur behind it
     /// comes with 7.2.
     pub fn panel_fill(self) -> Color32 {
-        match self {
-            Self::Off => color::SURFACE,
-            Self::Subtle => color::SURFACE.gamma_multiply_u8(217),
-            // frosted: a lighter tint, more of the (saturated) blur shows
-            Self::Full => color::SURFACE_RAISED.gamma_multiply_u8(160),
-        }
+        let alpha = match self {
+            Self::Off => 255,
+            Self::Subtle => 217,
+            Self::Full => 178,
+        };
+        color::SURFACE.gamma_multiply_u8(alpha)
     }
 
     /// Secondary text on this strength's panels.
