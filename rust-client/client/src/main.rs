@@ -487,6 +487,8 @@ impl App {
             r.ui.frame(&r.window, &r.gfx, &target, size, |ctx| {
                 action = menu.show(ctx, connected, settings);
             });
+        } else {
+            r.ui.hidden();
         }
         r.window.pre_present_notify();
         r.gfx.queue.present(surface_frame);
@@ -560,11 +562,12 @@ impl ApplicationHandler for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
-        // egui sees every event; it acts on them only while a menu is drawn
-        let menu_visible = self.menu_visible();
+        // egui gets input only while a menu is drawn (and no key is being read), but the
+        // window focus always: egui draws keyboard focus only in a focused window
+        let to_egui = matches!(event, WindowEvent::Focused(_))
+            || (self.menu_visible() && self.menu.reading_key.is_none());
         if let Some(r) = &mut self.running
-            && menu_visible
-            && self.menu.reading_key.is_none()
+            && to_egui
         {
             r.ui.on_window_event(&r.window, &event);
         }

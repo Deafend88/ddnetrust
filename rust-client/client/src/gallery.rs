@@ -105,7 +105,7 @@ fn page(ctx: &egui::Context) {
                     ui.add_space(space::S);
                     ui.horizontal_wrapped(|ui| {
                         for glyph in icons::ALL {
-                            w::icon(ui, glyph, size::ICON + 4.0, color::TEXT);
+                            w::icon(ui, glyph, size::ICON_LARGE, color::TEXT);
                         }
                     });
                 });
@@ -113,11 +113,11 @@ fn page(ctx: &egui::Context) {
                     // the watermark's look (7.5 builds the real widget)
                     w::pill(ui, Glass::Subtle.panel_fill(), |ui| {
                         w::pill(ui, color::LOGO, |ui| {
-                            w::icon(ui, icons::BOLT, size::ICON - 1.0, color::LOGO_TEXT);
+                            w::icon(ui, icons::BOLT, size::ICON_SMALL, color::LOGO_TEXT);
                             w::text(
                                 ui,
                                 "DDNet-rs",
-                                size::BODY - 1.0,
+                                size::CAPTION,
                                 Weight::Regular,
                                 color::LOGO_TEXT,
                             );
@@ -144,7 +144,7 @@ fn page(ctx: &egui::Context) {
                     });
                     ui.add_space(space::M);
                     w::pill(ui, Glass::Subtle.panel_fill(), |ui| {
-                        w::icon(ui, icons::CHECK_CIRCLE, size::TITLE, color::SUCCESS);
+                        w::icon(ui, icons::CHECK_CIRCLE, size::ICON_LARGE, color::SUCCESS);
                         w::text(
                             ui,
                             "Finish  16:05.45",

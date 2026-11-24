@@ -46,10 +46,9 @@ pub fn stat(ui: &mut Ui, glyph: &str, value: &str, unit: Option<&str>) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
         icon(ui, glyph, size::ICON, color::TEXT);
-        ui.add_space(space::XS + 2.0);
+        ui.add_space(space::XS);
         text(ui, value, size::BODY, Weight::Medium, color::TEXT);
         if let Some(unit) = unit {
-            ui.add_space(1.0);
             text(ui, unit, size::BODY, Weight::Regular, color::TEXT_SECONDARY);
         }
     });
@@ -97,7 +96,7 @@ pub fn accent_button(ui: &mut Ui, glyph: Option<&str>, label: &str) -> Response 
 
 /// An on/off switch with an animated knob.
 pub fn toggle(ui: &mut Ui, on: &mut bool) -> Response {
-    let size = vec2(44.0, 26.0);
+    let size = vec2(space::XXL + space::M, space::XL);
     let (rect, mut response) = ui.allocate_exact_size(size, Sense::click());
     if response.clicked() {
         *on = !*on;
@@ -133,10 +132,10 @@ pub fn segmented(ui: &mut Ui, selected: &mut usize, labels: &[&str]) -> Response
     Frame::new()
         .fill(color::SURFACE_RAISED)
         .corner_radius(CornerRadius::same(radius::PILL))
-        .inner_margin(Margin::same(3))
+        .inner_margin(Margin::same(space::XS as i8))
         .show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 2.0;
+                ui.spacing_mut().item_spacing.x = space::XS;
                 let mut changed: Option<Response> = None;
                 for (i, l) in labels.iter().enumerate() {
                     let on = *selected == i;
@@ -182,7 +181,7 @@ pub fn popover<R>(
             Frame::new()
                 .fill(glass.panel_fill())
                 .stroke(Stroke::new(1.0, color::BORDER))
-                .corner_radius(CornerRadius::same(radius::CARD - 4))
+                .corner_radius(CornerRadius::same(radius::CARD))
                 .inner_margin(Margin::same(space::L as i8))
                 .shadow(POPUP_SHADOW),
         )

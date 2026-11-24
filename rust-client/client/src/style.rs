@@ -40,6 +40,7 @@ pub mod space {
     pub const M: f32 = 12.0;
     pub const L: f32 = 16.0;
     pub const XL: f32 = 24.0;
+    pub const XXL: f32 = 32.0;
 }
 
 /// Type scale in points.
@@ -49,7 +50,9 @@ pub mod size {
     pub const LABEL: f32 = 16.0;
     pub const TITLE: f32 = 19.0;
     pub const LARGE: f32 = 26.0;
+    pub const ICON_SMALL: f32 = 14.0;
     pub const ICON: f32 = 17.0;
+    pub const ICON_LARGE: f32 = 21.0;
 }
 
 /// Animation timing in seconds.
@@ -183,7 +186,7 @@ pub fn install(ctx: &egui::Context, glass: Glass) {
         s.spacing.item_spacing = egui::vec2(space::M, space::M);
         s.spacing.button_padding = egui::vec2(space::L, space::S);
         s.spacing.window_margin = egui::Margin::same(space::XL as i8);
-        s.spacing.interact_size.y = 34.0;
+        s.spacing.interact_size.y = space::XXL;
         let v = &mut s.visuals;
         *v = egui::Visuals::dark();
         v.override_text_color = Some(color::TEXT);
@@ -214,8 +217,11 @@ pub fn install(ctx: &egui::Context, glass: Glass) {
         v.widgets.inactive.weak_bg_fill = color::SURFACE_RAISED;
         v.widgets.hovered.bg_fill = color::SURFACE_HOVER;
         v.widgets.hovered.weak_bg_fill = color::SURFACE_HOVER;
-        v.widgets.active.bg_fill = color::ACCENT;
-        v.widgets.active.weak_bg_fill = color::ACCENT;
+        // egui styles a focused widget as active: focus is a ring, not the accent, so a
+        // focused button never looks like the view's one primary action
+        v.widgets.active.bg_fill = color::SURFACE_HOVER;
+        v.widgets.active.weak_bg_fill = color::SURFACE_HOVER;
+        v.widgets.active.bg_stroke = egui::Stroke::new(1.0, color::TEXT);
         v.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, color::SEPARATOR);
     });
 }

@@ -9,7 +9,7 @@ use crate::config::{Binds, Settings, escape};
 use crate::gfx::{Gfx, Size};
 use crate::icons;
 use crate::storage::Storage;
-use crate::style::{self, Glass, color, size};
+use crate::style::{self, Glass, Weight, color, size, space};
 use crate::widgets as w;
 
 /// egui and its wgpu painter, without a window (the gallery draws headless).
@@ -105,6 +105,17 @@ impl Ui {
         self.state.on_window_event(window, event).consumed
     }
 
+    /// Called on frames without menus: egui runs no passes then, so its focus would
+    /// survive and land on whatever widget has the same auto id when a menu shows again
+    /// (C++ menus open with nothing focused).
+    pub fn hidden(&self) {
+        self.painter.ctx.memory_mut(|m| {
+            if let Some(id) = m.focused() {
+                m.surrender_focus(id);
+            }
+        });
+    }
+
     /// Runs `build` for one frame and draws the result onto `target`.
     pub fn frame(
         &mut self,
@@ -121,6 +132,9 @@ impl Ui {
 }
 
 /// The bindable controls shown in the settings, as (label, command).
+/// The main menu's width: one column of full-width controls.
+const MENU_WIDTH: f32 = 320.0;
+
 const CONTROLS: [(&str, &str); 5] = [
     ("Move left", "+left"),
     ("Move right", "+right"),
@@ -177,63 +191,77 @@ impl Menu {
         settings: &mut Settings,
     ) -> Option<Action> {
         let mut action = None;
-        egui::Window::new(if self.page == Page::Settings {
-            "Settings"
-        } else {
-            "DDNet-rs"
-        })
-        .collapsible(false)
-        .resizable(false)
-        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
-        .show(ctx, |ui| match self.page {
-            Page::Main => action = self.main_page(ui, connected),
-            Page::Settings => {
-                self.settings_page(ui, settings);
-                if ui.button("Back").clicked() {
-                    self.page = Page::Main;
-                    self.reading_key = None;
-                    action = Some(Action::SettingsDone);
+        // no egui title bar (a band and a rule): the title is plain text in the card
+        egui::Window::new("menu")
+            .title_bar(false)
+            .resizable(false)
+            .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+            .show(ctx, |ui| {
+                let title = match self.page {
+                    Page::Main => "DDNet-rs",
+                    Page::Settings => "Settings",
+                };
+                w::text(ui, title, size::TITLE, Weight::SemiBold, color::TEXT);
+                ui.add_space(space::S);
+                match self.page {
+                    Page::Main => action = self.main_page(ui, connected),
+                    Page::Settings => {
+                        self.settings_page(ui, settings);
+                        if w::button(ui, None, "Back").clicked() {
+                            self.page = Page::Main;
+                            self.reading_key = None;
+                            action = Some(Action::SettingsDone);
+                        }
+                    }
                 }
-            }
-        });
+            });
         action
     }
 
     fn main_page(&mut self, ui: &mut egui::Ui, connected: bool) -> Option<Action> {
         let mut action = None;
-        if connected {
-            if w::accent_button(ui, Some(icons::PLAY), "Back to the game").clicked() {
-                action = Some(Action::Resume);
-            }
-            if w::button(ui, Some(icons::DISCONNECT), "Disconnect").clicked() {
-                action = Some(Action::Disconnect);
-            }
-        } else {
-            ui.horizontal(|ui| {
-                w::icon(ui, icons::LINK, size::ICON, color::TEXT_SECONDARY);
-                let edit = ui
-                    .add(egui::TextEdit::singleline(&mut self.address).hint_text("Server address"));
-                let enter = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                if w::accent_button(ui, Some(icons::PLAY), "Connect").clicked() || enter {
-                    match self.address.trim().parse::<SocketAddr>() {
-                        Ok(a) if a.ip().is_loopback() => action = Some(Action::Connect(a)),
-                        Ok(_) => self.error = Some("only local (loopback) servers for now".into()),
-                        Err(_) => self.error = Some("address must look like 127.0.0.1:8303".into()),
+        // one column of full-width controls, the primary action first
+        ui.set_width(MENU_WIDTH);
+        ui.with_layout(
+            egui::Layout::top_down_justified(egui::Align::Center),
+            |ui| {
+                if connected {
+                    if w::accent_button(ui, Some(icons::PLAY), "Back to the game").clicked() {
+                        action = Some(Action::Resume);
+                    }
+                    if w::button(ui, Some(icons::DISCONNECT), "Disconnect").clicked() {
+                        action = Some(Action::Disconnect);
+                    }
+                } else {
+                    let edit = ui.add(
+                        egui::TextEdit::singleline(&mut self.address)
+                            .hint_text("Server address")
+                            .desired_width(f32::INFINITY),
+                    );
+                    let enter = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                    if w::accent_button(ui, Some(icons::PLAY), "Connect").clicked() || enter {
+                        match self.address.trim().parse::<SocketAddr>() {
+                            Ok(a) if a.ip().is_loopback() => action = Some(Action::Connect(a)),
+                            Ok(_) => {
+                                self.error = Some("Only local servers (127.0.0.1) for now.".into())
+                            }
+                            Err(_) => {
+                                self.error = Some("Enter an address like 127.0.0.1:8303.".into())
+                            }
+                        }
+                    }
+                    if let Some(e) = &self.error {
+                        ui.colored_label(color::DANGER, e);
                     }
                 }
-            });
-            if let Some(e) = &self.error {
-                ui.colored_label(color::DANGER, e);
-            }
-        }
-        ui.horizontal(|ui| {
-            if w::button(ui, Some(icons::GEAR), "Settings").clicked() {
-                self.page = Page::Settings;
-            }
-            if w::button(ui, Some(icons::POWER), "Quit").clicked() {
-                action = Some(Action::Quit);
-            }
-        });
+                if w::button(ui, Some(icons::GEAR), "Settings").clicked() {
+                    self.page = Page::Settings;
+                }
+                if w::button(ui, Some(icons::POWER), "Quit").clicked() {
+                    action = Some(Action::Quit);
+                }
+            },
+        );
         action
     }
 
@@ -297,15 +325,16 @@ impl Menu {
                         lines.push(format!("rs_glass {glass}"));
                     }
                     ui.end_row();
-                    ui.label("UI scale %");
+                    ui.label("UI scale");
                     let mut scale = c.rs_ui_scale;
                     // applied when done, not on every drag step (it rescales the UI)
-                    let r = ui.add(egui::DragValue::new(&mut scale).range(50..=200));
+                    let r = ui.add(egui::DragValue::new(&mut scale).range(50..=200).suffix("%"));
                     if r.drag_stopped() || r.lost_focus() {
                         lines.push(format!("rs_ui_scale {scale}"));
                     }
                     ui.end_row();
-                    ui.label("Data dir (on restart)");
+                    ui.label("Data dir")
+                        .on_hover_text("DDNet's data folder; used after a restart");
                     let mut dir = c.rs_data_dir.clone();
                     if ui.text_edit_singleline(&mut dir).changed() {
                         lines.push(format!("rs_data_dir \"{}\"", escape(&dir)));
