@@ -122,7 +122,7 @@ Maps: coverage, LearnToPlay, Gold Mine, Tutorial, Tsunami, ctf1, dm1 (read from
 
 M5 is complete. Not ported (see Later): weapons, teams/tuning messages, the dummy.
 
-### M6 — rendering, input, basic UI (in progress: 6.1-6.6 done, 6.7 next)
+### M6 — rendering, input, basic UI (in progress: 6.1-6.7 done, 6.8 next)
 - Plan in `docs/PLAN.md` §9, approved 2026-11-22. The open questions (§9.6) are
   answered in §9.7.
 - 6.1 Window and quad renderer: new crate `client/` (binary `ddnet-rs`, wgpu 30.0.2,
@@ -316,53 +316,85 @@ M5 is complete. Not ported (see Later): weapons, teams/tuning messages, the dumm
   Not verified live: flags (this repo's server has no CTF game type), dragger, freeze
   and gun lasers (none in view at the subject's spawn), projectile tune zones (no
   `Sv_TuneParams` yet).
-#### M6 status (2026-11-23)
-Done and pushed: 6.1-6.6 (last commit b718a73fd, M6.6 entities). The working tree was
-clean at that point; everything listed above as verified is committed.
+- 6.7 Mouse, binds, camera, camera messages, settings. `client/src/config.rs` ports the
+  C++ console line parsing (ExecuteLineStroked's `;`/`#`/quote splitting, ParseStart,
+  ParseArgs with `str_toint`/`strtol`, ColorParse for packed numbers), the config
+  variables we use (C++ names, defaults, clamping, `str_copy` UTF-8 truncation, colour
+  pack with DARKEST_LGT) and CBinds (SetDefaults + SetDDRaceBinds, GetBindSlot with
+  `str_next_token`'s quirks, GetKeyBindName, OnInput with modifier masks and active
+  binds, the saved-config format). `keynames.rs` is generated from
+  `src/engine/client/keynames.cpp` (`scripts/gen_keys.py`). `controls.rs` ports
+  CControls (OnCursorMove, ClampMousePos, Get{Min,Max}MouseDistance, the `+left`,
+  `+right`, `+jump`, `+hook`, `+fire`, `+weapon1-5`, `+nextweapon`, `+prevweapon`
+  commands, SnapInput's target and input-type flags) and maps winit keys/buttons/wheel
+  to C++ key ids. `camera.rs` ports CCamera for a playing player (CCubicBezier,
+  ChangeZoom, `zoom+`/`zoom-`/`zoom`, UpdateCamera's zoom smoothing and dyncam offset,
+  OnRender's center). `net/client.rs` sends `Cl_ShowDistance`/`Cl_CameraInfo` like
+  CGameClient::OnNewSnapshot (zoom reported while smoothing, spectators keep the last
+  values, only on change); `ddnet-headless` reports a default 16:9 camera and has
+  `--aim X,Y`. `ddnet-rs` reads `settings_ddnet.cfg` once from the storage paths (read
+  only, checked unchanged by hash) then `%APPDATA%\DDNet-rs\settings.cfg`, joins with
+  that name/skin/colours, uses raw mouse motion with a hidden confined cursor, runs
+  key/mouse/wheel events through the binds, zooms, and centers on tee + dyncam offset.
+  Esc frees the mouse, a click grabs it (until the 6.8 menus); `--no-grab` for scripts.
+  Verified: `rs_parity camera` runs the real CControls/CCamera
+  (`src/tools/rs_parity_camera.cpp`: both components placement-constructed in a zeroed
+  CGameClient-sized block, private members reached by explicit instantiation; only
+  CGameClient::IsWorldPaused and CScoreboard::IsActive stubbed, not reached): 5,000
+  mouse cases, 400 sequences x 80 frames of camera updates with mouse moves and zoom
+  commands, 2,000 camera-message bodies packed with CNetMsg_*::Pack: 100% bit/byte
+  identical (`tests/input.rs`). `scripts/cpp_settings.ps1` has the C++ client load
+  `tests/golden/settings/corpus.cfg` (quotes, escapes, `;`, `#`, modifiers, `&N` keys,
+  invalid and out-of-range values, a name cut mid-UTF-8, DDRace binds with level 0)
+  as its settings file and save it: our variables and all 512+ bind lines are
+  identical, as are the default binds. Mutations: all caught except 2 equivalent ones
+  (10 camera/mouse, 9 settings/binds).
+  Live (`tests/server.rs camera_messages_set_network_clipping`): two tees stand at their
+  dm1 spawns (1280 px apart) while one steps its zoom 0.4..2.5; the other tee is in its
+  snapshots exactly when C++ `UpdateNetworkClipRadius` + `IsSnappingCharacterInView`
+  say so (flips between zoom 1.3 and 1.4; without camera info it would flip near 0.9,
+  without the show distance never), and the teehistorian holds the exact bytes of
+  every message sent. Fails with the messages switched off.
+  `rendered_positions_are_smooth` had become flaky; two real causes, no bug: (1) the
+  server now clips to our 16:9 view (radius 1035 px instead of its 1200 px default), so
+  the other tee (~1250 px away) is seen less: the test runs 10 s; (2) rendering runs a
+  tick behind the newest snapshot with snapshots every 2 ticks, so the other tee is
+  extrapolated (IntraGameTick up to ~1.5, unclamped like C++) and snaps onto the new
+  interval at each switch. The test now holds every non-switch frame to half a
+  snapshot step (observed ~2-3 px, stricter than before) and switch frames (<5%) to one.
+  Screenshots (plain `cargo build` first; both clients on default settings): Gold Mine
+  99.63% (rotating gear, C++ cursor), LearnToPlay 99.81%, Tutorial 99.50%, Tsunami
+  99.93% (88% when the C++ client happens to open its menu on losing focus: a capture
+  artefact). New `compare_screenshots.ps1 -RustSubject`: DDNet-rs plays as "subject",
+  the C++ client spectates it, no `sv_show_all_default`: dm1 99.34%, ctf1 99.74%,
+  unmasked; every entity in view arrives (differences: pickup bobbing, sun rays). The
+  left-facing tee (`-Subject "--aim -100,0"`) draws like C++. `ddnet-rs` against a local
+  server with the real user dir joins as the configured name, colours applied.
+  Not checked: the same raw mouse motion giving the same aim as the C++ client by hand
+  (the scaling itself is covered numerically); the spectator camera is not ported.
+- Golden/parity data is protected by `rust-client/.gitattributes` (`-text`): stored and
+  checked out byte for byte (the C++-saved configs keep their CRLF).
+#### M6 status (2026-11-24)
+Done and pushed: 6.1-6.7. Next: 6.8 menus (PLAN §9.3).
 
 Open items from 6.6 (not checked live, code ported line by line):
 - Flags: this repo's DDNet-Server only runs the "ddnet" game type, which never sends
   flags. Needs a server that does (not this repo's) or a test that feeds flag objects.
 - Dragger, freeze and gun lasers: none were in view at the `-Subject` spawn on
-  coverage. Next try: `-Subject` runs on maps/spawns where they are on screen, or a
-  fixed-view check once 6.7 can point the camera anywhere.
+  coverage. Next try: `-Subject` runs on maps/spawns where they are on screen.
 - Projectiles (and laser widths) in tune zones: every zone uses the default tuning
   until `Sv_TuneParams` and the tune zone messages are handled.
 - Not in M6 at all: particles (trails, explosions, powerup shine), muzzle flashes,
-  emoticon messages, the hook collision line.
-
-#### 6.7 next steps (PLAN §9.3 6.7, §9.7 answer 2), in order
-1. Settings: read `%APPDATA%\DDNet\settings_ddnet.cfg` once, read only, for
-   `player_name`, `player_skin`, `player_use_custom_color`, `player_color_body`,
-   `player_color_feet`, `inp_mousesens` and the `bind` lines (C++ console syntax,
-   quoted strings); our own `%APPDATA%\DDNet-rs\settings.cfg` overrides it. Never
-   write to `%APPDATA%\DDNet`. Send name/skin/colours in StartInfo.
-2. Key names and default binds: port `src/engine/client/keynames.h` and
-   `CBinds::SetDefaults` (binds.cpp:269); `rs_parity` dumps both for a 100% check.
-   Handle `+left`, `+right`, `+jump`, `+hook`, `+fire`, weapon keys and zoom keys;
-   ignore other commands for now.
-3. Mouse: raw motion (`DeviceEvent::MouseMotion`), cursor hidden and confined in game;
-   `CControls::OnCursorMove` (controls.cpp:442) scaling by `inp_mousesens / 100`,
-   `ClampMousePos` (:487), `GetMaxMouseDistance` (:519), dyncam settings; the mouse
-   position becomes the input target (`SnapInput`, :241). `rs_parity` vectors for the
-   clamp and distance functions.
-4. Camera: `CCamera::UpdateCamera`/`OnRender` (camera.cpp:114, :289): center on the
-   local tee plus the deadzone/follow-factor offset, `cl_default_zoom`, zoom steps,
-   `ChangeZoom` smoothing (:81, `cl_smooth_zoom_time`). Numeric parity for zoom steps
-   and smoothing.
-5. Camera messages: `Cl_ShowDistance` and `Cl_CameraInfo` as gameclient.cpp:2313-2392
-   (which zoom is reported while smoothing, sent only on change); also from
-   `ddnet-headless` with a fixed 16:9 aspect. Check the bytes against C++ packing and
-   that the server accepts both (no invalid-message log).
-6. Verify: a left-facing tee screenshot (still open from 6.4: aim the subject with
-   `ddnet-headless` or our own mouse), dm1/ctf1 comparisons without
-   `sv_show_all_default 1` (camera messages make the server send what we show), and
-   the same raw mouse input giving the same aim as the C++ client (by hand, once).
+  emoticon messages, the hook collision line, HUD and cursor.
+Open from 6.7: the spectator camera (free view, auto-sync, smoothing), Esc menu (6.8),
+`+showhookcoll`, chat/emote/spectate/kill/vote binds (ignored), hex/named colours in
+configs, checking the aim against the C++ client by hand.
 
 Screenshot workflow reminders: run a plain `cargo build` before
 `scripts/compare_screenshots.ps1` (integration-test builds overwrite
 `target/debug/ddnet-rs.exe`); use `-Subject` and `-ServerArgs "sv_show_all_default 1"`
-for scenes that do not stay still; `examples/maprender.rs` renders a map at a given
+for scenes that do not stay still, or `-RustSubject` to check what the server sends us;
+`examples/maprender.rs` renders a map at a given
 center for fixed-view checks; mask pickups (they bob on each client's own clock).
 
 ## Later
@@ -373,7 +405,6 @@ center for fixed-view checks; mask pickups (they bob on each client's own clock)
   `DDNetCharacter`/GameInfoEx.
 
 ## Not yet sent by the Rust client (a default C++ client sends these)
-- `Cl_ShowDistance`, `Cl_CameraInfo`: need the camera/window (M6).
 - `/timeout <code>` chat after ~50 snapshots: needs the timeout seed config.
 - Connectionless server-info request after entering the game (server browser format).
 - HTTP map download (deferred, PLAN §8).
@@ -428,12 +459,15 @@ Build the `rs_parity` target like `rs_golden`, then per map (repo root):
     build-rs/rs_parity.exe skins rust-client/tests/golden/skins.txt data/skins
     build-rs/rs_parity.exe interp rust-client/tests/golden/interp.txt
     build-rs/rs_parity.exe items data/maps/coverage.map rust-client/tests/golden/items.txt
+    build-rs/rs_parity.exe camera rust-client/tests/golden/camera.txt
+    rust-client\scripts\cpp_settings.ps1   # needs build-rs-client\DDNet.exe (PowerShell)
 
 All modes are deterministic: the data regenerates byte for byte.
 
 ## Regenerate protocol code and content data
     python rust-client/scripts/gen_protocol.py   # needs rustfmt on PATH
     python rust-client/scripts/gen_content.py
+    python rust-client/scripts/gen_keys.py
 
 ## Known issues / blockers
 - Resend buffer is a byte budget, not C++'s ring buffer (differs only with ~32 KiB

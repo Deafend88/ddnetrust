@@ -193,3 +193,20 @@ image land in `%TEMP%\ddnet-rs-compare\`. Two windows open for a few seconds.
 
 The GPU test (`cargo test -p ddnet-rs --test gfx`) checks a renderer test pattern pixel by
 pixel; it reports itself skipped when no graphics adapter is available.
+
+## Play on the local server with DDNet-rs
+
+Start the local server as in step 2, then in a second PowerShell:
+
+```powershell
+Set-Location C:\ddnetrust-master\rust-client
+cargo build --release -p ddnet-rs
+.\target\release\ddnet-rs.exe 127.0.0.1:8303 --size 1280x720 --vsync
+```
+
+DDNet-rs reads `%APPDATA%\DDNet\settings_ddnet.cfg` once (never writes it): your name,
+skin, colours, mouse sensitivity, dyncam/zoom settings and binds. Working binds: `+left`,
+`+right`, `+jump`, `+hook`, `+fire`, `+weapon1`-`5`, `+nextweapon`, `+prevweapon`,
+`zoom+`, `zoom-`, `zoom` (others are ignored). Esc frees the mouse, a click grabs it
+again, F12 saves a screenshot to `%APPDATA%\DDNet-rs\screenshots`. Only loopback
+servers are accepted.

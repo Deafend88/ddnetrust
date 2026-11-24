@@ -150,3 +150,26 @@ only matters for names so long that neither file can exist.
 - SnapCollectEntities sorts with `std::sort` (unstable); ours is stable. Servers give
   every entity its own snapshot id, so the order is the same.
 - Particles (bullet and smoke trails, powerup shine, explosions) are not drawn.
+
+## 2026-11-24 — Input, camera and settings: what differs from C++ on purpose
+
+- Settings: the C++ client's `settings_ddnet.cfg` is read once at start (first storage
+  path that has it) and never written; then our own `%APPDATA%\DDNet-rs\settings.cfg`.
+  Only our variables, `bind`, `unbind` and `unbindall` are executed; every other command
+  (other clients' settings, `exec`, ...) is ignored. Colours are read in the packed form
+  the C++ client saves; `$RRGGBB` and colour names are not supported yet.
+- Binds run only the commands DDNet-rs implements (`+left`, `+right`, `+jump`, `+hook`,
+  `+fire`, `+weapon1`-`5`, `+nextweapon`, `+prevweapon`, `zoom+`, `zoom-`, `zoom`); chat,
+  emote, spectate, kill, vote and console binds do nothing yet.
+- Esc frees the mouse and a click grabs it again (C++ opens its menu); keys keep
+  working meanwhile. Comes with the 6.8 menus. winit's synthetic key events on focus
+  changes are ignored, like C++, which only clears its key states.
+- The spectator camera (free view, auto-sync with the spectated player's camera,
+  smoothing between targets) is not ported; while spectating the camera stays on the
+  last position. The camera messages already keep their last values while spectating.
+- `MaxZoomLevel` assumes tile buffering (240 with `cl_limit_max_zoom_level 1`), as with
+  the Vulkan backend.
+- `rs_parity camera` runs the C++ components outside a real CGameClient; the two
+  functions it stubs (`CGameClient::IsWorldPaused`, `CScoreboard::IsActive`) are not
+  reached on the exercised paths, and `cl_limit_max_zoom_level` is 0 there because the
+  limit asks IGraphics.
