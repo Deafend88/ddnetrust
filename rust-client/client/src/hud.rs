@@ -1,0 +1,207 @@
+//! The HUD system (PLAN §10.3, 7.3): widgets placed at one of nine screen anchors plus
+//! an offset, drawn from a read-only view of the game (`HudData`). The layout and each
+//! widget's settings are console lines in our settings.cfg:
+//! `hud_widget <id> <anchor> <x> <y> <enabled>` and `hud_set <id> <key> <value>`.
+//! Widgets only draw: they get `&HudData` and an egui `Ui`, never the client, the
+//! controls or the settings, so they cannot change what is sent to the server.
+
+use std::collections::BTreeMap;
+
+use ddnet::net::client::Client;
+use ddnet::predict::{Predictor, Rendered};
+use ddnet::protocol::generated::GameMsg;
+use egui::Align2;
+
+use crate::config::{escape, parse_args, str_toint};
+
+/// One of the nine anchor points a widget sits at.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Anchor {
+    TopLeft,
+    Top,
+    TopRight,
+    Left,
+    Center,
+    Right,
+    BottomLeft,
+    Bottom,
+    BottomRight,
+}
+
+impl Anchor {
+    pub const ALL: [Anchor; 9] = [
+        Self::TopLeft,
+        Self::Top,
+        Self::TopRight,
+        Self::Left,
+        Self::Center,
+        Self::Right,
+        Self::BottomLeft,
+        Self::Bottom,
+        Self::BottomRight,
+    ];
+
+    /// The name in settings.cfg.
+    pub fn name(self) -> &'static str {
+        [
+            "top_left",
+            "top",
+            "top_right",
+            "left",
+            "center",
+            "right",
+            "bottom_left",
+            "bottom",
+            "bottom_right",
+        ][self as usize]
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|a| a.name() == name)
+    }
+
+    /// egui places an area by the same point of its own rect (its size is known).
+    pub fn align(self) -> Align2 {
+        [
+            Align2::LEFT_TOP,
+            Align2::CENTER_TOP,
+            Align2::RIGHT_TOP,
+            Align2::LEFT_CENTER,
+            Align2::CENTER_CENTER,
+            Align2::RIGHT_CENTER,
+            Align2::LEFT_BOTTOM,
+            Align2::CENTER_BOTTOM,
+            Align2::RIGHT_BOTTOM,
+        ][self as usize]
+    }
+}
+
+/// Where a widget is and whether it shows: its anchor point sits at the screen's anchor
+/// point, moved by (`x`, `y`) points (right and down are positive).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Placement {
+    pub anchor: Anchor,
+    pub x: i32,
+    pub y: i32,
+    pub enabled: bool,
+}
+
+/// The HUD part of settings.cfg: placements and widget settings by widget id. Ids and
+/// keys not known to this version are kept, so a newer config survives a round trip.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct HudConfig {
+    pub placements: BTreeMap<String, Placement>,
+    /// (widget id, key) -> value, as written in `hud_set`.
+    pub values: BTreeMap<(String, String), String>,
+}
+
+impl HudConfig {
+    /// `hud_widget` and `hud_set`; false for any other command. Malformed lines are
+    /// ignored, like C++ console commands with bad arguments.
+    pub fn execute(&mut self, command: &str, args: &str) -> bool {
+        let mut a = Vec::new();
+        match command {
+            "hud_widget" => {
+                if parse_args(args, "s[id] s[anchor] i[x] i[y] i[enabled]", &mut a)
+                    && let Some(anchor) = Anchor::from_name(&a[1])
+                {
+                    // parse_args checked the three numbers with str_toint
+                    let int = |i: usize| str_toint(&a[i]).unwrap_or(0);
+                    let p = Placement {
+                        anchor,
+                        x: int(2),
+                        y: int(3),
+                        enabled: int(4) != 0,
+                    };
+                    self.placements.insert(a[0].clone(), p);
+                }
+            }
+            "hud_set" => {
+                if parse_args(args, "s[id] s[key] r[value]", &mut a) {
+                    self.values
+                        .insert((a[0].clone(), a[1].clone()), a[2].clone());
+                }
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    pub fn serialize(&self) -> Vec<String> {
+        let placements = self.placements.iter().map(|(id, p)| {
+            format!(
+                "hud_widget \"{}\" {} {} {} {}",
+                escape(id),
+                p.anchor.name(),
+                p.x,
+                p.y,
+                p.enabled as i32
+            )
+        });
+        let values = self.values.iter().map(|((id, key), v)| {
+            format!(
+                "hud_set \"{}\" \"{}\" \"{}\"",
+                escape(id),
+                escape(key),
+                escape(v)
+            )
+        });
+        placements.chain(values).collect()
+    }
+
+    /// The saved placement of `id`, else its default.
+    pub fn placement(&self, id: &str, default: Placement) -> Placement {
+        self.placements.get(id).copied().unwrap_or(default)
+    }
+
+    /// A widget's setting as written in `hud_set`.
+    pub fn value(&self, id: &str, key: &str) -> Option<&str> {
+        self.values
+            .get(&(id.to_string(), key.to_string()))
+            .map(String::as_str)
+    }
+}
+
+/// What widgets read each frame: a read-only view of the game (the ping is the local
+/// player's `PlayerInfo` latency in `client.snapshot()`, as the C++ scoreboard shows
+/// it). The fps and the server address join with the watermark (7.5).
+pub struct HudData<'a> {
+    pub client: &'a Client,
+    pub predictor: Option<&'a Predictor>,
+    /// The followed tee (the local one, or the one followed with `--follow`); the
+    /// spectator camera is not ported yet, so spectating keeps the local id.
+    pub tee: Option<&'a Rendered>,
+    /// Game messages received since the last frame (broadcasts, kill and finish
+    /// messages, records), oldest first.
+    pub events: &'a [GameMsg],
+}
+
+/// A HUD widget.
+pub trait Widget {
+    /// The id in settings.cfg.
+    fn id(&self) -> &'static str;
+    fn default_placement(&self) -> Placement;
+    /// Draws the widget (also called for disabled ones in the editor later); `data` and
+    /// `config` are all it reads.
+    fn show(&mut self, ui: &mut egui::Ui, data: &HudData, config: &HudConfig);
+}
+
+/// Draws every enabled widget at its placement.
+pub fn show(
+    ctx: &egui::Context,
+    widgets: &mut [Box<dyn Widget>],
+    data: &HudData,
+    config: &HudConfig,
+) {
+    for w in widgets {
+        let p = config.placement(w.id(), w.default_placement());
+        if !p.enabled {
+            continue;
+        }
+        egui::Area::new(egui::Id::unique(("hud", w.id())))
+            .anchor(p.anchor.align(), [p.x as f32, p.y as f32])
+            .interactable(false)
+            .order(egui::Order::Background)
+            .show(ctx, |ui| w.show(ui, data, config));
+    }
+}

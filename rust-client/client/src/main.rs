@@ -27,6 +27,7 @@ use ddnet_rs::config::{
 use ddnet_rs::controls::{self, Controls, GameState};
 use ddnet_rs::gfx::batch::Batch;
 use ddnet_rs::gfx::{self, Gfx, Size, block_on};
+use ddnet_rs::hud::{self, HudData, Widget};
 use ddnet_rs::render::items::{self, Items};
 use ddnet_rs::render::map::{MapRender, View, hsl_packed_to_rgb};
 use ddnet_rs::render::players::Players;
@@ -158,6 +159,8 @@ struct App {
     running: Option<Running>,
     session: Option<Session>,
     menu: Menu,
+    /// The HUD widgets (7.5 on add the first ones).
+    hud: Vec<Box<dyn Widget>>,
     /// C++ `m_aCurrentKeyStates`.
     pressed: Vec<bool>,
     /// Raw mouse motion since the last frame (C++ `SDL_GetRelativeMouseState`).
@@ -399,16 +402,21 @@ impl App {
         let [cr, cg, cb] = hsl_packed_to_rgb(BACKGROUND_COLOR);
         batch.clear(cr, cg, cb);
         let mut center = None;
+        let mut rendered = Vec::new();
+        let mut events = Vec::new();
         let mut map_shown_at = None;
         if let Some(s) = &mut self.session {
             // C++: CGameClient::OnNewSnapshot/OnPredict, then UpdateRenderedCharacters
-            let (rendered, local_freeze_end) = match &mut s.predictor {
+            let local_freeze_end = match &mut s.predictor {
                 Some(p) => {
                     p.update(&mut s.client);
-                    (p.rendered(&s.client), p.predicted_freeze_end())
+                    rendered = p.rendered(&s.client);
+                    p.predicted_freeze_end()
                 }
-                None => (Vec::new(), None),
+                None => None,
             };
+            // this frame's game messages go to the HUD (and do not pile up)
+            events = std::mem::take(&mut s.client.messages);
             // C++: CGameClient::OnRender: UpdatePositions, UpdateCamera, CCamera::OnRender
             let local = s.local_pos(&rendered, self.options.follow);
             let frame = s.camera_frame(self.start, frame_time);
@@ -482,12 +490,33 @@ impl App {
                 .set_zoom_factor(c.rs_ui_scale as f32 / 100.0);
             (r.ui_glass, r.ui_scale) = (c.rs_glass, c.rs_ui_scale);
         }
-        if !connected || self.menu.open {
-            let (menu, settings) = (&mut self.menu, &mut self.settings);
-            r.ui.frame(&r.window, &r.gfx, &target, size, |ctx| {
-                action = menu.show(ctx, connected, settings);
+        let menu_visible = !connected || self.menu.open;
+        // the HUD draws once the map is there, under the menus
+        let follow = self.options.follow;
+        let hud_on = !self.hud.is_empty();
+        let data = (self.session.as_ref())
+            .filter(|s| hud_on && s.map.is_some())
+            .map(|s| {
+                let id = follow.or(s.client.local_id());
+                HudData {
+                    client: &s.client,
+                    predictor: s.predictor.as_ref(),
+                    tee: rendered.iter().find(|t| Some(t.id) == id),
+                    events: &events,
+                }
             });
-        } else {
+        if menu_visible || data.is_some() {
+            let (menu, settings, widgets) = (&mut self.menu, &mut self.settings, &mut self.hud);
+            r.ui.frame(&r.window, &r.gfx, &target, size, |ctx| {
+                if let Some(data) = &data {
+                    hud::show(ctx, widgets, data, &settings.hud);
+                }
+                if menu_visible {
+                    action = menu.show(ctx, connected, settings);
+                }
+            });
+        }
+        if !menu_visible {
             r.ui.hidden();
         }
         r.window.pre_present_notify();
@@ -788,6 +817,7 @@ fn main() {
     let vsync = options.vsync || settings.config.gfx_vsync != 0;
     let mut app = App {
         menu: Menu::new(options.server, &storage),
+        hud: Vec::new(),
         options,
         storage,
         settings,

@@ -773,6 +773,8 @@ impl Binds {
 pub struct Settings {
     pub config: Config,
     pub binds: Binds,
+    /// HUD layout and widget settings (`hud_widget`, `hud_set`; ours, not C++).
+    pub hud: crate::hud::HudConfig,
     /// Config commands skipped because DDNet-rs does not use them (other stock DDNet
     /// settings, other clients' settings such as TClient's).
     pub skipped: usize,
@@ -783,6 +785,7 @@ impl Settings {
         let mut s = Self {
             config: Config::default(),
             binds: Binds::default(),
+            hud: Default::default(),
             skipped: 0,
         };
         s.binds.set_defaults(&mut s.config);
@@ -807,6 +810,10 @@ impl Settings {
 "
             );
         }
+        for line in self.hud.serialize() {
+            text += &line;
+            text.push('\n');
+        }
         text += "unbindall
 ";
         for line in self.binds.serialize() {
@@ -819,11 +826,11 @@ impl Settings {
     }
 
     /// C++: `CConsole::ExecuteLine` for the config file commands: our variables, `bind`,
-    /// `unbind`, `unbindall`. Everything else is skipped (counted in `skipped`); binds to
+    /// `unbind`, `unbindall`, and our HUD commands. Everything else is skipped (counted in `skipped`); binds to
     /// commands DDNet-rs lacks are kept, like stock DDNet keeps binds to unknown ones.
     pub fn execute_line(&mut self, line: &str) {
         for (command, args) in split_line(line) {
-            if self.config.set(&command, &args) {
+            if self.config.set(&command, &args) || self.hud.execute(&command, &args) {
                 continue;
             }
             let mut a = Vec::new();
