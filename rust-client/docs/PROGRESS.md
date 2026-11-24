@@ -436,15 +436,13 @@ for scenes that do not stay still, or `-RustSubject` to check what the server se
 `examples/maprender.rs` renders a map at a given
 center for fixed-view checks; mask pickups (they bob on each client's own clock).
 
-### M7 — visual identity and HUD (in progress: 7.1 unfinished)
+### M7 — visual identity and HUD (in progress: 7.1 done, waiting for the user's review)
 
-Pushed and verified (origin/rust-client up to the commit with this text): the plan and
-its review answers (PLAN §10, §10.6), the collision leak fix.
+Pushed and verified: the plan and its review answers (PLAN §10, §10.6), the collision
+leak fix, and 7.1 (three commits: fonts + icons, design system, menus + gallery).
 
-#### 7.1 status (2026-11-24): design system, NOT verified, local WIP commit only
-The 7.1 work is in a local commit "WIP 7.1 (unverified)" on top of this PROGRESS commit;
-it is NOT pushed. It contains:
-- `assets/fonts/`: Inter 4.1 Regular/Medium/SemiBold (from rsms/inter's Inter-4.1.zip,
+#### 7.1 status (2026-11-24): design system, done, gallery review by the user pending
+- `assets/fonts/`: Inter 4.1 Regular/Medium/SemiBold (rsms/inter's Inter-4.1.zip,
   `extras/ttf`) and Phosphor 2.1.2 regular (npm `@phosphor-icons/web`), with
   `Inter-LICENSE.txt` (OFL 1.1) and `Phosphor-LICENSE.txt` (MIT); embedded with
   `include_bytes!` in `style.rs`.
@@ -453,51 +451,44 @@ it is NOT pushed. It contains:
   is not in the repo).
 - `style.rs` (tokens: colours with one blue accent, radii, spacing, type scale, motion;
   `Glass` off/subtle/full with panel fills 100/85/70%; `fonts()`; `install()` builds the
-  egui style), `anim.rs` (critically damped `Spring` with exact solution, easing; unit
-  tests pass), `widgets.rs` (panel, pill, icon, text, stat, dot, button, accent_button,
-  toggle, slider, segmented, popover, paint_icon, text_size).
+  egui style), `anim.rs` (critically damped `Spring` with the exact solution,
+  `ease_out`; unit tested), `widgets.rs` (panel, pill, icon, text, stat, dot,
+  button/accent_button with an optional icon, toggle, slider, segmented, popover).
 - `ui.rs`: `Painter` (egui + egui-wgpu, no window; used headless by the gallery) split
-  from `Ui` (adds winit input); the menus always exist now (embedded fonts, no
-  DejaVuSans lookup); the 6.8 menus restyled with the components (accent Connect,
-  toggles, a Glass segmented control, UI scale).
+  from `Ui` (adds winit input); the menus always exist (embedded fonts); the 6.8 menus
+  restyled with the components; the settings grid is in a vertical `ScrollArea`
+  (window height - 160 pt), Back stays below it.
 - `config.rs`: our variables `rs_glass` (0-2, default 1) and `rs_ui_scale` (50-200 %,
-  default 100) in `VAR_NAMES`; `main.rs` reinstalls the style / zoom factor when they
-  change.
-- `gallery.rs` + `examples/gallery.rs` (every component on one 960x640 page, drawn
-  headless; renders are byte-identical run to run) and `tests/gfx.rs
-  gallery_matches_reference` against `tests/golden/gallery.png` (within 2/255; it
-  passed and catches a 4/255 accent change). The gallery was reviewed by eye by me only.
+  default 100); `main.rs` reinstalls the style / zoom factor when they change.
+- `gallery.rs` + `examples/gallery.rs` (every component on one 960x640 page, headless,
+  byte-identical run to run) and `tests/gfx.rs gallery_matches_reference` against
+  `tests/golden/gallery.png` (within 2/255). The gallery's buttons carry icons, so the
+  icon bug below would fail the test.
 
-Checked so far: `tests/gfx.rs` (4 tests incl. the gallery) and `tests/input.rs` passed;
-the keyboard-driven menu check (connect, Esc menu, disconnect, reconnect, quit) passed.
-NOT done: the full gates (clippy, fmt --check, full `cargo test`) after the last edits.
+Fixed in this session: (1) icons in button labels drew as "ÿ": Inter maps 745
+private-use codepoints itself (U+E270 = `ydieresis.ss07`), so the Phosphor fallback
+behind it was never reached for those; icons are now a separate atom in the `icons`
+family (`egui::Button::new((icon, text))`) and the text families have no Phosphor
+fallback. (2) The settings page overflowed 600 px: now scrolls.
+`/ponytail-review` cut `paint_icon`, `text_size`, `ease_in_out` (unused) and a
+duplicate `style::install` in the gallery.
 
-Known bugs (seen in the last captures, not fixed):
-1. Icons inside BUTTON labels draw as "ÿ" (seen: the gear in "Settings"; the codepoint
-   `e270` is right, and the gallery's icon grid draws the gear correctly with the
-   `icons` family). Likely cause: the button text is a `RichText` in the "medium"
-   family whose fallback list is ["Inter-Medium", "Phosphor"] and Inter-Medium maps
-   that private-use codepoint to a glyph of its own (or egui picks a replacement).
-   Next: draw the icon as its own `RichText` with `icon_font` (e.g. a `widgets::
-   icon_button(glyph, label)` that lays out icon + label as two text sections via
-   `egui::text::LayoutJob`), and drop the Phosphor fallback from the text families.
-2. The settings page is taller than a 600 px window (top cut off). Next: wrap the
-   settings grid in `egui::ScrollArea::vertical()` with the window's max height, or two
-   columns.
+Verified: `cargo build`, `clippy --all-targets -D warnings`, `fmt --check`,
+`cargo test --workspace` (66 passed); the menu capture check at 800x600 (start screen,
+Esc menu, settings: icons right, nothing cut) and the keyboard connect / Esc menu /
+disconnect / reconnect / quit flow on a local server (port 8305, scratch dir).
 
 #### Exact next actions
-1. Fix the two bugs above; re-render the gallery (`cargo run -p ddnet-rs --example
-   gallery -- tests/golden/gallery.png` only if the gallery changes on purpose; look at
-   it before committing a new reference).
-2. Re-run the keyboard menu check (the PowerShell script drives Esc/Tab/Enter against a
-   local server on port 8305 from a scratch dir with its own storage.cfg; recreate it
-   from this description if the scratchpad is gone) and capture the start screen, the
-   in-game menu and the settings page at 800x600; check icons and that nothing is cut.
-3. Full gates: `cargo build; cargo clippy --all-targets -- -D warnings; cargo fmt --check;
-   cargo test`, plus a plain `cargo build` before any screenshot run.
-4. `/ponytail-review` on the 7.1 diff, then replace the local WIP commit with proper
-   commits (e.g. assets+icons, design system+gallery, menus) and push.
-5. Show the user the gallery PNG (7.1 review point), then 7.2 (glass passes).
+1. Wait for the user's review of the gallery (`cargo run -p ddnet-rs --example gallery --
+   gallery.png` from `rust-client/`). Apply their changes; regenerate
+   `tests/golden/gallery.png` only for intended changes, after looking at it.
+2. Then 7.2 (glass passes, PLAN §10.3).
+
+The menu capture scripts (not in the repo) start `build-rs/DDNet-Server.exe` on port
+8305 from `%TEMP%\ddnet-rs-menu\server` with its own storage.cfg, run
+`target/debug/ddnet-rs.exe --size 800x600 --no-grab` from `%TEMP%\ddnet-rs-menu`, send
+keys with `SendKeys` (Esc, Tab x2 + Enter = Disconnect/Connect, Tab x3 + Enter on the
+start screen = Settings) and capture the window with `PrintWindow`.
 
 #### Decisions and gotchas from 7.1
 - egui 0.37 panics in debug if a frame's `TexturesDelta` is dropped unapplied: drain
