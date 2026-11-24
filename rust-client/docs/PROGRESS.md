@@ -436,7 +436,7 @@ for scenes that do not stay still, or `-RustSubject` to check what the server se
 `examples/maprender.rs` renders a map at a given
 center for fixed-view checks; mask pickups (they bob on each client's own clock).
 
-### M7 — visual identity and HUD (in progress: 7.1-7.3 approved, 7.4 done, 7.5 part 1 done)
+### M7 — visual identity and HUD (in progress: 7.1-7.3 approved; 7.4 fixes, 7.5, 7.6 done, awaiting review)
 
 Pushed and verified: the plan and its review answers (PLAN §10, §10.6), the collision
 leak fix, and 7.1 (fonts + icons, design system, menus + gallery, the review tweaks,
@@ -564,7 +564,7 @@ Built before the editor (the user chose this order) so the editor drags a real w
 - Not yet (rest of 7.5): time (needs a time zone source) and speed (7.6 movement info);
   the side-by-side captures with the two reference PNGs; the HUD on/off input test.
 
-#### 7.4 status (2026-11-25): HUD editor, done (commit f530ed00d), review fixes open (below)
+#### 7.4 status (2026-11-25): HUD editor, done (commit f530ed00d), review fixes below
 - `hud_editor.rs`: `drop` = clamp on screen, snap (screen edges and centre, other
   widgets' left/right/top/bottom edges, within 8 pt; Shift = free), nearest anchor by
   screen thirds with the offset recomputed (same screen position), offsets on the 8 pt
@@ -594,42 +594,73 @@ Built before the editor (the user chose this order) so the editor drags a real w
   `hud_widget "watermark" right 0 96 1`, found there after the restart. Synthetic mouse
   input needs the real cursor on our (topmost) window, or winit reports the pointer gone.
 
-#### User review of 7.4 (2026-11-25): fixes to make
-1. The "Edit HUD" panel must not cover widgets: place it bottom centre (or keep it
-   draggable but never over a widget). Today it opens in the screen centre
-   (`Editor::panel`, `default_pos` = centre).
-2. A widget's settings popover opens next to the widget and never overlaps the Edit HUD
-   panel. Today egui picks the side (`widgets::popover`, `Popup::from_response`); in an
-   800x600 window it fell back to beside-and-bottom-aligned and covered the panel. Pass
-   explicit `align_alternatives` and keep the panel's rect out of the way (e.g. choose
-   the side away from the panel, or move the panel).
-3. Selection and hover outline is always the blue accent: today idle widgets get a 1 px
-   `TEXT_SECONDARY` outline and only selected/dragged ones the accent. Make hovered,
-   selected and dragged all `color::ACCENT` (decide with the skill whether idle widgets
-   keep a neutral outline or none).
-4. Check the watermark name is the user's real name from settings: the item shows the
-   local `ClientInfo` name from the snapshot (what the server echoes from `player_name`,
-   from settings_ddnet.cfg or our settings.cfg). The live check runs with a scratch
-   APPDATA, so it showed "nameless tee"; verify once with the user's real (read-only)
-   settings, and consider a fallback to `config.player_name` before the first snapshot.
-5. Kept as is (user approved): up/down reordering, no separator.
+#### 7.4 review fixes (2026-11-25, commit d6ab63d2d): done, awaiting the user's look
+1. Edit HUD panel: `hud_editor::panel_rect` puts it bottom centre, else the first free
+   spot of top centre, centre, left, right and the four corners that covers no widget
+   (with its outline) and not the open popover; kept still while a widget is dragged.
+   Caption shortened to two lines, so the panel is narrower (444 -> about 270 pt).
+2. Settings popover: `hud_editor::popover_align` picks the first of egui's menu sides
+   that fits on screen and stays off the panel; if none, the first that fits, and the
+   panel moves away (it avoids the popover). `widgets::popover` takes an optional
+   `RectAlign` (None = egui's choice, the gallery) and returns its rect.
+3. Outlines: hovered 1 px accent, selected/dragged 2 px accent; idle widgets keep a
+   1 px neutral outline (it says "movable"; decided with the skill).
+4. Name: the watermark shows the requested name (`player_info(..).name`, so
+   `player_name` or C++'s "nameless tee") until the server's ClientInfo arrives
+   (`HudData::player_name`). Checked once with the user's real settings (read-only,
+   client killed, our settings.cfg md5 unchanged): showed "TeDeafe".
+- Tests: `editor_panel_and_popover_keep_out_of_the_way`. Live: hud_editor_check.ps1
+  (now also captures ed_open.png, logs per client); 800x600: panel bottom centre, after
+  the drag and click the panel moved top right and the popover sits left of the widget,
+  nothing overlaps. The live drag is flaky (about 1 in 3 runs the posted mouse
+  messages do not start a drag; the same with the previous commit); rerun it.
+
+#### 7.5 status (2026-11-25, commits 29751f3cf, b9b5164d2): done, awaiting review
+- time item (HH:MM, 24 h, `chrono::Local`, `watermark::clock`): chrono with only
+  `clock` (2 new crates; windows-link was already in the tree; jiff bundles a tz
+  database on Windows). speed item (SPEC "bps"): the movement information's
+  horizontal speed (7.6), tiles/s. Default order as SPEC: user, server, ping, fps,
+  speed, time, uid, tps.
+- `watermark_layout_measurements` (tests/hud.rs): measured from egui's output shapes:
+  offset 16, outer and logo pill paddings 16 x 8, icon-value gap 4, 12 between items,
+  16 per dot slot, sizes caption 12 (logo), body 15 (values, units), icons 14/17.
+  These are our tokens, not SPEC's 10/9 px (the references are video crops at another
+  scale). Mutating a padding or the icon gap fails it.
+- HUD on/off input test: `scripts/hud_input_check.ps1` (+ `examples/teehistorian_
+  inputs.rs`, reads the server's teehistorian). Two local-server runs, every widget and
+  item on vs. HUD off, same posted keys (right, jump, left, hook): the input sequences
+  the server received are identical (10 changes). `-Mutate` (one key fewer) fails it.
+- Side-by-side captures with the two references (scaled so the logo pills match):
+  made from `examples/glass` renders (dm1 900 500 light, Tsunami 1000 1000 dark),
+  composed by a scratch PIL script; sent to the user. Visible differences for review:
+  the reference logo is a rounded rectangle with a soft white glow (ours a plain pill,
+  no glow: the UI rules forbid glows unless asked, PLAN 7.5 mentions one), its icons
+  are filled (ours Phosphor regular), its stat gaps are wider, values look semibold.
+
+#### 7.6 status (2026-11-25, commit 531ef1cf6): done, awaiting review
+- `movement.rs`: `info` = `CHud::GetMovementInformation` for a snapshot character,
+  `shown` = the 2 dp text, `of(&HudData)`; widget `movement` bottom right (-16, -16),
+  off by default (C++ `cl_showhud_player_*` default 0), items position (map-pin,
+  "x, y"), speed (gauge, "x, y" tiles/s), angle (compass, degrees), each toggleable.
+  `render::players::target_angle` is now a free function (`&Rendered`).
+- Parity: `rs_parity movement` (src/tools/rs_parity_hud.cpp) runs the real CHud and
+  CPlayers in the zeroed CGameClient block (like camera); hud.cpp, players.cpp,
+  skin.cpp and client_data7 linked; 17 render functions they reference are stubbed
+  with `dbg_assert(false)` (never reached), `PredictDummy` copied. 20,000 cases (local
+  aim from the mouse incl. the centre fix, other players with/without DDNet targets,
+  velocities at the 1 and 128 thresholds, random velocity ramps): every float and
+  every text identical (`movement_information_matches_cpp`).
+- Not ported (deviations, for review): the spectator paths (freeview camera centre,
+  `m_SpecChar`: our spectator camera is not ported, the widget hides without a tee);
+  the speed colours (green/red on increase/decrease; one-accent rule); the server's
+  tuning (not received yet, so default velramp, as for prediction).
 
 #### Exact next actions (next session starts here)
-1. Read CLAUDE.md, PLAN §10.3 7.4-7.6, this section, `git log`.
-2. Make the four 7.4 review fixes above (frontend-design skill, UI rules review),
-   extend tests/hud.rs where it is logic (panel/popover not overlapping widgets), rerun
-   `scripts/hud_editor_check.ps1` (plain `cargo build` first) and look at the captures,
-   then gates, `/ponytail-review`, commit, push.
-3. Rest of 7.5:
-   - time item HH:MM local time: a small well-known time zone crate is approved by the
-     user (pick the lightest that works on Windows and Linux; check with context7 and
-     crates.io, e.g. `time` with `local-offset` vs `chrono` `clock` vs `jiff`; note
-     `time`'s local offset is unsound/refused on multi-threaded Unix);
-   - speed item (tiles/s) with 7.6's movement information (`CHud::GetMovementInformation`);
-   - layout measurement unit tests (paddings, gaps, offset 16);
-   - side-by-side captures with `hud-watermark-dark-bg.png`/`-light-bg.png` for review;
-   - the HUD on/off input test (scripted runs with the HUD enabled and disabled,
-     compare the sent inputs).
+1. Read CLAUDE.md, PLAN §10.3 7.7+, this section, `git log`.
+2. Wait for/apply the user's review of 7.4 fixes, 7.5 (side-by-sides: glow, filled
+   icons, gaps) and 7.6 (layout of the movement pill, deviations above).
+3. 7.7 DDRace status bar (PLAN 10.3): port `CHud::RenderPlayerState` decision logic as
+   a pure function; parity like 7.6 if CHud can run it (the harness now links hud.cpp).
 4. Before each commit: gates, `/ponytail-review`, UI rules review; update this file.
 
 The menu capture scripts (not in the repo) start `build-rs/DDNet-Server.exe` on port
@@ -651,7 +682,7 @@ type twice in one session fails).
 - `egui::Id::new` is deprecated in 0.37: use `Id::unique` for areas.
 - `egui-phosphor` 0.14 does not support egui 0.37 (only an unofficial fork does): the
   Phosphor TTF is loaded directly.
-- Writing Rust/PowerShell through bash heredocs or Python string literals kept mangling
+- Writing Rust/PowerShell/C++ through bash heredocs or Python string literals kept mangling
   `\n`, `\t`, `\r` and backslash paths (e.g. `C:\ddnetrust-master\rust-client` became a
   carriage return): use the Write/Edit tools for such text, or check for control
   characters afterwards.
@@ -721,6 +752,7 @@ Build the `rs_parity` target like `rs_golden`, then per map (repo root):
     build-rs/rs_parity.exe interp rust-client/tests/golden/interp.txt
     build-rs/rs_parity.exe items data/maps/coverage.map rust-client/tests/golden/items.txt
     build-rs/rs_parity.exe camera rust-client/tests/golden/camera.txt
+    build-rs/rs_parity.exe movement rust-client/tests/golden/movement.txt
     rust-client\scripts\cpp_settings.ps1   # needs build-rs-client\DDNet.exe (PowerShell)
 
 All modes are deterministic: the data regenerates byte for byte.
