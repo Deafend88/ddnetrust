@@ -74,7 +74,7 @@ pub fn find_data_dir(explicit: Option<PathBuf>) -> Option<PathBuf> {
 
 /// C++: `CLineReader`: skips a UTF-8 BOM, splits at `\n` or `\r\n`, drops lines that are
 /// not valid UTF-8; a file containing a NUL byte is not read at all.
-fn lines(bytes: &[u8]) -> Vec<&str> {
+pub(crate) fn lines(bytes: &[u8]) -> Vec<&str> {
     if bytes.contains(&0) {
         return Vec::new();
     }

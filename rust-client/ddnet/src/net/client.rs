@@ -5,6 +5,7 @@
 use std::collections::VecDeque;
 
 use super::conn::{ChunkUnpacker, Connection, FREQ, State as ConnState};
+use crate::physics::vmath::trunc_i32;
 use crate::protocol::generated::{self as g, GameMsg, ObjPlayerInput};
 use crate::protocol::packer::{
     Packer, SANITIZE_CC, SKIP_START_WHITESPACES, Unpacker, utf8_isspace,
@@ -72,6 +73,67 @@ impl Default for PlayerInfo {
             color_feet: 65408,
         }
     }
+}
+
+/// What `CGameClient::OnNewSnapshot` reads from the camera and the window to send
+/// `Cl_ShowDistance` and `Cl_CameraInfo` (gameclient.cpp:2313). The defaults are a
+/// C++ client with default settings in a 16:9 window that never zooms.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CameraState {
+    /// C++ `m_Camera.m_Zoom`, `m_Zooming`, `m_ZoomSmoothingTarget`.
+    pub zoom: f32,
+    pub zooming: bool,
+    pub zoom_target: f32,
+    /// C++ `m_Camera.Deadzone()`, `FollowFactor()`.
+    pub deadzone: i32,
+    pub follow_factor: i32,
+    /// C++ `Graphics()->ScreenAspect()`: window width / height.
+    pub aspect: f32,
+}
+
+impl Default for CameraState {
+    fn default() -> Self {
+        Self {
+            zoom: 1.0,
+            zooming: false,
+            zoom_target: 0.0,
+            deadzone: 0,
+            follow_factor: 0,
+            aspect: 16.0 / 9.0,
+        }
+    }
+}
+
+/// C++: `IGraphics::CalcScreenParams` (engine/graphics.cpp): the world area a screen
+/// with this aspect shows at this zoom, as (width, height).
+pub fn calc_screen_params(aspect: f32, zoom: f32) -> (f32, f32) {
+    const AMOUNT: f32 = 1150.0 * 1000.0;
+    const W_MAX: f32 = 1500.0;
+    const H_MAX: f32 = 1050.0;
+    let f = AMOUNT.sqrt() / aspect.sqrt();
+    let (mut w, mut h) = (f * aspect, f);
+    if w > W_MAX {
+        w = W_MAX;
+        h = w / aspect;
+    }
+    if h > H_MAX {
+        h = H_MAX;
+        w = h * aspect;
+    }
+    (w * zoom, h * zoom)
+}
+
+/// C++: `m_Snap.m_SpecInfo.m_Active` (gameclient.cpp:1805, :1845): the local player is
+/// in the spectator team, paused or spectating with /spec.
+pub fn spectating(items: &[Item], local_id: Option<i32>) -> bool {
+    let Some(id) = local_id else { return false };
+    let find = |t: i32| items.iter().find(|it| it.type_id == t && it.id == id);
+    let info = |it: &Item| crate::items::pad(&it.data, g::ObjPlayerInfo::NUM_INTS);
+    let team = find(g::NETOBJTYPE_PLAYERINFO).map(|it| g::ObjPlayerInfo::from_ints(&info(it)).team);
+    let flags = find(g::NETOBJTYPE_DDNETPLAYER).map_or(0, |it| {
+        crate::items::pad(&it.data, g::ObjDDNetPlayer::NUM_INTS)[0]
+    });
+    team == Some(g::TEAM_SPECTATORS) || flags & (g::EXPLAYERFLAG_PAUSED | g::EXPLAYERFLAG_SPEC) != 0
 }
 
 /// C++: `IClient::STATE_*` subset.
@@ -266,7 +328,8 @@ pub struct Client {
     inputs: [SentInput; NUM_INPUTS],
     current_input: usize,
     next_ping: i64,
-    /// Wanted input; `send_input` adds the player flags like `CControls::SnapInput`.
+    /// The input to send (C++ `CControls::SnapInput`'s result). Starts as a player
+    /// playing with an absolute mouse.
     pub input: ObjPlayerInput,
     last_input: ObjPlayerInput,
     last_input_send: i64,
@@ -276,6 +339,14 @@ pub struct Client {
     ddrace_msg_sent: bool,
     show_others: i32,
     spectator_count: i32,
+    /// The camera to report; the caller keeps it current. C++ `m_LastShowDistanceZoom`,
+    /// `m_LastZoom`, `m_LastScreenAspect`, `m_LastDeadzone`, `m_LastFollowFactor`.
+    pub camera: CameraState,
+    last_show_distance_zoom: f32,
+    last_zoom: f32,
+    last_screen_aspect: f32,
+    last_deadzone: f32,
+    last_follow_factor: f32,
     /// Game messages received, oldest first; the caller drains it.
     pub messages: Vec<GameMsg>,
     /// Snapshot switches as (previous tick, new tick), oldest first; the caller drains
@@ -335,13 +406,24 @@ impl Client {
             }; NUM_INPUTS],
             current_input: 0,
             next_ping: -1,
-            input: ObjPlayerInput::default(),
+            input: ObjPlayerInput {
+                player_flags: g::PLAYERFLAG_PLAYING
+                    | g::PLAYERFLAG_INPUT_ABSOLUTE
+                    | g::PLAYERFLAG_INPUT_MANUAL,
+                ..Default::default()
+            },
             last_input: ObjPlayerInput::default(),
             last_input_send: 0,
             local_id: None,
             ddrace_msg_sent: false,
             show_others: -1, // C++: SHOW_OTHERS_NOT_SET
             spectator_count: -1,
+            camera: CameraState::default(),
+            last_show_distance_zoom: 0.0,
+            last_zoom: 0.0,
+            last_screen_aspect: 0.0,
+            last_deadzone: 0.0,
+            last_follow_factor: 0.0,
             messages: Vec::new(),
             snapshot_switches: Vec::new(),
             repredict: false,
@@ -883,15 +965,14 @@ impl Client {
         (TICK_SPEED + self.prediction_margin_ms() * TICK_SPEED / 1000) as i32
     }
 
-    /// C++: `CClient::SendInput` with `CControls::SnapInput` (controls.cpp:241) for a
-    /// player who is playing with absolute mouse input.
+    /// C++: `CClient::SendInput` with the sending rules of `CControls::SnapInput`
+    /// (controls.cpp:241) for a playing player; `input` (incl. the player flags) is what
+    /// SnapInput produced.
     fn send_input(&mut self, now: i64) {
         if self.pred_tick <= 0 {
             return;
         }
         let mut input = self.input;
-        input.player_flags =
-            g::PLAYERFLAG_PLAYING | g::PLAYERFLAG_INPUT_ABSOLUTE | g::PLAYERFLAG_INPUT_MANUAL;
         if input.target_x == 0 && input.target_y == 0 {
             input.target_x = 1;
         }
@@ -930,7 +1011,6 @@ impl Client {
     }
 
     /// C++: the messages `CGameClient::OnNewSnapshot` sends (gameclient.cpp:2255).
-    /// `Cl_ShowDistance` and `Cl_CameraInfo` need a camera and come with rendering.
     fn on_new_snapshot(&mut self, now: i64) {
         if let Some(cur) = self.cur_tick {
             self.snapshot_switches.push((self.prev_tick, cur));
@@ -973,6 +1053,61 @@ impl Client {
             );
             self.spectator_count = SHOW_SPECTATOR_COUNT_DEFAULT;
         }
+        self.send_camera(now);
+    }
+
+    /// C++: `Cl_ShowDistance` and `Cl_CameraInfo` in `CGameClient::OnNewSnapshot`
+    /// (gameclient.cpp:2313-2397), sent when they change.
+    fn send_camera(&mut self, now: i64) {
+        let cam = self.camera;
+        let mut show_distance_zoom = cam.zoom;
+        let mut zoom = cam.zoom;
+        if cam.zooming {
+            if cam.zoom_target > cam.zoom {
+                show_distance_zoom = cam.zoom_target; // zooming out
+            } else if cam.zoom_target < cam.zoom && self.last_show_distance_zoom > 0.0 {
+                show_distance_zoom = self.last_show_distance_zoom; // zooming in
+            }
+            zoom = cam.zoom_target;
+        }
+        let mut deadzone = cam.deadzone as f32;
+        let mut follow_factor = cam.follow_factor as f32;
+        if spectating(self.snapshot(), self.local_id) {
+            // don't send camera information when spectating
+            zoom = self.last_zoom;
+            deadzone = self.last_deadzone;
+            follow_factor = self.last_follow_factor;
+        }
+        if show_distance_zoom != self.last_show_distance_zoom
+            || cam.aspect != self.last_screen_aspect
+        {
+            let (x, y) = calc_screen_params(cam.aspect, show_distance_zoom);
+            let mut p = Packer::default();
+            g::MsgClShowDistance {
+                x: trunc_i32(x),
+                y: trunc_i32(y),
+            }
+            .pack(&mut p);
+            self.send_msg(g::MsgClShowDistance::ID, false, &p, true, false, now);
+        }
+        if zoom != self.last_zoom
+            || deadzone != self.last_deadzone
+            || follow_factor != self.last_follow_factor
+        {
+            let mut p = Packer::default();
+            g::MsgClCameraInfo {
+                zoom: trunc_i32(zoom * 1000.0), // C++ round_truncate
+                deadzone: trunc_i32(deadzone),
+                follow_factor: trunc_i32(follow_factor),
+            }
+            .pack(&mut p);
+            self.send_msg(g::MsgClCameraInfo::ID, false, &p, true, false, now);
+        }
+        self.last_show_distance_zoom = show_distance_zoom;
+        self.last_zoom = zoom;
+        self.last_screen_aspect = cam.aspect;
+        self.last_deadzone = deadzone;
+        self.last_follow_factor = follow_factor;
     }
 }
 

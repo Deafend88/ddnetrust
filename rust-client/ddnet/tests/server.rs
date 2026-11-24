@@ -306,6 +306,15 @@ fn prediction_recovers_from_interference() {
 /// predicted ticks, the other one between snapshots. Frames come every ~1 ms (20 per
 /// tick), so a tee walking or swinging on its hook moves a few pixels per frame, while
 /// drawing the current tick's position instead jumps by a whole tick's movement.
+/// 10 s: since the camera messages (M6.7) the server clips to our 16:9 view like for the
+/// C++ client (radius 1429/2 + 320 px instead of its 1200 px default), so the other tee,
+/// often ~1250 px away, is in our snapshots less than half of the time.
+/// Rendering runs a tick behind the newest snapshot and snapshots come every 2 ticks, so
+/// the other tee is often extrapolated (`IntraGameTick` > 1, unclamped as in C++
+/// CClient::Update; it reaches ~1.5 before each switch). That is continuous, but at each
+/// switch the tee snaps onto the new interval: those switch frames (about one per
+/// snapshot, under 5% of frames) may step up to one snapshot's movement; every other
+/// frame must stay under half of it.
 #[test]
 fn rendered_positions_are_smooth() {
     let Some(exe) = server_binary() else {
@@ -336,7 +345,9 @@ fn rendered_positions_are_smooth() {
     let entered = net::now(start);
     // per tee: last rendered and last snapshot position, largest step of each, frames
     let mut track = [(None, None, 0f32, 0f32, 0u32); 2];
-    while net::now(start) - entered < 6 * FREQ {
+    // the previous frame's IntraGameTick and snapshot tick; late switch frames per tee
+    let (mut last_intra, mut last_tick, mut late) = (0f32, None, [0u32; 2]);
+    while net::now(start) - entered < 10 * FREQ {
         let now = net::now(start);
         net::scripted_input(&mut a.input, now - entered);
         net::scripted_input(&mut b.input, now - entered + FREQ);
@@ -362,24 +373,166 @@ fn rendered_positions_are_smooth() {
             let (last, last_snap, max, max_snap, frames) = &mut track[k];
             let snap = (r.cur.x as f32, r.cur.y as f32);
             let step = |a: (f32, f32), b: (f32, f32)| (a.0 - b.0).hypot(a.1 - b.1);
+            let late_switch = !r.predicted && last_intra > 1.0 && a.game_tick() != last_tick;
             if let (Some(l), Some(ls)) = (*last, *last_snap) {
-                *max = max.max(step(l, (r.pos.x, r.pos.y)));
+                let d = step(l, (r.pos.x, r.pos.y));
+                if late_switch {
+                    late[k] += 1;
+                    assert!(d <= step(ls, snap).max(*max_snap), "late switch step {d}");
+                } else {
+                    *max = max.max(d);
+                }
                 *max_snap = max_snap.max(step(ls, snap));
                 *frames += 1;
             }
             (*last, *last_snap) = (Some((r.pos.x, r.pos.y)), Some(snap));
         }
+        (last_intra, last_tick) = (a.intra_tick, a.game_tick());
         std::thread::sleep(Duration::from_millis(1));
     }
     eprintln!(
-        "local (predicted) and other: (max step, max step without interpolation, frames) = {:?}",
+        "local (predicted) and other: (max step, max step without interpolation, frames) = {:?}, late switches: {late:?}",
         track.map(|t| (t.2, t.3, t.4))
     );
-    for (max, max_snap, frames) in track.map(|t| (t.2, t.3, t.4)) {
+    for (k, (max, max_snap, frames)) in track.map(|t| (t.2, t.3, t.4)).into_iter().enumerate() {
         assert!(frames > 2000, "{frames}");
+        assert!(
+            late[k] * 20 < frames,
+            "{} of {frames} frames are late switches",
+            late[k]
+        );
         // the test can tell: without interpolation steps are whole ticks
         assert!(max_snap >= 10.0, "{max_snap}");
         assert!(max <= max_snap / 2.0, "{max} vs {max_snap}");
+    }
+    drop(server);
+}
+
+/// M6.7: the server takes our `Cl_ShowDistance` and `Cl_CameraInfo` and clips by them.
+/// C++: `CPlayer::UpdateNetworkClipRadius` (player.cpp:1124; with camera info the radius
+/// is ShowDistance / 2 + 320, the dyncam offset is 0 with default settings) and
+/// `CCharacter::IsSnappingCharacterInView` (a square of the larger radius around the
+/// tee-to-hook line; the hook is idle here). Two tees stand at their spawns while one
+/// steps its zoom from 0.4 to 2.5: the other tee must be in its snapshots exactly when
+/// the rule says so, and must appear or vanish on the way. Without the show distance
+/// the radius would not follow the zoom; without the camera info it would be the whole
+/// show distance. The teehistorian holds the exact bytes we sent.
+#[test]
+fn camera_messages_set_network_clipping() {
+    use ddnet::net::client::calc_screen_params;
+    use ddnet::physics::vmath::trunc_i32;
+    use ddnet::protocol::packer::Packer;
+
+    let Some(exe) = server_binary() else {
+        eprintln!("SKIPPED: no DDNet-Server (set DDNET_SERVER or build the game-server target)");
+        return;
+    };
+    let (server, port) = start_server(&exe, "dm1");
+    let addr = format!("127.0.0.1:{port}").parse().unwrap();
+    let start = Instant::now();
+    let (sa, sb) = (
+        net::connect_socket(addr).unwrap(),
+        net::connect_socket(addr).unwrap(),
+    );
+    let mut a = Client::new(PlayerInfo::default(), "", net::random_bytes);
+    let mut b = Client::new(PlayerInfo::default(), "", net::random_bytes);
+    a.camera.zoom = 0.4;
+    a.connect(net::now(start));
+    b.connect(net::now(start));
+    let run = |a: &mut Client, b: &mut Client, secs: f32| {
+        let until = Instant::now() + Duration::from_secs_f32(secs);
+        while Instant::now() < until {
+            net::pump(&sa, a, net::now(start)).unwrap();
+            net::pump(&sb, b, net::now(start)).unwrap();
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    };
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while Instant::now() < deadline && (local_x(&a).is_none() || local_x(&b).is_none()) {
+        run(&mut a, &mut b, 0.01);
+    }
+    let pos = |c: &Client, id: i32| {
+        c.snapshot()
+            .iter()
+            .find(|it| it.type_id == g::NETOBJTYPE_CHARACTER && it.id == id)
+            .map(|it| g::ObjCharacter::from_ints(&it.data))
+    };
+    let (ida, idb) = (a.local_id().unwrap(), b.local_id().unwrap());
+    // land at the spawns
+    let still = |c: &Client, id: i32| pos(c, id).is_some_and(|p| (p.vel_x, p.vel_y) == (0, 0));
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline && !(still(&a, ida) && still(&b, idb)) {
+        run(&mut a, &mut b, 0.05);
+    }
+    let (mut sent, mut seen) = (Vec::new(), Vec::new());
+    for step in 0..=21 {
+        a.camera.zoom = 0.4 + step as f32 * 0.1;
+        sent.push(a.camera.zoom);
+        run(&mut a, &mut b, 0.4); // sent with the next snapshot, then a few ticks
+        let (pa, pb) = (pos(&a, ida).unwrap(), pos(&b, idb).unwrap());
+        assert_eq!(
+            (pa.vel_x, pa.vel_y, pb.hook_state, pb.vel_x, pb.vel_y),
+            (0, 0, 0, 0, 0),
+            "both must stand still"
+        );
+        let (w, h) = calc_screen_params(16.0 / 9.0, a.camera.zoom);
+        let radius = (trunc_i32(w) as f32 / 2.0 + 320.0).max(trunc_i32(h) as f32 / 2.0 + 320.0);
+        let d = (pa.x - pb.x).abs().max((pa.y - pb.y).abs()) as f32;
+        let visible = pos(&a, idb).is_some();
+        if (d - radius).abs() >= 2.0 {
+            assert_eq!(
+                visible,
+                d <= radius,
+                "zoom {}: distance {d}, radius {radius}",
+                a.camera.zoom
+            );
+        }
+        seen.push(visible);
+    }
+    eprintln!("visible per zoom step: {seen:?}");
+    assert!(
+        seen.contains(&true) && seen.contains(&false),
+        "the zoom steps must cross the distance"
+    );
+
+    // C++ CGameContext::OnMessage records the raw message: ex id 0, UUID, body
+    let uuid = |id: i32| g::MSG_TYPES.iter().find(|m| m.0 == id).unwrap().2.unwrap();
+    let msg = |id: i32, body: &dyn Fn(&mut Packer)| {
+        let mut p = Packer::default();
+        p.add_int(0);
+        p.add_raw(&uuid(id));
+        body(&mut p);
+        p.data().to_vec()
+    };
+    drop((a, b));
+    std::thread::sleep(Duration::from_millis(200));
+    let recorded: Vec<u8> = fs::read_dir(server.dir.join("teehistorian"))
+        .unwrap()
+        .flat_map(|f| fs::read(f.unwrap().path()).unwrap())
+        .collect();
+    for zoom in sent {
+        let (x, y) = calc_screen_params(16.0 / 9.0, zoom);
+        let show = msg(g::MsgClShowDistance::ID, &|p| {
+            g::MsgClShowDistance {
+                x: trunc_i32(x),
+                y: trunc_i32(y),
+            }
+            .pack(p)
+        });
+        let info = msg(g::MsgClCameraInfo::ID, &|p| {
+            g::MsgClCameraInfo {
+                zoom: trunc_i32(zoom * 1000.0),
+                deadzone: 0,
+                follow_factor: 0,
+            }
+            .pack(p)
+        });
+        for e in [show, info] {
+            assert!(
+                recorded.windows(e.len()).any(|w| w == &e[..]),
+                "zoom {zoom}: not in teehistorian: {e:02x?}"
+            );
+        }
     }
     drop(server);
 }

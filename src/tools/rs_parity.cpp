@@ -16,6 +16,7 @@
 //        rs_parity interp <output file>
 //        rs_parity items <map file> <output file>
 //        rs_parity skins <output file> <skins dir>
+//        rs_parity camera <output file>
 //
 // "map" loads the map with CMap + CLayers and writes every item, every data blob and
 // the physics layers, then loads mutated copies of the file (truncated, bit flips,
@@ -100,6 +101,8 @@
 #include <vector>
 
 static constexpr const char *const TOOL_NAME = "rs_parity";
+
+int CameraMode(const char *pOutFile); // rs_parity_camera.cpp
 
 typedef std::vector<unsigned char> Bytes;
 
@@ -2060,6 +2063,8 @@ int main(int argc, const char **argv)
 		return ColorsMode(argv[2]);
 	if(argc == 3 && str_comp(argv[1], "interp") == 0)
 		return InterpMode(argv[2]);
+	if(argc == 3 && str_comp(argv[1], "camera") == 0)
+		return CameraMode(argv[2]);
 	if(argc == 4 && str_comp(argv[1], "items") == 0)
 		return ItemsMode(argv[2], argv[3]);
 	if(argc == 4 && str_comp(argv[1], "skins") == 0)

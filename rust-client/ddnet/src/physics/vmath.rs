@@ -85,6 +85,14 @@ pub fn normalize(v: Vec2) -> Vec2 {
     vec2(v.x * l, v.y * l)
 }
 
+/// C++: `normalize_pre_length`: divide by a known length.
+pub fn normalize_pre_length(v: Vec2, len: f32) -> Vec2 {
+    if len == 0.0 {
+        return vec2(0.0, 0.0);
+    }
+    vec2(v.x / len, v.y / len)
+}
+
 pub fn direction(angle: f32) -> Vec2 {
     vec2(angle.cos(), angle.sin())
 }

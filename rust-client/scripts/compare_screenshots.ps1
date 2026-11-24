@@ -18,14 +18,21 @@
 # (cl_run_on_join spec subject) and DDNet-rs follows it, so both cameras sit on the same
 # tee even where the C++ tee would move. Add -ServerArgs "sv_show_all_default 1" so the
 # server sends both clients everything, wherever their own tees are.
+# -RustSubject makes DDNet-rs itself the subject: it joins first as "subject" (from a
+# settings_ddnet.cfg in its scratch dir) and plays its own tee without grabbing the mouse;
+# the C++ client spectates it. The server then sends each client only what its camera
+# shows (Cl_ShowDistance/Cl_CameraInfo), so leave sv_show_all_default off.
 #
 # Usage (repo root): rust-client\scripts\compare_screenshots.ps1 -Map dm1 [-Mask "340,240,460,340"]
 param([string]$Map = "dm1", [string[]]$Mask = @("340,240,460,340"), [int]$Wait = 5, [string]$OutDir = "$env:TEMP\ddnet-rs-compare",
-    [string[]]$ServerArgs = @(), [string[]]$CppArgs = @(), [string]$Name = "", [string]$Subject = "")
+    [string[]]$ServerArgs = @(), [string[]]$CppArgs = @(), [string]$Name = "", [string]$Subject = "",
+    [switch]$RustSubject)
 $ErrorActionPreference = "Stop"
 $repo = Resolve-Path "$PSScriptRoot\..\.."
 $srvDir = "$OutDir\server"; $cDir = "$OutDir\cpp-client"
-foreach ($d in $srvDir, $cDir) {
+# DDNet-rs runs in $OutDir: its storage.cfg keeps it off %APPDATA%\DDNet too, so neither
+# client uses your settings
+foreach ($d in $srvDir, $cDir, $OutDir) {
     New-Item -ItemType Directory -Force $d | Out-Null
     Set-Content -Path "$d\storage.cfg" -Value "add_path `$CURRENTDIR`nadd_path `$DATADIR" -Encoding ascii
 }
@@ -70,12 +77,21 @@ try {
         Start-Sleep -Seconds 2
         $CppArgs += 'cl_run_on_join spec subject' # a string setting takes the rest of the line
     }
+    Remove-Item "$OutDir\settings_ddnet.cfg" -ErrorAction SilentlyContinue
+    if ($RustSubject) {
+        Set-Content -Path "$OutDir\settings_ddnet.cfg" -Value 'player_name "subject"' -Encoding ascii
+        $r = Start-Process -FilePath "$repo\rust-client\target\debug\ddnet-rs.exe" -ArgumentList "127.0.0.1:8303", "--size", "800x600", "--no-grab" -WorkingDirectory $OutDir -PassThru
+        Start-Sleep -Seconds 3
+        $CppArgs += 'cl_run_on_join spec subject'
+    }
     $env:ALL_PROXY = "http://127.0.0.1:9"; $env:HTTPS_PROXY = "http://127.0.0.1:9"; $env:HTTP_PROXY = "http://127.0.0.1:9"
     $cargs = '"gfx_backend Vulkan"', '"gfx_fullscreen 0"', '"gfx_borderless 0"', '"gfx_screen_width 800"', '"gfx_screen_height 600"', '"cl_showhud 0"', '"cl_showchat 0"', '"cl_nameplates 0"', '"cl_showkillmessages 0"', '"cl_motd_time 0"', '"cl_show_welcome 1"', '"br_indicate_finished 0"', '"snd_enable 0"', '"logfile cpp.log"'
     $cargs += @($CppArgs | ForEach-Object { & $quote $_ }) + '"connect 127.0.0.1:8303"'
     $c = Start-Process -FilePath "$repo\build-rs-client\DDNet.exe" -ArgumentList $cargs -WorkingDirectory $cDir -PassThru
     Start-Sleep -Seconds 3
-    $r = Start-Process -FilePath "$repo\rust-client\target\debug\ddnet-rs.exe" -ArgumentList "127.0.0.1:8303", "--size", "800x600", "--follow", "0" -WorkingDirectory $OutDir -PassThru
+    if (-not $RustSubject) {
+        $r = Start-Process -FilePath "$repo\rust-client\target\debug\ddnet-rs.exe" -ArgumentList "127.0.0.1:8303", "--size", "800x600", "--follow", "0" -WorkingDirectory $OutDir -PassThru
+    }
     Start-Sleep -Seconds $Wait
     Save-ClientArea $c.Id "$OutDir\${name}_cpp.png"
     Save-ClientArea $r.Id "$OutDir\${name}_rust.png"

@@ -8,24 +8,7 @@ pub mod map;
 pub mod players;
 pub mod tee;
 
-/// C++: `IGraphics::CalcScreenParams` (engine/graphics.cpp): the world area a screen
-/// with this aspect shows at this zoom, as (width, height).
-pub fn calc_screen_params(aspect: f32, zoom: f32) -> (f32, f32) {
-    const AMOUNT: f32 = 1150.0 * 1000.0;
-    const W_MAX: f32 = 1500.0;
-    const H_MAX: f32 = 1050.0;
-    let f = AMOUNT.sqrt() / aspect.sqrt();
-    let (mut w, mut h) = (f * aspect, f);
-    if w > W_MAX {
-        w = W_MAX;
-        h = w / aspect;
-    }
-    if h > H_MAX {
-        h = H_MAX;
-        w = h * aspect;
-    }
-    (w * zoom, h * zoom)
-}
+pub use ddnet::net::client::calc_screen_params;
 
 /// C++: `IGraphics::MapScreenToWorld`: the screen rectangle (left, top, right, bottom)
 /// of a map group with this parallax and offset around the camera center.

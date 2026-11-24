@@ -3369,6 +3369,9 @@ if(TOOLS)
           list(APPEND EXTRA_TOOL_SRC "src/game/client/${S}.cpp")
         endforeach()
         list(APPEND EXTRA_TOOL_SRC "src/game/map/render_map.cpp")
+        # the camera and mouse components, run outside a CGameClient (rs_parity_camera.cpp)
+        list(APPEND EXTRA_TOOL_SRC "src/tools/rs_parity_camera.cpp" "src/game/client/component.cpp"
+          "src/game/client/components/camera.cpp" "src/game/client/components/controls.cpp")
         list(APPEND EXTRA_TOOL_SRC "${PROJECT_BINARY_DIR}/src/generated/client_data.cpp"
           "${PROJECT_BINARY_DIR}/src/generated/client_data.h")
       endif()

@@ -2,11 +2,12 @@
 //! walks right or runs a movement script, then disconnects cleanly.
 //!
 //! Usage: ddnet-headless <server ip:port> [--name NAME] [--seconds N] [--walk SECONDS] [--script]
-//!        [--fire WEAPON]
+//!        [--fire WEAPON] [--aim X,Y]
 //!
 //! `--script` repeats a 4 second loop: walk right with a jump and a hook up-right, then
 //! the same to the left. `--fire` holds that weapon (0 hammer, 1 gun, ...) and shoots it
-//! up-right five times a second.
+//! up-right five times a second. `--aim` aims at X,Y relative to the tee.
+//! The camera messages report a C++ client with default settings in a 16:9 window.
 //!
 //! Only loopback servers are accepted for now: testing against public servers has
 //! not been approved yet.
@@ -25,7 +26,7 @@ fn main() {
     let mut args = std::env::args().skip(1);
     let Some(server) = args.next().and_then(|a| a.parse::<SocketAddr>().ok()) else {
         eprintln!(
-            "usage: ddnet-headless <server ip:port> [--name NAME] [--seconds N] [--walk SECONDS] [--script] [--fire WEAPON]"
+            "usage: ddnet-headless <server ip:port> [--name NAME] [--seconds N] [--walk SECONDS] [--script] [--fire WEAPON] [--aim X,Y]"
         );
         std::process::exit(2);
     };
@@ -35,6 +36,7 @@ fn main() {
     }
     let mut player = PlayerInfo::default();
     let (mut seconds, mut walk, mut script, mut fire) = (10i64, 0i64, false, None::<i32>);
+    let mut aim = None::<(i32, i32)>;
     while let Some(flag) = args.next() {
         let mut value = || args.next().unwrap_or_default();
         match flag.as_str() {
@@ -43,6 +45,11 @@ fn main() {
             "--walk" => walk = value().parse().expect("--walk SECONDS"),
             "--script" => script = true,
             "--fire" => fire = Some(value().parse().expect("--fire WEAPON")),
+            "--aim" => {
+                let v = value();
+                let (x, y) = v.split_once(',').expect("--aim X,Y");
+                aim = Some((x.parse().expect("--aim X,Y"), y.parse().expect("--aim X,Y")));
+            }
             _ => panic!("unknown flag {flag}"),
         }
     }
@@ -112,6 +119,9 @@ fn main() {
                 client.input.wanted_weapon = weapon + 1;
                 client.input.fire = (elapsed / (FREQ / 10)) as i32;
                 (client.input.target_x, client.input.target_y) = (100, -60);
+            }
+            if let Some(target) = aim {
+                (client.input.target_x, client.input.target_y) = target;
             }
             if elapsed >= next_report * FREQ {
                 if let Some(c) = local_character(&client) {

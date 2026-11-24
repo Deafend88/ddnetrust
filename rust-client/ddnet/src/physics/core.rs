@@ -21,7 +21,7 @@ pub const SERVER_TICK_SPEED: i32 = 50;
 pub const PHYSICAL_SIZE: f32 = 28.0;
 pub const NUM_WEAPONS: usize = 6;
 /// C++: `INPUT_STATE_MASK` (datasrc/network.py).
-const INPUT_STATE_MASK: i32 = 0x3f;
+pub const INPUT_STATE_MASK: i32 = 0x3f;
 
 pub const HOOK_RETRACTED: i32 = -1;
 pub const HOOK_IDLE: i32 = 0;

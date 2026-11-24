@@ -94,6 +94,11 @@ pub struct Predictor<'a> {
     /// C++: `m_aSwitchStateTeam`: the team of the only switch state object, else -1.
     switch_state_team: i32,
     predicted_tick: i32,
+    /// C++ `m_Snap.m_SpecInfo.m_Active`, `IsWorldPaused()` and `m_GameInfo.m_AllowZoom`
+    /// of the current snapshot.
+    pub spectating: bool,
+    pub world_paused: bool,
+    pub allow_zoom: bool,
     /// The latest prediction of the local character for each tick.
     history: BTreeMap<i32, ObjCharacterCore>,
     pub stats: Stats,
@@ -141,6 +146,9 @@ impl<'a> Predictor<'a> {
             predicting: false,
             switch_state_team: -1,
             predicted_tick: -1,
+            spectating: false,
+            world_paused: false,
+            allow_zoom: false,
             history: BTreeMap::new(),
             stats: Stats::default(),
         }
@@ -228,18 +236,14 @@ impl<'a> Predictor<'a> {
                 prev_ext,
             });
         }
-        // C++: m_SpecInfo.m_Active (spectator team, paused or /spec) and IsWorldPaused
-        let local_team = find(items, g::NETOBJTYPE_PLAYERINFO, self.local_id)
-            .map(|it| g::ObjPlayerInfo::from_ints(&ints(it, g::ObjPlayerInfo::NUM_INTS)).team);
-        let local_flags = find(items, g::NETOBJTYPE_DDNETPLAYER, self.local_id)
-            .map_or(0, |it| ints(it, g::ObjDDNetPlayer::NUM_INTS)[0]);
-        let spectating = local_team == Some(g::TEAM_SPECTATORS)
-            || local_flags & (g::EXPLAYERFLAG_PAUSED | g::EXPLAYERFLAG_SPEC) != 0;
+        // C++: m_SpecInfo.m_Active and IsWorldPaused
+        let spectating = crate::net::client::spectating(items, Some(self.local_id));
         let paused = items
             .iter()
             .find(|it| it.type_id == g::NETOBJTYPE_GAMEINFO)
             .is_some_and(|it| ints(it, 2)[1] & g::GAMESTATEFLAG_PAUSED != 0);
         self.predicting = self.local_char().is_some() && !spectating && !paused;
+        (self.spectating, self.world_paused) = (spectating, paused);
 
         // game info: C++ GetGameInfo, only what prediction reads
         let info = items
@@ -270,6 +274,14 @@ impl<'a> Predictor<'a> {
             bug_input = flags & g::GAMEINFOFLAG_BUG_DDRACE_INPUT != 0;
         }
         let no_weak = version >= 8 && flags2 & g::GAMEINFOFLAG2_NO_WEAK_HOOK != 0;
+        let race = ddrace
+            || flags & (g::GAMEINFOFLAG_GAMETYPE_RACE | g::GAMEINFOFLAG_GAMETYPE_FASTCAP) != 0;
+        let city = version >= 5 && flags2 & g::GAMEINFOFLAG2_GAMETYPE_CITY != 0;
+        self.allow_zoom = if version >= 2 {
+            flags & g::GAMEINFOFLAG_ALLOW_ZOOM != 0
+        } else {
+            race || block_worlds || city
+        };
         self.teams.num_ddrace_teams = if version >= 12 {
             let n = ex.num_dd_race_teams;
             if n > TEAM_FLOCK + 1 && n <= NUM_DDRACE_TEAMS as i32 {
@@ -521,6 +533,11 @@ impl<'a> Predictor<'a> {
         number > 0
             && (number as usize) < switchers.len()
             && !switchers[number as usize].status[team as usize]
+    }
+
+    /// C++: `m_GameInfo.m_BugDDRaceInput`.
+    pub fn bug_ddrace_input(&self) -> bool {
+        self.world.config.bug_ddrace_input
     }
 
     /// C++: `CGameClient::IsOtherTeam` for a playing (not spectating) local player.
