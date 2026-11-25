@@ -883,7 +883,7 @@ fn main() {
     let vsync = options.vsync || settings.config.gfx_vsync != 0;
     let hud: Vec<Box<dyn Widget>> = vec![
         Box::new(Watermark),
-        Box::new(StatusBar),
+        Box::new(StatusBar::new(&storage)),
         Box::new(Movement),
         Box::new(Killfeed::new(&storage)),
     ];

@@ -10,7 +10,7 @@
 use egui::{Color32, CornerRadius, Margin, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, vec2};
 
 use crate::icons;
-use crate::statusbar::{Indicator, Status};
+use crate::statusbar::{Indicator, Status, WeaponIcons};
 use crate::style::{Glass, Weight, color, icon_font, radius, size, space};
 use crate::widgets as w;
 
@@ -19,8 +19,8 @@ const GUN: usize = 1;
 const NINJA: usize = 5;
 const WEAPONS: [&str; 6] = ["Hammer", "Gun", "Shotgun", "Grenade", "Laser", "Ninja"];
 
-/// The icon size (the pill is ~25 % larger than the other HUD rows, user review).
-const ICON: f32 = size::ICON_STATUS;
+/// The icon and sprite size.
+const ICON: f32 = size::ICON_HUD;
 
 /// How the tee is frozen; it tints the weapon pill.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -193,80 +193,10 @@ fn hook(ui: &Ui, rect: Rect) {
     p.line_segment([tip, tip + vec2(w * 0.12, -h * 0.14)], s);
 }
 
-/// One weapon as a clean filled shape in `rect` (1.5 : 1, pointing right), its parts
-/// not overlapping so a flat colour stays flat. Drawn, not cut from the game skin: the
-/// pickup sprites turn into blobs as silhouettes.
-fn weapon_shape(ui: &Ui, n: usize, rect: Rect, fill: Color32) {
-    let p = ui.painter();
-    let h = rect.height();
-    // a point in the box's units: x 0..1.5, y 0..1 (of the height)
-    let at = |x: f32, y: f32| rect.left_top() + vec2(x * h, y * h);
-    let block = |x0: f32, y0: f32, x1: f32, y1: f32, r: f32| {
-        let rr = Rect::from_min_max(at(x0, y0), at(x1, y1));
-        p.rect_filled(rr, CornerRadius::same((r * h) as u8), fill);
-    };
-    let poly = |pts: &[(f32, f32)]| {
-        let pts = pts.iter().map(|&(x, y)| at(x, y)).collect();
-        p.add(Shape::convex_polygon(pts, fill, Stroke::NONE));
-    };
-    match n {
-        // hammer: a long handle and a tall head across its end
-        0 => {
-            block(0.08, 0.47, 0.98, 0.61, 0.05);
-            block(1.0, 0.1, 1.38, 0.92, 0.08);
-        }
-        // gun: slide and a slanted grip
-        1 => {
-            block(0.22, 0.24, 1.36, 0.48, 0.06);
-            poly(&[(0.3, 0.5), (0.66, 0.5), (0.56, 0.9), (0.2, 0.9)]);
-        }
-        // shotgun: a long thin barrel, the pump under it, a stock
-        2 => {
-            block(0.52, 0.3, 1.46, 0.44, 0.04);
-            block(0.86, 0.47, 1.24, 0.62, 0.06);
-            poly(&[
-                (0.04, 0.32),
-                (0.5, 0.32),
-                (0.5, 0.5),
-                (0.36, 0.56),
-                (0.04, 0.78),
-            ]);
-        }
-        // grenade launcher: a fat tube with a wide muzzle, grip and stock
-        3 => {
-            block(0.42, 0.24, 1.26, 0.6, 0.12);
-            block(1.28, 0.16, 1.44, 0.68, 0.05);
-            poly(&[(0.56, 0.62), (0.8, 0.62), (0.72, 0.92), (0.5, 0.92)]);
-            block(0.04, 0.34, 0.4, 0.52, 0.06);
-        }
-        // laser: a body, a thin emitter with a lens, two fins, grip
-        4 => {
-            block(0.3, 0.3, 1.1, 0.56, 0.08);
-            block(1.12, 0.38, 1.36, 0.48, 0.03);
-            p.circle_filled(at(1.4, 0.43), 0.07 * h, fill);
-            block(0.48, 0.14, 0.58, 0.28, 0.02);
-            block(0.72, 0.14, 0.82, 0.28, 0.02);
-            poly(&[(0.4, 0.58), (0.64, 0.58), (0.56, 0.9), (0.32, 0.9)]);
-            block(0.04, 0.36, 0.28, 0.5, 0.05);
-        }
-        // ninja: handle, guard, a long blade with a point
-        _ => {
-            block(0.04, 0.43, 0.36, 0.55, 0.05);
-            block(0.38, 0.26, 0.46, 0.72, 0.03);
-            poly(&[
-                (0.48, 0.42),
-                (1.3, 0.42),
-                (1.46, 0.49),
-                (1.3, 0.56),
-                (0.48, 0.56),
-            ]);
-        }
-    }
-}
-
 /// One owned weapon in the pill. `tooltip`: its name and marks on hover.
 fn weapon(
     ui: &mut Ui,
+    icons: &mut WeaponIcons,
     n: usize,
     held: bool,
     marks: Marks,
@@ -280,10 +210,18 @@ fn weapon(
     } else {
         rect
     };
-    // C++ draws weapons not held at 0.4: the same shape in a flat 45 % grey
-    let fill = if held { color::TEXT } else { color::WEAPON_DIM };
-    let r = Rect::from_center_size(area.center(), vec2(area.height() * 1.5, area.height()));
-    weapon_shape(ui, n, r.intersect(area), fill);
+    if let Some((id, [tw, th])) = icons.silhouette(ui.ctx(), n) {
+        let scale = (area.width() / tw).min(area.height() / th);
+        let r = Rect::from_center_size(area.center(), vec2(tw, th) * scale);
+        // C++: 0.4 for weapons not held
+        let tint = if held {
+            color::TEXT
+        } else {
+            color::TEXT.gamma_multiply(0.4)
+        };
+        let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+        ui.painter().image(id, r, uv, tint);
+    }
     if let Some(p) = ninja.filter(|_| ringed) {
         let d = ICON + space::S;
         ring(ui, Rect::from_center_size(rect.center(), vec2(d, d)), p);
@@ -316,7 +254,14 @@ fn weapon(
 
 /// Draws the status as chips. `freeze` tints the weapon pill; `tooltip`: everything is
 /// named on hover (the HUD editor).
-pub fn draw(ui: &mut Ui, glass: Glass, s: &Status, freeze: Freeze, tooltip: bool) {
+pub fn draw(
+    ui: &mut Ui,
+    glass: Glass,
+    s: &Status,
+    freeze: Freeze,
+    icons: &mut WeaponIcons,
+    tooltip: bool,
+) {
     let all: Vec<Indicator> = (s.capabilities.iter())
         .chain(&s.prohibited)
         .chain(&s.modes)
@@ -339,7 +284,7 @@ pub fn draw(ui: &mut Ui, glass: Glass, s: &Status, freeze: Freeze, tooltip: bool
         ui.spacing_mut().item_spacing.x = space::XS;
         let show_pill = !s.weapons.is_empty() || s.jumps.1 > 0 || freeze != Freeze::None;
         if show_pill {
-            let margin = Margin::symmetric(space::L as i8, space::S as i8);
+            let margin = Margin::symmetric(space::M as i8, space::XS as i8);
             let pill = w::hud_bar(ui, glass, radius::PILL, margin, ICON, |ui| {
                 ui.spacing_mut().item_spacing.x = space::S;
                 if freeze != Freeze::None {
@@ -354,7 +299,7 @@ pub fn draw(ui: &mut Ui, glass: Glass, s: &Status, freeze: Freeze, tooltip: bool
                     }
                 }
                 for &(n, held) in &s.weapons {
-                    weapon(ui, n, held, marks[n], s.ninja, tooltip);
+                    weapon(ui, icons, n, held, marks[n], s.ninja, tooltip);
                 }
                 if s.jumps.1 > 0 || endless_jump {
                     // endless jump: "∞" instead of the count
@@ -363,7 +308,7 @@ pub fn draw(ui: &mut Ui, glass: Glass, s: &Status, freeze: Freeze, tooltip: bool
                     } else {
                         format!("{}/{}", s.jumps.0, s.jumps.1)
                     };
-                    let r = w::text(ui, &text, size::TITLE, Weight::SemiBold, color::TEXT);
+                    let r = w::text(ui, &text, size::BODY, Weight::SemiBold, color::TEXT);
                     if tooltip {
                         r.on_hover_text(if endless_jump {
                             "Endless jump"
@@ -393,7 +338,7 @@ pub fn draw(ui: &mut Ui, glass: Glass, s: &Status, freeze: Freeze, tooltip: bool
             }
         }
         for (chip, name) in chips {
-            let margin = Margin::symmetric(space::M as i8, space::S as i8);
+            let margin = Margin::symmetric(space::S as i8, space::XS as i8);
             let r = w::hud_bar(ui, glass, radius::PILL, margin, ICON, |ui| {
                 ui.spacing_mut().item_spacing.x = space::XS;
                 match chip {
@@ -407,7 +352,7 @@ pub fn draw(ui: &mut Ui, glass: Glass, s: &Status, freeze: Freeze, tooltip: bool
                             strike(ui, rect);
                         }
                         if endless {
-                            w::text(ui, "\u{221e}", size::TITLE, Weight::SemiBold, color::TEXT);
+                            w::text(ui, "\u{221e}", size::BODY, Weight::SemiBold, color::TEXT);
                         }
                     }
                 }

@@ -26,8 +26,6 @@ pub mod color {
     pub const SUCCESS: Color32 = Color32::from_rgb(48, 209, 88);
     /// Freeze (the race status pill's tint), DDNet's ice blue.
     pub const FREEZE: Color32 = Color32::from_rgb(130, 200, 255);
-    /// A weapon not held in the race status: 45 % of white, flat (C++ draws it at 0.4).
-    pub const WEAPON_DIM: Color32 = Color32::from_rgb(130, 130, 136);
     pub const DANGER: Color32 = Color32::from_rgb(255, 69, 58);
     /// The logo pill of the watermark (white, SPEC §1).
     pub const LOGO: Color32 = Color32::from_rgb(250, 250, 252);
@@ -64,9 +62,6 @@ pub mod size {
     pub const ICON_LARGE: f32 = 21.0;
     /// The race status block's icons and weapon sprites.
     pub const ICON_HUD: f32 = 24.0;
-    /// The race status pill's icons and weapons (its visual weight matches the
-    /// watermark's).
-    pub const ICON_STATUS: f32 = 30.0;
 }
 
 /// Animation timing in seconds.
