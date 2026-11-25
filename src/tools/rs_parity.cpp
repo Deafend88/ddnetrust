@@ -105,6 +105,7 @@ static constexpr const char *const TOOL_NAME = "rs_parity";
 
 int CameraMode(const char *pOutFile); // rs_parity_camera.cpp
 int MovementMode(const char *pOutFile); // rs_parity_hud.cpp
+int MsgsMode(IMap *pMap, CCollision *pCollision, const char *pOutFile); // rs_parity_msgs.cpp
 
 typedef std::vector<unsigned char> Bytes;
 
@@ -670,6 +671,14 @@ static void WorldState(SQueries &Q, CCharacter *pChar)
 	Q.Int(pChar->GetOverriddenTuneZone());
 	Q.Int(pChar->Team());
 	Q.Int(pChar->TeamsCore()->GetSolo(pChar->GetCid()));
+}
+
+// For rs_parity_msgs.cpp.
+unsigned CharacterStateCrc(CCharacter *pChar)
+{
+	SQueries Q;
+	WorldState(Q, pChar);
+	return Q.Crc();
 }
 
 // "run <run> <spawn index> <number of kinds of spawn spots>" then per tick, per character in id
@@ -2079,6 +2088,17 @@ int main(int argc, const char **argv)
 		return MapImagesMode(argv[2], argv[3]);
 	if(argc == 4 && str_comp(argv[1], "doors") == 0)
 		return DoorsMode(argv[2], argv[3]);
+	if(argc == 4 && str_comp(argv[1], "msgs") == 0)
+	{
+		std::unique_ptr<IStorage> pStorage = CreateLocalStorage();
+		std::unique_ptr<IMap> pMap = CreateMap();
+		CLayers Layers;
+		if(!pStorage || !LoadMapAndLayers(pStorage.get(), argv[2], pMap.get(), &Layers))
+			return -1;
+		CCollision Collision;
+		Collision.Init(&Layers);
+		return MsgsMode(pMap.get(), &Collision, argv[3]);
+	}
 	if(argc >= 4 && (str_comp(argv[1], "collision") == 0 || str_comp(argv[1], "core") == 0 || str_comp(argv[1], "world") == 0))
 	{
 		bool HookTele = false, Verbose = false;
@@ -2093,6 +2113,6 @@ int main(int argc, const char **argv)
 			return CoreMode(argv[2], argv[3], HookTele, Verbose);
 		return CollisionMode(argv[2], argv[3], HookTele, Verbose);
 	}
-	log_error(TOOL_NAME, "Usage: %s map <map file> <output file> <scratch dir> | collision|core|world <map file> <output file> [hooktele] [verbose] | doors|mapimages|envelopes|items <map file> <output file> | envelopes-synthetic|screen|anims|colors|interp|camera|movement <output file> | png <output file> <dir>... | skins <output file> <dir>", argc > 0 ? argv[0] : TOOL_NAME);
+	log_error(TOOL_NAME, "Usage: %s map <map file> <output file> <scratch dir> | collision|core|world <map file> <output file> [hooktele] [verbose] | doors|mapimages|envelopes|items|msgs <map file> <output file> | envelopes-synthetic|screen|anims|colors|interp|camera|movement <output file> | png <output file> <dir>... | skins <output file> <dir>", argc > 0 ? argv[0] : TOOL_NAME);
 	return -1;
 }

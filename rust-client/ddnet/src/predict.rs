@@ -5,23 +5,31 @@
 //!
 //! `rendered` ports `UpdateRenderedCharacters`: what the renderer draws between ticks.
 //!
-//! Not ported yet: `Sv_TeamsState` (team membership: everyone is in team 0 unless a
-//! snapshot says solo/super), `Sv_TuneParams` (default tuning), snapshot entities other
-//! than doors, the dummy, antiping smoothing and events.
+//! Also the game messages that change the prediction world (`Sv_TuneParams` with
+//! `UpdateLocalTuning` and the map's tune settings, `Sv_TeamsState`, `Sv_KillMsg`,
+//! `Sv_KillMsgTeam`, `Sv_PreInput`).
+//!
+//! Not ported yet: snapshot entities other than doors, the dummy, antiping smoothing and
+//! events.
 
 use std::collections::BTreeMap;
 
 use std::rc::Rc;
 
-use crate::net::client::Client;
+use crate::console;
+use crate::map::Map;
+use crate::net::client::{Client, PredictMsg};
 use crate::physics::collision::Collision;
 use crate::physics::core::{CharacterCore, WorldCore};
 use crate::physics::teams::{MAX_CLIENTS, NUM_DDRACE_TEAMS, TEAM_FLOCK, TeamsCore};
+use crate::physics::tuning::{Param, Tuning};
 use crate::physics::vmath::{Vec2, mix, vec2};
-use crate::physics::world::{GameWorld, WorldConfig, core_obj};
+use crate::physics::world::{
+    GameWorld, NUM_TUNE_ZONES, TUNE_ZONE_OVERRIDE_NONE, WorldConfig, core_obj,
+};
 use crate::protocol::generated::{
-    self as g, ObjCharacter, ObjCharacterCore, ObjDDNetCharacter, ObjDDNetLaser, ObjEntityEx,
-    ObjGameInfoEx, ObjSwitchState,
+    self as g, MsgSvPreInput, ObjCharacter, ObjCharacterCore, ObjDDNetCharacter, ObjDDNetLaser,
+    ObjEntityEx, ObjGameInfoEx, ObjSpectatorInfo, ObjSwitchState,
 };
 use crate::protocol::snapshot::Item;
 
@@ -30,6 +38,59 @@ const TILE_SWITCHTIMEDOPEN: i32 = 22;
 const TILE_SWITCHTIMEDCLOSE: i32 = 23;
 const TILE_SWITCHOPEN: i32 = 24;
 const TILE_SWITCHCLOSE: i32 = 25;
+/// C++: `MAPITEMTYPE_INFO`.
+const MAPITEMTYPE_INFO: i32 = 1;
+/// C++: `VANILLA_MAX_CLIENTS`.
+const VANILLA_MAX_CLIENTS: usize = 16;
+/// C++: the size of `CClientData::m_aPreInputs`.
+const NUM_PRE_INPUTS: usize = 200;
+
+/// C++: `CGameClient::LoadMapSettings` (gameclient.cpp:4208): every tune zone reset, then
+/// the map's settings run as console lines; only the commands registered with
+/// `CFGFLAG_GAME` run: `tune` and `tune_zone`. ponytail: `mapbug` (CMapBugs) is not
+/// ported; add it with the map bug emulation.
+pub fn map_tunings(map: &Map) -> Vec<Tuning> {
+    let mut list = vec![Tuning::map_default(); NUM_TUNE_ZONES];
+    let df = &map.datafile;
+    for i in df.get_type(MAPITEMTYPE_INFO) {
+        let item = &df.items[i];
+        if item.id() != 0 {
+            continue;
+        }
+        // sizeof(CMapItemInfoSettings): version, author, map version, credits, license,
+        // settings
+        if item.data.len() < 6 || item.data[5] <= -1 {
+            break;
+        }
+        apply_map_settings(&mut list, &map.data(item.data[5]).unwrap_or_default());
+        break;
+    }
+    list
+}
+
+/// The settings loop of `LoadMapSettings`: runs the NUL-terminated lines of a map's
+/// settings data as console lines from the map (`IConsole::CLIENT_ID_GAME`).
+pub fn apply_map_settings(list: &mut [Tuning], settings: &[u8]) {
+    for line in settings.split(|&b| b == 0) {
+        for (command, args) in console::split_line(&String::from_utf8_lossy(line)) {
+            let mut a = Vec::new();
+            if command.eq_ignore_ascii_case("tune") {
+                // C++: ConTuneParam
+                if console::parse_args(&args, "s[tuning] ?f[value]", &mut a) && a.len() == 2 {
+                    list[0].set_by_name(&a[0], console::arg_float(&a, 1));
+                }
+            } else if command.eq_ignore_ascii_case("tune_zone")
+                && console::parse_args(&args, "i[zone] s[tuning] f[value]", &mut a)
+            {
+                // C++: ConTuneZone
+                let zone = console::str_toint(&a[0]).unwrap_or(0);
+                if (0..NUM_TUNE_ZONES as i32).contains(&zone) {
+                    list[zone as usize].set_by_name(&a[1], console::arg_float(&a, 2));
+                }
+            }
+        }
+    }
+}
 
 /// C++: `m_Snap.m_aCharacters[i]` of an active character (in this and the previous
 /// snapshot): `prev` evolved to the previous snapshot's tick, `cur` to the current one,
@@ -106,6 +167,15 @@ pub struct Predictor {
     /// The latest prediction of the local character for each tick.
     history: BTreeMap<i32, ObjCharacterCore>,
     pub stats: Stats,
+    /// C++: `m_aTuning[0]` (the last `Sv_TuneParams`), `m_aReceivedTuning`,
+    /// `m_aLocalTuneZone`, `m_aExpectingTuningForZone`, `m_aExpectingTuningSince`.
+    tuning: Tuning,
+    received_tuning: bool,
+    local_tune_zone: i32,
+    expecting_tuning_for_zone: i32,
+    expecting_tuning_since: i32,
+    /// C++: `m_aClients[i].m_aPreInputs`, indexed by intended tick % 200.
+    pre_inputs: Vec<Vec<MsgSvPreInput>>,
 }
 
 /// C++: `CCharacterCore::Write` into a `CNetObj_Character` (all but the tick).
@@ -127,7 +197,8 @@ fn find(items: &[Item], type_id: i32, id: i32) -> Option<&Item> {
 }
 
 impl Predictor {
-    pub fn new(col: Rc<Collision>) -> Self {
+    /// C++: `CGameClient::OnConnected` for a loaded map (incl. `LoadMapSettings`).
+    pub fn new(col: Rc<Collision>, map: &Map) -> Self {
         // C++: CGameClient::OnConnected / OnReset defaults
         let config = WorldConfig {
             infinite_ammo: true,
@@ -136,9 +207,15 @@ impl Predictor {
             antiping_players: 1,
             ..Default::default()
         };
+        let mut world = GameWorld::new(Rc::clone(&col), config);
+        world.tunings = map_tunings(map);
+        let no_pre_input = MsgSvPreInput {
+            intended_tick: -1,
+            ..Default::default()
+        };
         Self {
             highest_switch: col.highest_switch_number,
-            world: GameWorld::new(Rc::clone(&col), config),
+            world,
             teams: TeamsCore::default(),
             col,
             char_order: (0..MAX_CLIENTS).collect(),
@@ -156,17 +233,199 @@ impl Predictor {
             allow_zoom: false,
             history: BTreeMap::new(),
             stats: Stats::default(),
+            tuning: Tuning::default(),
+            received_tuning: false,
+            local_tune_zone: -1,
+            expecting_tuning_for_zone: -1,
+            expecting_tuning_since: 0,
+            pre_inputs: vec![vec![no_pre_input; NUM_PRE_INPUTS]; MAX_CLIENTS],
         }
     }
 
     /// Handles everything the client did since the last call: each snapshot switch
     /// (`OnNewSnapshot` + `UpdatePrediction`), then `OnPredict` if a repredict is due.
     pub fn update(&mut self, client: &mut Client) {
+        // C++ handles messages while pumping the network, before CClient::Update
+        // switches snapshots
+        for msg in std::mem::take(&mut client.predict_msgs) {
+            self.on_message(msg);
+        }
         for (prev, cur) in std::mem::take(&mut client.snapshot_switches) {
             self.on_new_snapshot(client, prev, cur);
         }
         if std::mem::take(&mut client.repredict) {
             self.predict(client);
+        }
+    }
+
+    /// C++: the branches of `CGameClient::OnMessage` that change the prediction world.
+    pub fn on_message(&mut self, msg: PredictMsg) {
+        match msg {
+            // gameclient.cpp:1053
+            PredictMsg::TuneParams(ints) => {
+                self.received_tuning = true;
+                self.tuning = Tuning::from_net(&ints);
+            }
+            // gameclient.cpp:1168
+            PredictMsg::TeamsState(ints) => {
+                let mut i = 0;
+                while i < MAX_CLIENTS {
+                    match ints.get(i) {
+                        Some(&team) if (TEAM_FLOCK..NUM_DDRACE_TEAMS as i32).contains(&team) => {
+                            self.teams.set_team(i as i32, team);
+                        }
+                        _ => {
+                            self.teams.set_team(i as i32, 0);
+                            break;
+                        }
+                    }
+                    i += 1;
+                }
+                if i <= VANILLA_MAX_CLIENTS {
+                    self.teams.num_ddrace_teams = VANILLA_MAX_CLIENTS as i32 + 1;
+                }
+            }
+            // gameclient.cpp:1192
+            PredictMsg::KillMsg(m) => {
+                if !(self.world.config.is_fng && m.weapon == g::WEAPON_LASER) {
+                    self.give_weak(m.victim);
+                    if let Ok(victim) = usize::try_from(m.victim) {
+                        self.world.reset_prediction(victim);
+                    }
+                    self.world.release_hooked(m.victim);
+                }
+            }
+            // gameclient.cpp:1204
+            PredictMsg::KillMsgTeam(m) => {
+                let mut sorted = Vec::new();
+                for i in 0..MAX_CLIENTS {
+                    if self.teams.team(i as i32) == m.team {
+                        if let Some((ch, _)) = self.world.character(i) {
+                            let key = if m.first == i as i32 {
+                                MAX_CLIENTS as i32
+                            } else {
+                                ch.strong_weak_id
+                            };
+                            self.world.reset_prediction(i);
+                            sorted.push((i as i32, key));
+                        }
+                        self.world.release_hooked(i as i32);
+                    }
+                }
+                sorted.sort_by_key(|a| std::cmp::Reverse(a.1)); // stable, like std::stable_sort
+                for (id, _) in sorted {
+                    self.give_weak(id);
+                }
+            }
+            // gameclient.cpp:1236; ponytail: C++ indexes with a negative remainder for a
+            // negative intended tick (out of bounds); such pre-inputs are dropped
+            PredictMsg::PreInput(m) => {
+                if let (Ok(owner), Ok(slot)) = (
+                    usize::try_from(m.owner),
+                    usize::try_from(m.intended_tick % NUM_PRE_INPUTS as i32),
+                ) && owner < MAX_CLIENTS
+                {
+                    self.pre_inputs[owner][slot] = m;
+                }
+            }
+        }
+    }
+
+    /// C++: `CCharOrder::GiveWeak`.
+    fn give_weak(&mut self, id: i32) {
+        if (0..MAX_CLIENTS as i32).contains(&id) {
+            self.char_order.retain(|&i| i != id as usize);
+            self.char_order.push(id as usize);
+        }
+    }
+
+    /// C++: `m_aClients[id].m_aPreInputs[tick % 200]` if it was meant for `tick`
+    /// (the test in `ApplyPreInputs`).
+    pub fn pre_input(&self, id: usize, tick: i32) -> Option<&MsgSvPreInput> {
+        let p = self
+            .pre_inputs
+            .get(id)?
+            .get(usize::try_from(tick % NUM_PRE_INPUTS as i32).ok()?)?;
+        (p.intended_tick == tick).then_some(p)
+    }
+
+    /// C++: `CGameClient::GetTuning(zone)`: the tuning list the prediction uses.
+    pub fn tuning(&self, zone: i32) -> &Tuning {
+        &self.world.tunings[zone.clamp(0, NUM_TUNE_ZONES as i32 - 1) as usize]
+    }
+
+    /// C++: `m_aTuning[0]`: the last tuning the server sent (default before any).
+    pub fn received_tuning(&self) -> &Tuning {
+        &self.tuning
+    }
+
+    /// C++: `m_aReceivedTuning[0]`, `m_aLocalTuneZone[0]`, `m_aExpectingTuningForZone[0]`
+    /// and `m_aExpectingTuningSince[0]` (for the parity tests).
+    pub fn tune_state(&self) -> (bool, i32, i32, i32) {
+        (
+            self.received_tuning,
+            self.local_tune_zone,
+            self.expecting_tuning_for_zone,
+            self.expecting_tuning_since,
+        )
+    }
+
+    /// C++: `m_GameWorld`, the server-state world (for the parity tests).
+    pub fn world_mut(&mut self) -> &mut GameWorld {
+        &mut self.world
+    }
+
+    /// C++: `m_CharOrder.m_Ids` (for the parity tests).
+    pub fn char_order(&self) -> &[usize] {
+        &self.char_order
+    }
+
+    /// C++: `m_Teams` (for the parity tests).
+    pub fn teams_mut(&mut self) -> &mut TeamsCore {
+        &mut self.teams
+    }
+
+    /// C++: `CGameClient::UpdateLocalTuning` (gameclient.cpp:3409). `local_pos` is the
+    /// local character (`m_pLocalCharacter`), else the spectator info position.
+    pub fn update_local_tuning(&mut self, local_pos: Option<Vec2>, override_zone: Option<i32>) {
+        let use_zones = self.world.config.use_tune_zones;
+        // always update default tune zone, even without character
+        if !use_zones {
+            self.world.tunings[0] = self.tuning;
+        }
+        let Some(pos) = local_pos else {
+            return;
+        };
+        if !use_zones {
+            return;
+        }
+        let zone = match override_zone {
+            Some(z) if z != TUNE_ZONE_OVERRIDE_NONE => z,
+            _ => self.col.is_tune(self.col.get_map_index(pos)),
+        };
+        if zone != self.local_tune_zone {
+            // our tunezone changed, expecting tuning message
+            self.local_tune_zone = zone;
+            self.expecting_tuning_for_zone = zone;
+            self.expecting_tuning_since = 0;
+        }
+        if self.expecting_tuning_for_zone >= 0 {
+            if self.received_tuning {
+                self.world.tunings[self.expecting_tuning_for_zone as usize] = self.tuning;
+                self.received_tuning = false;
+                self.expecting_tuning_for_zone = -1;
+            } else if self.expecting_tuning_since >= 5 {
+                // probably dropped, out of order or for another zone: fall back
+                self.expecting_tuning_for_zone = -1;
+                self.expecting_tuning_since = 0;
+                self.received_tuning = false;
+            } else {
+                self.expecting_tuning_since += 1;
+            }
+        } else {
+            self.world.tunings[zone as usize] = self.tuning;
+            self.expecting_tuning_since = 0;
+            self.received_tuning = false;
         }
     }
 
@@ -278,6 +537,12 @@ impl Predictor {
             predict_tiles = flags & g::GAMEINFOFLAG_PREDICT_DDRACE_TILES != 0;
             bug_input = flags & g::GAMEINFOFLAG_BUG_DDRACE_INPUT != 0;
         }
+        let fng = flags & g::GAMEINFOFLAG_GAMETYPE_FNG != 0;
+        let predict_fng = if version >= 2 {
+            flags & g::GAMEINFOFLAG_PREDICT_FNG != 0
+        } else {
+            fng
+        };
         let no_weak = version >= 8 && flags2 & g::GAMEINFOFLAG2_NO_WEAK_HOOK != 0;
         self.hud_ddrace = version >= 7 && flags2 & g::GAMEINFOFLAG2_HUD_DDRACE != 0;
         let race = ddrace
@@ -322,7 +587,22 @@ impl Predictor {
         c.predict_tiles = predict_ddrace && predict_tiles;
         c.bug_ddrace_input = bug_input;
         c.no_weak_hook_and_bounce = no_weak;
+        c.is_fng = predict_fng;
         c.use_tune_zones = predict_tiles; // C++: UpdateLocalTuning
+
+        // C++: m_Snap.m_pLocalCharacter (the evolved snapshot character, not while
+        // spectating), else the last spectator info
+        let local_pos = match self.local_char() {
+            Some(c) if !spectating => Some(vec2(c.cur.x as f32, c.cur.y as f32)),
+            _ => items
+                .iter()
+                .rev()
+                .find(|it| it.type_id == g::NETOBJTYPE_SPECTATORINFO)
+                .map(|it| ObjSpectatorInfo::from_ints(&ints(it, ObjSpectatorInfo::NUM_INTS)))
+                .map(|s| vec2(s.x as f32, s.y as f32)),
+        };
+        let override_zone = ext_of(items, self.local_id).map(|e| e.tune_zone_override);
+        self.update_local_tuning(local_pos, override_zone);
 
         self.compare_with_server(tick);
         self.update_prediction(client, tick);
@@ -401,29 +681,34 @@ impl Predictor {
         if local_char.cur.ammo_count > 0 && local_char.cur.weapon != g::WEAPON_NINJA {
             self.world.config.infinite_ammo = false;
         }
+        let collision = self.tuning.0[Param::PlayerCollision as usize] != 0;
+        let hooking = self.tuning.0[Param::PlayerHooking as usize] != 0;
+        self.world.config.is_solo = local_char.ext.is_none() && !collision && !hooking;
 
-        // strong and weak hook order (player collision and hooking are on by default)
-        if local_char.ext.is_some() {
-            let mut ids = [-1i32; MAX_CLIENTS];
-            for i in 0..MAX_CLIENTS {
-                if let Some((ch, _)) = self.world.character(i)
-                    && let Some(slot) = ids.get_mut(ch.strong_weak_id as usize)
-                {
-                    *slot = i as i32;
+        // update strong and weak hook
+        let has_local = self.world.character(local).is_some();
+        if has_local && !self.spectating && (collision || hooking) {
+            if local_char.ext.is_some() {
+                let mut ids = [-1i32; MAX_CLIENTS];
+                for i in 0..MAX_CLIENTS {
+                    if let Some((ch, _)) = self.world.character(i)
+                        && let Some(slot) = ids.get_mut(ch.strong_weak_id as usize)
+                    {
+                        *slot = i as i32;
+                    }
+                }
+                for id in ids.into_iter().filter(|&id| id >= 0) {
+                    // C++: CCharOrder::GiveStrong
+                    self.char_order.retain(|&i| i != id as usize);
+                    self.char_order.insert(0, id as usize);
                 }
             }
-            for id in ids.into_iter().filter(|&id| id >= 0) {
-                // C++: CCharOrder::GiveStrong
-                self.char_order.retain(|&i| i != id as usize);
-                self.char_order.insert(0, id as usize);
-            }
+            // ponytail: without the extended object C++ detects strong hooks by hand
+            // (DetectStrongHook); vanilla servers are later work (PLAN §11).
             self.world.reinsert(self.char_order.iter().copied());
         }
-        // ponytail: without the extended object C++ detects strong hooks by hand
-        // (DetectStrongHook); DDNet servers always send it.
 
         // advance the server world to the snapshot tick
-        let has_local = self.world.character(local).is_some();
         if has_local && (self.world.game_tick - tick).abs() < TICK_SPEED {
             for t in self.world.game_tick + 1..=tick {
                 let input = client.input_at(t);

@@ -77,7 +77,7 @@ fn main() {
                 entered_at = Some(now);
                 prediction = (client.map())
                     .and_then(|m| Map::load(m.data.clone()).ok())
-                    .map(|m| Predictor::new(std::rc::Rc::new(Collision::new(&m))));
+                    .map(|m| Predictor::new(std::rc::Rc::new(Collision::new(&m)), &m));
                 if let Some(map) = client.map() {
                     println!(
                         "map: {} crc={:08x} size={}",

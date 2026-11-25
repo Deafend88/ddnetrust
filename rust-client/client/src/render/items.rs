@@ -2,8 +2,8 @@
 //! (incl. doors, draggers, freeze lasers and guns) and flags from the snapshot, with the
 //! default config (`cl_antiping 0`, so nothing is weapon-predicted).
 //!
-//! Not drawn: particles (smoke and bullet trails, powerup shine). Tuning is the default
-//! for every tune zone (`Sv_TuneParams` is not handled yet).
+//! Not drawn: particles (smoke and bullet trails, powerup shine). Tuning per tune zone
+//! comes from the predictor (`CGameClient::GetTuning`).
 
 use std::time::Instant;
 
@@ -274,8 +274,7 @@ impl Items {
         rect: &[f32; 4],
     ) {
         let weapon = d.type_.clamp(0, 5);
-        // ponytail: default tuning for every zone until Sv_TuneParams is handled
-        let tuning = Tuning::default();
+        let tuning = f.predictor.tuning(d.tune_zone);
         let (curvature, speed) = match weapon {
             g::WEAPON_GRENADE => (
                 tuning.get(Param::GrenadeCurvature),
@@ -510,8 +509,18 @@ impl Items {
             let v = pos - from;
             let dir = vec2(v.x / len, v.y / len);
             let ms = ticks_body * 1000.0 / TICK_SPEED as f32;
-            // ponytail: default tuning in every tune zone (C++ looks up the laser's zone)
-            let a = (ms / Tuning::default().get(Param::LaserBounceDelay)).clamp(0.0, 1.0);
+            let delay = if ty == g::LASERTYPE_RIFLE || ty == g::LASERTYPE_SHOTGUN {
+                let p = f.predictor;
+                let zone = if p.use_tune_zones() {
+                    f.collision.is_tune(f.collision.get_map_index(from))
+                } else {
+                    0
+                };
+                p.tuning(zone).get(Param::LaserBounceDelay)
+            } else {
+                Tuning::default().get(Param::LaserBounceDelay)
+            };
+            let a = (ms / delay).clamp(0.0, 1.0);
             let ia = 1.0 - a;
             batch.texture_set(None);
             batch.quads_begin();

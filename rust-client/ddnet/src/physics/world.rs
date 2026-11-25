@@ -10,8 +10,9 @@ use super::collision::{
     TILE_NPH_ENABLE, TILE_TELE_LASER_DISABLE, clamp_vel,
 };
 use super::core::{
-    COREEVENT_HOOK_ATTACH_GROUND, CharacterCore, HOOK_IDLE, NUM_WEAPONS, Ninja, PHYSICAL_SIZE,
-    SERVER_TICK_SPEED, WorldCore, count_input, read_core, read_ddnet, set_hooked_player,
+    COREEVENT_HOOK_ATTACH_GROUND, COREEVENT_HOOK_RETRACT, CharacterCore, HOOK_IDLE, HOOK_RETRACTED,
+    NUM_WEAPONS, Ninja, PHYSICAL_SIZE, SERVER_TICK_SPEED, WorldCore, count_input, read_core,
+    read_ddnet, set_hooked_player,
 };
 use super::door::{Door, reset_door_collision};
 use super::teams::{MAX_CLIENTS, NUM_DDRACE_TEAMS, TeamsCore};
@@ -70,6 +71,10 @@ pub struct WorldConfig {
     pub use_tune_zones: bool,
     pub bug_ddrace_input: bool,
     pub no_weak_hook_and_bounce: bool,
+    /// C++: `m_IsFNG` (`m_GameInfo.m_PredictFNG`).
+    pub is_fng: bool,
+    /// C++: `m_IsSolo`: no extended object and neither player collision nor hooking.
+    pub is_solo: bool,
     /// C++: `g_Config.m_SvFreezeDelay` (default 3).
     pub freeze_delay: i32,
     /// C++: `g_Config.m_ClAntiPingPlayers` (default 1).
@@ -1243,6 +1248,30 @@ impl GameWorld {
         self.chars[id] = None;
         self.core.characters[id] = None;
         self.order.retain(|&i| i != id);
+    }
+
+    /// C++: `CCharacter::ResetPrediction` of character `id`, if it is in the world.
+    pub fn reset_prediction(&mut self, id: usize) {
+        if self.character(id).is_some() {
+            self.with_char(id, |ch, c, w| ch.reset_prediction(c, w));
+        }
+    }
+
+    /// C++: `CGameWorld::ReleaseHooked` (gameworld.cpp:325): every character in list
+    /// order that hooks `id` and is not super lets go (`CCharacter::ReleaseHook`).
+    pub fn release_hooked(&mut self, id: i32) {
+        for i in self.order.clone() {
+            let hooks = self.core.characters[i]
+                .as_ref()
+                .is_some_and(|c| c.hooked_player() == id && !c.super_);
+            if hooks {
+                self.with_char(i, |_, c, w| {
+                    set_hooked_player(c, w.me, w.cores, -1);
+                    c.hook_state = HOOK_RETRACTED;
+                    c.triggered_events |= COREEVENT_HOOK_RETRACT;
+                });
+            }
+        }
     }
 
     /// C++: `RemoveEntity` + `InsertEntity` for each id that has a character, so the last

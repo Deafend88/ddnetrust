@@ -41,6 +41,13 @@ fn server_binary() -> Option<PathBuf> {
 }
 
 fn start_server(exe: &PathBuf, map: &str) -> (Server, u16) {
+    start_server_with(exe, map, &[])
+}
+
+/// `start_server` with `map_cfg` as the map's config (`maps/<map>.cfg`): the server
+/// imports it into the map's settings, so it runs after the game type reset the tuning,
+/// and clients load it too (`LoadMapSettings`).
+fn start_server_with(exe: &PathBuf, map: &str, map_cfg: &[&str]) -> (Server, u16) {
     let port = UdpSocket::bind("127.0.0.1:0")
         .unwrap()
         .local_addr()
@@ -53,6 +60,10 @@ fn start_server(exe: &PathBuf, map: &str) -> (Server, u16) {
         "add_path $CURRENTDIR\nadd_path $DATADIR\n",
     )
     .unwrap();
+    if !map_cfg.is_empty() {
+        fs::create_dir_all(dir.join("maps")).unwrap();
+        fs::write(dir.join(format!("maps/{map}.cfg")), map_cfg.join("\n")).unwrap();
+    }
     let log = fs::File::create(dir.join("server.log")).unwrap();
     let child = Command::new(exe)
         .current_dir(&dir)
@@ -163,49 +174,109 @@ fn local_server_session() {
 /// was predicted for its tick, and re-predicting a tick must never change it.
 #[test]
 fn prediction_matches_server() {
-    let Some(exe) = server_binary() else {
-        eprintln!("SKIPPED: no DDNet-Server (set DDNET_SERVER or build the game-server target)");
-        return;
-    };
     for map_name in ["dm1", "coverage"] {
-        let (server, port) = start_server(&exe, map_name);
-        let socket = net::connect_socket(format!("127.0.0.1:{port}").parse().unwrap()).unwrap();
-        let start = Instant::now();
-        let mut client = Client::new(PlayerInfo::default(), "", net::random_bytes);
-        client.connect(net::now(start));
-        let deadline = Instant::now() + Duration::from_secs(15);
-        while Instant::now() < deadline
-            && !(client.state() == State::Online && local_x(&client).is_some())
-        {
-            net::pump(&socket, &mut client, net::now(start)).unwrap();
-            std::thread::sleep(Duration::from_millis(1));
-        }
-        assert_eq!(client.state(), State::Online, "{map_name}");
-
-        let map = Map::load(client.map().unwrap().data.clone()).unwrap();
-        let col = Collision::new(&map);
-        let col = Rc::new(col);
-        let weak_col = Rc::downgrade(&col);
-        let mut pred = Predictor::new(col);
-        let entered = net::now(start);
-        while net::now(start) - entered < 10 * FREQ {
-            net::scripted_input(&mut client.input, net::now(start) - entered);
-            net::pump(&socket, &mut client, net::now(start)).unwrap();
-            pred.update(&mut client);
-            std::thread::sleep(Duration::from_millis(1));
-        }
-        let s = &pred.stats;
-        eprintln!("{map_name}: {s:?}");
-        assert!(s.compared > 100, "{map_name}: {s:?}");
-        assert_eq!(s.mismatched, 0, "{map_name}: {s:?}");
-        assert_eq!(s.prediction_errors, 0, "{map_name}: {s:?}");
+        let Some((pred, _, weak_col)) = check_prediction(map_name, &[], None) else {
+            return;
+        };
         // the collision lives exactly as long as the predictor and its world copies
         drop(pred);
         assert!(weak_col.upgrade().is_none(), "collision still alive");
-        let dir = server.dir.clone();
-        drop(server);
-        let _ = fs::remove_dir_all(dir);
     }
+}
+
+/// 8.1: the same with changed tuning (global and per tune zone, so `Sv_TuneParams` and
+/// `UpdateLocalTuning` must be right) and, on coverage, after joining DDRace team 7 by
+/// chat (so `Sv_TeamsState` must be right). The tuning keeps the scripted path off
+/// death tiles: the server turns those into a freeze in practice mode, which the C++
+/// client prediction does not model either.
+#[test]
+fn prediction_matches_server_with_tuning_and_teams() {
+    let zones: Vec<String> = (1..=40)
+        .flat_map(|z| {
+            [
+                format!("tune_zone {z} gravity {}", 0.3 + (z % 5) as f32 * 0.1),
+                format!("tune_zone {z} ground_control_speed {}", 8 + z % 7),
+                format!("tune_zone {z} air_jump_impulse {}", 9 + z % 4),
+            ]
+        })
+        .collect();
+    let mut map_cfg = vec![
+        "tune gravity 0.47",
+        "tune ground_control_speed 11",
+        "tune hook_length 300",
+    ];
+    map_cfg.extend(zones.iter().map(String::as_str));
+    for (map_name, chat) in [("dm1", None), ("coverage", Some("/team 7"))] {
+        let Some((mut pred, local, _)) = check_prediction(map_name, &map_cfg, chat) else {
+            return;
+        };
+        let team = if chat.is_some() { 7 } else { 0 };
+        assert_eq!(pred.teams_mut().team(local), team, "{map_name}: team");
+        assert_eq!(
+            pred.received_tuning()
+                .get(ddnet::physics::tuning::Param::GroundControlSpeed),
+            11.0,
+            "{map_name}: server tuning not received"
+        );
+    }
+}
+
+/// Runs the scripted movement on `map_name` for 10 s (after sending `chat`, if any) and
+/// checks every snapshot of the local character against its prediction. Returns the predictor, the local id and the
+/// collision (weak); `None` without a server binary.
+fn check_prediction(
+    map_name: &str,
+    map_cfg: &[&str],
+    chat: Option<&str>,
+) -> Option<(Predictor, i32, std::rc::Weak<Collision>)> {
+    let Some(exe) = server_binary() else {
+        eprintln!("SKIPPED: no DDNet-Server (set DDNET_SERVER or build the game-server target)");
+        return None;
+    };
+    let (server, port) = start_server_with(&exe, map_name, map_cfg);
+    let socket = net::connect_socket(format!("127.0.0.1:{port}").parse().unwrap()).unwrap();
+    let start = Instant::now();
+    let mut client = Client::new(PlayerInfo::default(), "", net::random_bytes);
+    client.connect(net::now(start));
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while Instant::now() < deadline
+        && !(client.state() == State::Online && local_x(&client).is_some())
+    {
+        net::pump(&socket, &mut client, net::now(start)).unwrap();
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert_eq!(client.state(), State::Online, "{map_name}");
+
+    let map = Map::load(client.map().unwrap().data.clone()).unwrap();
+    let col = Collision::new(&map);
+    let col = Rc::new(col);
+    let weak_col = Rc::downgrade(&col);
+    let mut pred = Predictor::new(col, &map);
+    let entered = net::now(start);
+    if let Some(line) = chat {
+        client.say(0, line, entered);
+    }
+    let mut zones = std::collections::BTreeSet::new();
+    while net::now(start) - entered < 10 * FREQ {
+        net::scripted_input(&mut client.input, net::now(start) - entered);
+        net::pump(&socket, &mut client, net::now(start)).unwrap();
+        pred.update(&mut client);
+        zones.insert(pred.tune_state().1);
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let s = &pred.stats;
+    eprintln!(
+        "{map_name} ({} map config lines, chat {chat:?}): {s:?}, tune zones {zones:?}",
+        map_cfg.len()
+    );
+    assert!(s.compared > 100, "{map_name}: {s:?}");
+    assert_eq!(s.mismatched, 0, "{map_name}: {s:?}");
+    assert_eq!(s.prediction_errors, 0, "{map_name}: {s:?}");
+    let local = client.local_id().unwrap_or(-1);
+    let dir = server.dir.clone();
+    drop(server);
+    let _ = fs::remove_dir_all(dir);
+    Some((pred, local, weak_col))
 }
 
 fn character(client: &Client, id: i32) -> Option<g::ObjCharacter> {
@@ -252,7 +323,7 @@ fn prediction_recovers_from_interference() {
     }
     let map = Map::load(a.map().unwrap().data.clone()).unwrap();
     let col = Collision::new(&map);
-    let mut pred = Predictor::new(Rc::new(col));
+    let mut pred = Predictor::new(Rc::new(col), &map);
     let entered = net::now(start);
     let mut during = None;
     let (mut closest, mut hooked) = (i32::MAX, false);
@@ -346,7 +417,7 @@ fn rendered_positions_are_smooth() {
     }
     let map = Map::load(a.map().unwrap().data.clone()).unwrap();
     let col = Collision::new(&map);
-    let mut pred = Predictor::new(Rc::new(col));
+    let mut pred = Predictor::new(Rc::new(col), &map);
     let (ida, idb) = (a.local_id().unwrap(), b.local_id().unwrap());
     let entered = net::now(start);
     // per tee: last rendered and last snapshot position, largest step of each, frames

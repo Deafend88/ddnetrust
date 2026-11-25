@@ -248,3 +248,17 @@ only matters for names so long that neither file can exist.
 - Lyrics show in one place (subtitles under the island by default, the card, or off);
   the default fetches lyrics for the playing track (the user chose "under the island"
   as the default).
+
+## 2026-11-25 — Antiping 8.1: messages the prediction world needs
+
+- `Sv_PreInput` with a negative intended tick is dropped. C++ indexes its 200-slot ring
+  with `Tick % 200`, which is negative then (out of bounds, undefined behaviour).
+- The received tuning (`m_aTuning`) lives in the predictor, so it starts at the default
+  for every new map/connection. C++ keeps it in `CGameClient` across connections; the
+  server sends the tuning on every join, so only the first snapshots before that could
+  differ.
+- `mapbug` map settings are ignored: map bug emulation (`CMapBugs`) is not ported.
+- `str_tofloat` follows `strtod` for hex floats (`0x1.8p3`), `nan(...)` and the empty
+  string (0). ponytail: hex mantissas are exact up to 15 significant digits.
+- C++ client prediction does not model the server's practice-mode death tiles (freeze
+  instead of death), so it mispredicts the tick a practice tee touches one; so do we.

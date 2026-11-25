@@ -630,6 +630,7 @@ fn check_world(name: &str, col: Rc<Collision>, text: &str) {
             no_weak_hook_and_bounce: mode % 2 == 1,
             freeze_delay: 3,
             antiping_players: 1,
+            ..Default::default()
         };
         let mut world = GameWorld::new(Rc::clone(&col), config);
         world.tunings = tunings.clone();
@@ -1011,4 +1012,243 @@ fn items_match_cpp() {
         n += 1;
     }
     assert_eq!(n, 12000);
+}
+
+fn tunings_crc(list: &[Tuning]) -> u32 {
+    let bytes: Vec<u8> = list
+        .iter()
+        .flat_map(|t| t.0.iter().flat_map(|v| v.to_le_bytes()))
+        .collect();
+    crc(&bytes)
+}
+
+fn unhex(s: &str) -> Vec<u8> {
+    if s == "-" {
+        return Vec::new();
+    }
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+        .collect()
+}
+
+/// The game messages that change the prediction world, `UpdateLocalTuning` and the map's
+/// tune settings, against `rs_parity msgs` (word-for-word copies of the CGameClient code
+/// driving the real CUnpacker, CTeamsCore, CCharOrder, CGameWorld and CConsole).
+#[test]
+fn messages_match_cpp() {
+    use ddnet::net::client::{PredictMsg, read_ints};
+    use ddnet::physics::teams::MAX_CLIENTS;
+    use ddnet::predict::{Predictor, apply_map_settings, map_tunings};
+    use ddnet::protocol::packer::Unpacker;
+
+    let map = load("coverage");
+    let col = Rc::new(Collision::new(&map));
+    let path = format!("{}/../tests/golden/msgs.txt", env!("CARGO_MANIFEST_DIR"));
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let num = |s: &str| s.parse::<i32>().unwrap();
+    let mut pred: Option<Predictor> = None;
+    let mut counts = std::collections::BTreeMap::new();
+    for line in text.lines() {
+        let (input, want) = line.split_once(" = ").unwrap_or((line, ""));
+        let w: Vec<&str> = input.split(' ').collect();
+        *counts.entry(w[0]).or_insert(0) += 1;
+        let got = match w[0] {
+            "mapsettings" => format!("{:08x}", tunings_crc(&map_tunings(&map))),
+            "settings" => {
+                let mut list = vec![Tuning::default(); NUM_TUNE_ZONES];
+                apply_map_settings(&mut list, &unhex(w[1]));
+                format!("{:08x}", tunings_crc(&list))
+            }
+            "run" => {
+                let mut p = Predictor::new(Rc::clone(&col), &map);
+                let world = p.world_mut();
+                world.tunings = vec![Tuning::default(); NUM_TUNE_ZONES];
+                world.game_tick = 1000;
+                world.config = WorldConfig {
+                    infinite_ammo: true,
+                    predict_freeze: true,
+                    predict_ddrace: true,
+                    predict_tiles: true,
+                    is_fng: w[2] == "1",
+                    freeze_delay: 3,
+                    antiping_players: 1,
+                    ..Default::default()
+                };
+                pred = Some(p);
+                continue;
+            }
+            "char" => {
+                let (obj, ext) = input.split_once(" |").unwrap();
+                let obj: Vec<i32> = obj.split(' ').skip(2).map(num).collect();
+                let ext: Vec<i32> = ext.split_whitespace().map(num).collect();
+                pred.as_mut().unwrap().world_mut().add_character(
+                    num(w[1]) as usize,
+                    &ObjCharacter::from_ints(&obj),
+                    &ObjDDNetCharacter::from_ints(&ext),
+                );
+                continue;
+            }
+            _ => {
+                let p = pred.as_mut().unwrap();
+                match w[0] {
+                    "tune" => {
+                        let bytes = unhex(w[1]);
+                        let ints = read_ints(
+                            &mut Unpacker::new(&bytes),
+                            ddnet::physics::tuning::NUM_PARAMS,
+                        );
+                        p.on_message(PredictMsg::TuneParams(ints));
+                        let t = p.received_tuning();
+                        format!(
+                            "{:08x} {}",
+                            tunings_crc(std::slice::from_ref(t)),
+                            p.tune_state().0 as i32
+                        )
+                    }
+                    "teams" => {
+                        let bytes = unhex(w[1]);
+                        let ints = read_ints(&mut Unpacker::new(&bytes), MAX_CLIENTS);
+                        p.teams_mut().num_ddrace_teams = NUM_DDRACE_TEAMS as i32;
+                        p.on_message(PredictMsg::TeamsState(ints));
+                        let t = p.teams_mut();
+                        let teams: Vec<String> = (0..MAX_CLIENTS as i32)
+                            .map(|i| t.team(i).to_string())
+                            .collect();
+                        format!("{} {}", teams.join(" "), t.num_ddrace_teams)
+                    }
+                    "kill" | "killteam" => {
+                        p.on_message(if w[0] == "kill" {
+                            PredictMsg::KillMsg(g::MsgSvKillMsg {
+                                victim: num(w[1]),
+                                weapon: num(w[2]),
+                                ..Default::default()
+                            })
+                        } else {
+                            PredictMsg::KillMsgTeam(g::MsgSvKillMsgTeam {
+                                team: num(w[1]),
+                                first: num(w[2]),
+                            })
+                        });
+                        let order: Vec<String> =
+                            p.char_order().iter().map(|i| i.to_string()).collect();
+                        let world = p.world_mut();
+                        let chars: Vec<String> = (0..MAX_CLIENTS)
+                            .filter_map(|i| {
+                                let (ch, c) = world.character(i)?;
+                                Some(format!(
+                                    "{i}:{:08x}",
+                                    world_state(ch, c, &world.teams).crc()
+                                ))
+                            })
+                            .collect();
+                        format!("{} | {}", order.join(" "), chars.join(" "))
+                    }
+                    "pre" => {
+                        let v: Vec<i32> = w[1..12].iter().map(|s| num(s)).collect();
+                        p.on_message(PredictMsg::PreInput(g::MsgSvPreInput {
+                            direction: v[0],
+                            target_x: v[1],
+                            target_y: v[2],
+                            jump: v[3],
+                            fire: v[4],
+                            hook: v[5],
+                            wanted_weapon: v[6],
+                            next_weapon: v[7],
+                            prev_weapon: v[8],
+                            owner: v[9],
+                            intended_tick: v[10],
+                        }));
+                        match p.pre_input(num(w[13]) as usize, num(w[14])) {
+                            Some(m) => [
+                                m.direction,
+                                m.target_x,
+                                m.target_y,
+                                m.jump,
+                                m.fire,
+                                m.hook,
+                                m.wanted_weapon,
+                                m.next_weapon,
+                                m.prev_weapon,
+                                m.owner,
+                                m.intended_tick,
+                            ]
+                            .map(|v| v.to_string())
+                            .join(" "),
+                            None => "none".into(),
+                        }
+                    }
+                    "snap" => {
+                        let (has_local, has_spec) = (w[1] == "1", w[2] == "1");
+                        let pos = vec2(num(w[3]) as f32, num(w[4]) as f32);
+                        let zone = num(w[5]);
+                        p.world_mut().config.use_tune_zones = w[6] == "1";
+                        p.update_local_tuning(
+                            (has_local || has_spec).then_some(pos),
+                            (zone != -2).then_some(zone),
+                        );
+                        let (received, local, expecting, since) = p.tune_state();
+                        format!(
+                            "{:08x} {} {local} {expecting} {since}",
+                            tunings_crc(&p.world_mut().tunings),
+                            received as i32
+                        )
+                    }
+                    other => panic!("unknown line {other}"),
+                }
+            }
+        };
+        assert_eq!(got, want, "{input}");
+    }
+    let n = |k: &str| counts.get(k).copied().unwrap_or(0);
+    assert_eq!(n("settings"), 400);
+    assert_eq!(n("run"), 30);
+    assert!(
+        ["tune", "teams", "kill", "killteam", "pre", "snap"]
+            .iter()
+            .all(|k| n(k) > 100),
+        "{counts:?}"
+    );
+}
+
+/// Every word-for-word copy of C++ code in the parity tools ("C++ copy: <file>:<a>-<b>"
+/// ... "end of copy") is still identical, whitespace aside, to those source lines.
+#[test]
+fn cpp_copies_match_source() {
+    let normalize = |lines: &[&str]| -> Vec<String> {
+        lines
+            .iter()
+            .map(|l| l.split_whitespace().collect::<Vec<_>>().join(" "))
+            .filter(|l| !l.is_empty())
+            .collect()
+    };
+    let mut copies = 0;
+    for tool in ["src/tools/rs_parity_msgs.cpp"] {
+        let text = std::fs::read_to_string(repo_file(tool)).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        let mut i = 0;
+        while i < lines.len() {
+            let Some((_, at)) = lines[i].split_once("// C++ copy: ") else {
+                i += 1;
+                continue;
+            };
+            let (file, range) = at.trim().rsplit_once(':').unwrap();
+            let (a, b) = range.split_once('-').unwrap();
+            let (a, b): (usize, usize) = (a.parse().unwrap(), b.parse().unwrap());
+            let end = (i..lines.len())
+                .find(|&j| lines[j].trim() == "// end of copy")
+                .unwrap_or_else(|| panic!("{tool}:{}: copy without end", i + 1));
+            let source = std::fs::read_to_string(repo_file(&format!("src/{file}"))).unwrap();
+            let source: Vec<&str> = source.lines().collect();
+            assert_eq!(
+                normalize(&lines[i + 1..end]),
+                normalize(&source[a - 1..b]),
+                "{tool}:{}: copy of {file}:{a}-{b} differs",
+                i + 1
+            );
+            copies += 1;
+            i = end + 1;
+        }
+    }
+    assert_eq!(copies, 8);
 }

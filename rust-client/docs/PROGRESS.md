@@ -991,13 +991,48 @@ are final unless the user changes them:
 - Verified: gates; live 800x600 / 1920x1080 / 640x480 window captures (local server,
   scratch APPDATA), kills via `statusbar_check.ps1 -Kills`.
 
+### M8 — antiping (plan: PLAN.md §12, approved 2026-11-25, answers §12.7)
+
+#### 8.1 (2026-11-25): messages the prediction world needs — done
+- `Sv_TuneParams` (C++ reads ints until the first unpack error, jetpack strength 0 by
+  default), `UpdateLocalTuning` (tune zones, expected-tuning state machine) and
+  `LoadMapSettings` (every zone reset to the DDRace map defaults, then the map's
+  `tune`/`tune_zone` settings through the console parser, now in `ddnet/src/console.rs`,
+  moved from `client/src/config.rs`). `Sv_TeamsState` (+ legacy) into the predictor's
+  `TeamsCore`, `Sv_KillMsg`/`Sv_KillMsgTeam` (GiveWeak in C++ stable-sort order,
+  `ResetPrediction`, `ReleaseHooked`), the `Sv_PreInput` ring (applied in 8.5).
+  `net/client.rs` queues them in arrival order (`Client::predict_msgs`), the predictor
+  drains them before snapshot switches, as C++ handles messages before `Update`.
+- Also: `m_IsSolo` and the strong/weak gate use the received tuning (collision/hooking),
+  the gate needs the local character in the world like C++ (it did not), `m_IsFNG` from
+  game info, item rendering uses the predictor's tuning per zone (`GetTuning`),
+  `Client::say` (chat send only, for the live test).
+- Verified: `rs_parity msgs` (new, `src/tools/rs_parity_msgs.cpp`): word-for-word copies
+  of the CGameClient handlers, `UpdateLocalTuning`, `LoadMapSettings` and the tune
+  console commands, driving the real CUnpacker, CTeamsCore, CCharOrder, CGameWorld/
+  CCharacter and CConsole; 400 fuzzed settings blobs, 30 runs x 300 random events on
+  coverage. `tests/parity.rs messages_match_cpp`: all 9,611 lines identical; 11 of 11
+  hand-made mutations caught. `cpp_copies_match_source`: the 8 copies are identical
+  (whitespace aside) to the C++ lines they name. Live: `prediction_matches_server_with_
+  tuning_and_teams` (global tuning and 40 tune zones as a map config, which the server
+  imports into the map's settings; team 7 joined by `/team 7` on coverage): 0 of 250
+  mismatched, 0 prediction errors on dm1 and coverage, 3 runs; ignoring `Sv_TuneParams`
+  gives 229 mismatches. The scripted path never enters a tune zone, so zone switching
+  is covered by `rs_parity msgs` only.
+- Found: with stronger tuning the dm1 path hits a death tile; the server (practice)
+  freezes there, which C++ client prediction does not model either (DECISIONS.md).
+- Regenerate: `build-rs/rs_parity.exe msgs data/maps/coverage.map rust-client/tests/golden/msgs.txt`.
+
 #### Exact next actions (next session starts here)
-State (2026-11-25, pushed): M7 done, HUD fixes done. The antiping plan (M8) is in
-PLAN.md §12, waiting for the user's review (questions in §12.6). Also waiting: the HUD
-fixes above, the volume popover (d04d4040a) and 7.11 (89a3b16b2).
-1. Read CLAUDE.md, PLAN §11-12, this file, `git log`.
-2. If a review asks for changes, do those first.
-3. Once §12 is approved (answers recorded as §12.7): start M8 at 8.1.
+State (2026-11-25): M8 8.1 done and pushed. Waiting for the user's review of earlier
+work: the HUD fixes, the volume popover (d04d4040a) and 7.11 (89a3b16b2).
+1. Read CLAUDE.md, PLAN §12 (incl. §12.7), this file, `git log`.
+2. Next: 8.2 (collision for weapons: `IntersectLine`, `IntersectLineTeleWeapon`,
+   `MovePoint`, `MoverSpeed`, `SetCollisionAt` with a `Cell` game grid), verified by
+   extending `rs_parity collision`.
+3. When the `cl_antiping*` config variables are added (8.8 at the latest), read them
+   and `cl_prediction_margin` from `settings_ddnet.cfg` once, like name/skin/binds
+   (§12.7 answer 1).
 
 #### Decisions and gotchas from 7.1
 - egui 0.37 panics in debug if a frame's `TexturesDelta` is dropped unapplied: drain

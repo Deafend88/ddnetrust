@@ -439,7 +439,7 @@ impl App {
                 MapRender::new(&mut r.gfx, &m, &images),
                 Rc::clone(&collision),
             ));
-            s.predictor = Some(Predictor::new(collision));
+            s.predictor = Some(Predictor::new(collision, &m));
             s.map_shown_at = Some(Instant::now());
         }
         Ok(())

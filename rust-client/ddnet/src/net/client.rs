@@ -137,6 +137,33 @@ pub fn spectating(items: &[Item], local_id: Option<i32>) -> bool {
     team == Some(g::TEAM_SPECTATORS) || flags & (g::EXPLAYERFLAG_PAUSED | g::EXPLAYERFLAG_SPEC) != 0
 }
 
+/// A game message the prediction world needs, in the form the C++ handler reads it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PredictMsg {
+    /// `Sv_TuneParams`: the ints read before the first unpack error.
+    TuneParams(Vec<i32>),
+    /// `Sv_TeamsState` (or its legacy form): the team ints read before the first
+    /// unpack error (at most `MAX_CLIENTS`).
+    TeamsState(Vec<i32>),
+    KillMsg(g::MsgSvKillMsg),
+    KillMsgTeam(g::MsgSvKillMsgTeam),
+    PreInput(g::MsgSvPreInput),
+}
+
+/// Up to `n` ints, stopping at the first unpack error (C++ checks `Error()` after each
+/// `GetInt`).
+pub fn read_ints(u: &mut Unpacker, n: usize) -> Vec<i32> {
+    let mut out = Vec::new();
+    while out.len() < n {
+        let v = u.get_int();
+        if u.error() {
+            break;
+        }
+        out.push(v);
+    }
+    out
+}
+
 /// C++: `IClient::STATE_*` subset.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum State {
@@ -350,6 +377,9 @@ pub struct Client {
     last_follow_factor: f32,
     /// Game messages received, oldest first; the caller drains it.
     pub messages: Vec<GameMsg>,
+    /// The game messages that change the prediction world, in arrival order; the
+    /// predictor drains it (`Predictor::update`).
+    pub predict_msgs: Vec<PredictMsg>,
     /// Snapshot switches as (previous tick, new tick), oldest first; the caller drains
     /// it. C++ calls `CGameClient::OnNewSnapshot` for each.
     pub snapshot_switches: Vec<(Option<i32>, i32)>,
@@ -426,6 +456,7 @@ impl Client {
             last_deadzone: 0.0,
             last_follow_factor: 0.0,
             messages: Vec::new(),
+            predict_msgs: Vec::new(),
             snapshot_switches: Vec::new(),
             repredict: false,
             random,
@@ -558,6 +589,19 @@ impl Client {
         }
     }
 
+    /// C++: the send in `CChat::SendChat` (chat.cpp:1382): a chat line, `team` 1 for
+    /// the team chat. ponytail: only the message; the chat component (input, rate
+    /// limit, history) comes with chat support.
+    pub fn say(&mut self, team: i32, line: &str, now: i64) {
+        let mut p = Packer::default();
+        g::MsgClSay {
+            team,
+            message: line.into(),
+        }
+        .pack(&mut p);
+        self.send_msg(g::MsgClSay::ID, false, &p, true, false, now);
+    }
+
     fn send_msg(
         &mut self,
         id: i32,
@@ -597,11 +641,30 @@ impl Client {
         };
         if !system {
             // the client handles only vital game messages (and PREINPUT)
-            if (vital || id == g::NETMSGTYPE_SV_PREINPUT)
-                && let Ok(msg) = g::unpack_game_msg(id, &mut u)
-            {
-                if let GameMsg::SvReadyToEnter(_) = msg {
-                    self.enter_game(now);
+            if !(vital || id == g::NETMSGTYPE_SV_PREINPUT) {
+                return;
+            }
+            // C++: CGameClient::OnMessage handles the tuning before unpacking
+            if id == g::NETMSGTYPE_SV_TUNEPARAMS {
+                let ints = read_ints(&mut u, crate::physics::tuning::NUM_PARAMS);
+                self.predict_msgs.push(PredictMsg::TuneParams(ints));
+                return;
+            }
+            if let Ok(msg) = g::unpack_game_msg(id, &mut u) {
+                match &msg {
+                    GameMsg::SvReadyToEnter(_) => self.enter_game(now),
+                    GameMsg::SvTeamsState(_) | GameMsg::SvTeamsStateLegacy(_) => {
+                        let ints = read_ints(&mut u, crate::physics::teams::MAX_CLIENTS);
+                        self.predict_msgs.push(PredictMsg::TeamsState(ints));
+                    }
+                    GameMsg::SvKillMsg(m) => self.predict_msgs.push(PredictMsg::KillMsg(m.clone())),
+                    GameMsg::SvKillMsgTeam(m) => {
+                        self.predict_msgs.push(PredictMsg::KillMsgTeam(m.clone()));
+                    }
+                    GameMsg::SvPreInput(m) => {
+                        self.predict_msgs.push(PredictMsg::PreInput(m.clone()))
+                    }
+                    _ => {}
                 }
                 self.messages.push(msg);
             }

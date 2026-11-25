@@ -3369,6 +3369,8 @@ if(TOOLS)
           list(APPEND EXTRA_TOOL_SRC "src/game/client/${S}.cpp")
         endforeach()
         list(APPEND EXTRA_TOOL_SRC "src/game/map/render_map.cpp")
+        # copies of the CGameClient message handlers and tuning code (rs_parity_msgs.cpp)
+        list(APPEND EXTRA_TOOL_SRC "src/tools/rs_parity_msgs.cpp")
         # the camera and mouse components, run outside a CGameClient (rs_parity_camera.cpp)
         list(APPEND EXTRA_TOOL_SRC "src/tools/rs_parity_camera.cpp" "src/game/client/component.cpp"
           "src/game/client/components/camera.cpp" "src/game/client/components/controls.cpp")
