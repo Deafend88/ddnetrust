@@ -292,7 +292,7 @@ pub struct Config {
     pub rs_media: i32,
     /// Ours: glass strength, 0 off, 1 subtle, 2 full (PLAN §10.2).
     pub rs_glass: i32,
-    /// Ours: UI scale in percent on top of the window's DPI.
+    /// Ours: UI scale in percent on top of the window-height scale (`style::ui_scale`).
     pub rs_ui_scale: i32,
 }
 

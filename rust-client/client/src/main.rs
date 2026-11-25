@@ -39,7 +39,7 @@ use ddnet_rs::render::map::{MapRender, View, hsl_packed_to_rgb};
 use ddnet_rs::render::players::Players;
 use ddnet_rs::statusbar::StatusBar;
 use ddnet_rs::storage::{self, Storage};
-use ddnet_rs::style::Glass;
+use ddnet_rs::style::{self, Glass};
 use ddnet_rs::ui::{Action, Menu, Ui};
 use ddnet_rs::watermark::Watermark;
 use winit::application::ApplicationHandler;
@@ -79,9 +79,9 @@ struct Running {
     gfx: Gfx,
     players: Players,
     ui: Ui,
-    /// The `rs_glass` and `rs_ui_scale` the UI was set up with.
+    /// The `rs_glass` and zoom factor the UI was set up with.
     ui_glass: i32,
-    ui_scale: i32,
+    ui_zoom: f32,
 }
 
 /// One connection to a server and its game state (C++: what `CClient::Disconnect` and
@@ -235,10 +235,9 @@ impl App {
             config.format,
             Glass::from_setting(c.rs_glass),
         );
-        ui.painter.ctx.set_zoom_factor(c.rs_ui_scale as f32 / 100.0);
         Ok(Running {
             ui_glass: c.rs_glass,
-            ui_scale: c.rs_ui_scale,
+            ui_zoom: 0.0, // set on the first frame
             window,
             surface,
             config,
@@ -587,12 +586,16 @@ impl App {
         let connected = self.session.is_some();
         // the settings may have changed the look
         let c = &self.settings.config;
-        if (c.rs_glass, c.rs_ui_scale) != (r.ui_glass, r.ui_scale) {
+        if c.rs_glass != r.ui_glass {
             r.ui.painter.set_glass(Glass::from_setting(c.rs_glass));
-            r.ui.painter
-                .ctx
-                .set_zoom_factor(c.rs_ui_scale as f32 / 100.0);
-            (r.ui_glass, r.ui_scale) = (c.rs_glass, c.rs_ui_scale);
+            r.ui_glass = c.rs_glass;
+        }
+        // one point = one pixel of a 1080p window, whatever the OS DPI
+        let scale = style::ui_scale(size.height, c.rs_ui_scale);
+        let zoom = scale / r.window.scale_factor() as f32;
+        if zoom != r.ui_zoom {
+            r.ui.painter.ctx.set_zoom_factor(zoom);
+            r.ui_zoom = zoom;
         }
         let menu_visible = !connected || self.menu.open;
         // the HUD draws once the map is there, under the menus
