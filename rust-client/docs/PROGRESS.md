@@ -972,19 +972,31 @@ are final unless the user changes them:
   no snapshot of the far tee (0.08 %), as the script's header says.
 - Verified: gates (103 tests).
 
+#### HUD fixes after M7 (2026-11-25, user requests)
+- Glass without a rim (62a1fbd88): no specular rim in the Liquid Glass shader; the blur
+  covers the fill's exact shape (was shrunk 1 px, leaving a ring of unblurred game that
+  read as a dark edge). Applies to every glass shape (island, player card, volume
+  slider, HUD bars, panels).
+- Height scaling (9aa8429cf, 260cedae0): pixels per point = window height / 1080 x
+  `rs_ui_scale` (`style::ui_scale`), ignoring the OS DPI, no floor (user: the HUD
+  scales like a picture; 800x600 = 1080p smaller). Points are 1080p reference pixels,
+  so saved offsets keep working. Applies to menus too (one egui context). No
+  auto-moving and no watermark wrapping (user decisions; both were tried and dropped).
+- Race status stacks 8 pt under the watermark's actual bottom while both sit at their
+  default places (`Widget::below`, `hud::placements`, used by the editor too); default
+  y 73.
+- HUD shadow without corner streaks (4c5abe48b): egui's blurred shadow mesh drew thin
+  dark diagonals off 32 pt capsules' corners; `widgets::soft_shadow` stacks ten
+  rounded rects instead.
+- Verified: gates; live 800x600 / 1920x1080 / 640x480 window captures (local server,
+  scratch APPDATA), kills via `statusbar_check.ps1 -Kills`.
+
 #### Exact next actions (next session starts here)
-State (2026-11-25, commit 89a3b16b2, pushed): M7 done, next: antiping. Done and
-waiting for the user's review: the volume popover in the player card's glass style
-(d04d4040a) and 7.11 (89a3b16b2). Working tree clean.
-1. Read CLAUDE.md, PLAN ยง10-11, this file, `git log`.
-2. If the review asks for changes to the volume popover or 7.11, do those first.
-3. Watermark width cap (user request, 2026-11-25): keep the defaults (logo, clock,
-   ping, fps). When the enabled items do not fit in ~40 % of the screen width, wrap
-   them into a second row; the container then becomes a rounded rectangle
-   (`radius::CARD`, CLAUDE.md shape rule) instead of a pill. Code: `watermark.rs`
-   (`draw`, items in `ITEMS`), container `widgets::hud_bar`. Test the wrap point and
-   the shape switch as unit tests; review render with every item on at 1280 and 2560.
-4. Then antiping: plan it in PLAN.md (a ยง12 like ยง10) for the user's approval before
+State (2026-11-25, pushed): M7 done, HUD fixes done; next: antiping. Waiting for the
+user's review: the HUD fixes above, the volume popover (d04d4040a) and 7.11 (89a3b16b2).
+1. Read CLAUDE.md, PLAN ง10-11, this file, `git log`.
+2. If the review asks for changes, do those first.
+3. Antiping: plan it in PLAN.md (a ง12 like ง10) for the user's approval before
    coding: `cl_antiping` and sub-settings, smoothing, weapon/projectile prediction,
    margins, verified with `rs_parity` worlds at 100 %.
 
