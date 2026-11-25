@@ -178,14 +178,39 @@ pub fn text(ui: &mut Ui, s: &str, size: f32, weight: Weight, color: Color32) -> 
     ui.label(RichText::new(s).font(font(size, weight)).color(color))
 }
 
-/// A stat as in the watermark (SPEC §1): small white icon, white value (medium), grey
-/// unit right after it.
-pub fn stat(ui: &mut Ui, glyph: &str, value: &str, unit: Option<&str>) {
+/// A number right-aligned in a field at least as wide as `template` (e.g. "0000" for
+/// four digits; "" for none). With Inter's tabular digits (`scripts/gen_tnum.py`) a
+/// changing value never moves what comes after it.
+pub fn number(
+    ui: &mut Ui,
+    value: &str,
+    template: &str,
+    size: f32,
+    weight: Weight,
+    color: Color32,
+) -> Response {
+    let font = font(size, weight);
+    let min = ui.fonts_mut(|f| {
+        f.layout_no_wrap(template.into(), font.clone(), color)
+            .size()
+            .x
+    });
+    let g = ui.fonts_mut(|f| f.layout_no_wrap(value.into(), font, color));
+    let (rect, response) =
+        ui.allocate_exact_size(vec2(g.size().x.max(min), g.size().y), Sense::hover());
+    let at = egui::pos2(rect.right() - g.size().x, rect.top());
+    ui.painter().galley(at, g, color);
+    response
+}
+
+/// A stat as in the watermark (SPEC §1): small white icon, white value (medium) in a field
+/// as wide as `template` at least, grey unit right after it.
+pub fn stat(ui: &mut Ui, glyph: &str, value: &str, template: &str, unit: Option<&str>) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
         icon(ui, glyph, size::ICON, color::TEXT);
         ui.add_space(space::S);
-        text(ui, value, size::BODY, Weight::Medium, color::TEXT);
+        number(ui, value, template, size::BODY, Weight::Medium, color::TEXT);
         if let Some(unit) = unit {
             let weak = ui.visuals().weak_text_color();
             text(ui, unit, size::BODY, Weight::Regular, weak);

@@ -29,6 +29,7 @@ use ddnet_rs::gfx::batch::Batch;
 use ddnet_rs::gfx::{self, Gfx, Size, block_on};
 use ddnet_rs::hud::{self, HudData, Widget};
 use ddnet_rs::hud_editor::Editor;
+use ddnet_rs::island::Island;
 use ddnet_rs::killfeed::Killfeed;
 use ddnet_rs::movement::Movement;
 use ddnet_rs::render::items::{self, Items};
@@ -882,10 +883,11 @@ fn main() {
     let start = Instant::now();
     let vsync = options.vsync || settings.config.gfx_vsync != 0;
     let hud: Vec<Box<dyn Widget>> = vec![
-        Box::new(Watermark),
+        Box::new(Watermark::default()),
         Box::new(StatusBar::new(&storage)),
         Box::new(Movement),
         Box::new(Killfeed::new(&storage)),
+        Box::new(Island::default()),
     ];
     // the C++ HUD switches are the first values of our HUD items
     let mut settings = settings;

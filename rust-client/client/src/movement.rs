@@ -89,6 +89,12 @@ pub fn of(data: &HudData) -> Option<Info> {
 
 /// C++: `CHud::UpdateMovementInformationTextContainer` (hud.cpp:1401): rounded to two
 /// decimals, then `%.2f`.
+/// The values' minimum widths as templates ("-00.00": a sign, two digits, two
+/// decimals), so the row does not jump as the numbers change (digits are tabular).
+pub const POSITION: &str = "0000.00";
+pub const SPEED: &str = "-00.00";
+pub const ANGLE: &str = "-000.00";
+
 pub fn shown(value: f32) -> String {
     let value = (value * 100.0).round() / 100.0;
     format!("{value:.2}")
@@ -108,20 +114,21 @@ fn shown_item(config: &HudConfig, key: &str) -> bool {
     config.on("movement", key, true)
 }
 
-/// An item: icon, labelled values ("X", "57.53"), unit.
+/// An item: icon, labelled values ("X", "57.53"), the values' minimum width, unit.
 type Item = (
     &'static str,
     Vec<(&'static str, String)>,
+    &'static str,
     Option<&'static str>,
 );
 
 /// "X" then the value, then the unit if any: label and unit in the secondary grey like
 /// the watermark's units.
-fn value(ui: &mut Ui, (label, v): &(&str, String), unit: Option<&str>) {
+fn value(ui: &mut Ui, (label, v): &(&str, String), template: &str, unit: Option<&str>) {
     let weak = ui.visuals().weak_text_color();
     w::text(ui, label, size::BODY, Weight::Regular, weak);
     ui.add_space(space::XS);
-    w::text(ui, v, size::BODY, Weight::Medium, color::TEXT);
+    w::number(ui, v, template, size::BODY, Weight::Medium, color::TEXT);
     if let Some(unit) = unit {
         w::text(ui, unit, size::BODY, Weight::Regular, weak);
     }
@@ -131,7 +138,7 @@ fn value(ui: &mut Ui, (label, v): &(&str, String), unit: Option<&str>) {
 /// value, or (`stacked`) the values under each other, each with its unit. A one-value
 /// item stays a single line, so it and its icon centre on the row like the others.
 fn row(ui: &mut Ui, items: &[Item], stacked: bool) {
-    for (n, (glyph, values, unit)) in items.iter().enumerate() {
+    for (n, (glyph, values, template, unit)) in items.iter().enumerate() {
         if n > 0 {
             w::dot(ui);
         }
@@ -142,7 +149,7 @@ fn row(ui: &mut Ui, items: &[Item], stacked: bool) {
                 ui.spacing_mut().item_spacing.y = space::XS;
                 ui.spacing_mut().interact_size.y = 0.0;
                 for v in values {
-                    ui.horizontal(|ui| value(ui, v, *unit));
+                    ui.horizontal(|ui| value(ui, v, template, *unit));
                 }
             });
             continue;
@@ -151,7 +158,7 @@ fn row(ui: &mut Ui, items: &[Item], stacked: bool) {
             if k > 0 {
                 ui.add_space(space::M);
             }
-            value(ui, v, unit.filter(|_| k + 1 == values.len()));
+            value(ui, v, template, unit.filter(|_| k + 1 == values.len()));
         }
     }
 }
@@ -195,9 +202,14 @@ impl Widget for Movement {
             .iter()
             .filter(|(k, _)| shown_item(config, k))
             .map(|&(k, _)| match k {
-                "position" => (icons::MAP_PIN, xy(i.pos), None),
-                "speed" => (icons::GAUGE, xy(i.speed), Some("t/s")),
-                _ => (icons::CROSSHAIR, vec![("aim", shown(i.angle))], Some("°")),
+                "position" => (icons::MAP_PIN, xy(i.pos), POSITION, None),
+                "speed" => (icons::GAUGE, xy(i.speed), SPEED, Some("t/s")),
+                _ => (
+                    icons::CROSSHAIR,
+                    vec![("aim", shown(i.angle))],
+                    ANGLE,
+                    Some("°"),
+                ),
             })
             .collect();
         let stacked = config.on("movement", "stacked", false);

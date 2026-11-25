@@ -190,3 +190,33 @@ only matters for names so long that neither file can exist.
   `m_GrenadeHitDisabled && m_HasTelegunGun` (and draws the laser indicator's quad), so it
   follows the grenade flag, not `m_GunHitDisabled` (which the core does not even have).
   Suspected C++ bug; the status bar (7.7) keeps the same decision.
+
+## 2026-11-25 — Dynamic Island (M7.9) and HUD numbers
+
+- The watermark and the island are separate widgets (a merge was tried in e9b529b29 and
+  reverted at the user's request). The local clock lives in the watermark (on by
+  default, first, then ping and fps); the island has only the race timer with the
+  checkpoint difference, its status (pause / spectator text) and its events (music with
+  7.10).
+- Ported from C++: `RenderGameTimer`, `OnMessage`/`RenderDDRaceEffects`, `CBroadcast`,
+  `RenderPauseNotification`, `RenderSpectatorHud`. C++'s own fades (finish 4-6 s,
+  broadcast last 1 s) are replaced by the island's transition; the lifetimes (6 s, 10 s)
+  are kept. C++ sizes the timer by its width class; tabular digits give the same.
+- Events by priority: finish > broadcast > the idle timer. During a broadcast the timer
+  stays at its end, but the pause or spectator status is hidden (C++ shows all).
+  Broadcasts are trimmed (servers pad them with blank lines and spaces to place them on
+  screen) and wrap at 480 pt.
+- `Sv_RecordLegacy` (`m_DDRaceRecordMessage`, old DDRace servers) is not ported.
+- Size springs are slightly underdamped (`Spring::update_damped`, zeta 0.75, ~3 %
+  overshoot, settled in `motion::SPRING`); fades stay critically damped.
+- Tabular digits: egui cannot switch OpenType features on, so `scripts/gen_tnum.py`
+  points the digits 0-9 of the bundled Inter fonts at Inter's own `.tf` glyphs (OFL
+  allows it; no reserved font name). Digits are tabular in all our UI text, menus too;
+  punctuation stays proportional.
+- Numbers in the HUD sit right-aligned in fields of a minimum width
+  (`widgets::number` with a template): fps "0000", ping "000", uid "00", tps "00",
+  local time "00:00", speed "-00.00"; movement position "0000.00", speed "-00.00",
+  aim "-000.00". Longer values still grow the field.
+- The watermark's fps changes at most every 0.5 s (C++ draws its average every frame).
+  Position, speed and ping are not throttled (gameplay information, and the fields no
+  longer jitter).

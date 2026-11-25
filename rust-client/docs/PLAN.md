@@ -613,7 +613,9 @@ count limit and lifetime as C++ (`Sv_KillMsg`, `Sv_KillMsgTeam`, `Sv_RaceFinish`
 Verify: message handling (grouping, order, limit, expiry) as unit tests against the
 C++ rules; live with two clients (kill command, a finish on a race map).
 
-**7.9 Dynamic Island** (top centre; states from `island-concept.png`): idle = race
+**7.9 Dynamic Island** (user decisions 2026-11-25: a separate widget from the
+watermark; the local clock is in the watermark, the island has no clock; DECISIONS.md)
+(top centre; states from `island-concept.png`): idle = race
 timer + mini cover when music plays; track change = cover, title and artist for 3 s,
 then back; broadcast = the server's centre message; finish/record = check icon, time
 and the difference to the record; pause/spectate notices. A priority queue decides what

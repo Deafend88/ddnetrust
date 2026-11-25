@@ -12,16 +12,17 @@ use crate::icons;
 use crate::style::{Glass, HUD_SHADOW, LOGO_GLOW, Weight, color, size, space};
 use crate::widgets as w;
 
-/// Stat keys in their default order, whether each shows by default (SPEC §1, except the
-/// name: off, it already shows above the tee; user review 2026-11-25) and the
-/// name in the editor.
+/// Stat keys in their default order, whether each shows by default and the name in the
+/// editor. SPEC §1, except: the name is off (it already shows above the tee; user review
+/// 2026-11-25); the local time is on and first, then ping and fps (user decision
+/// 2026-11-25: the clock lives here, not in the island).
 pub const ITEMS: [(&str, bool, &str); 8] = [
+    ("time", true, "Local time"),
     ("user", false, "Name"),
     ("server", false, "Server address"),
     ("ping", true, "Ping"),
     ("fps", true, "Framerate"),
     ("speed", false, "Speed"),
-    ("time", false, "Local time"),
     ("uid", false, "Client ID"),
     ("tps", false, "Tick rate"),
 ];
@@ -29,8 +30,12 @@ pub const ITEMS: [(&str, bool, &str); 8] = [
 /// C++ `SERVER_TICK_SPEED`.
 const TICK_SPEED: i32 = 50;
 
-/// One stat: icon, value, optional unit.
-pub type Stat = (&'static str, String, Option<&'static str>);
+/// One stat: icon, value, the value's minimum width as a template ("0000": four
+/// digits; "": none), optional unit.
+pub type Stat = (&'static str, String, &'static str, Option<&'static str>);
+
+/// The shown framerate changes at most this often (seconds), so it can be read.
+const FPS_REFRESH: f64 = 0.5;
 
 /// The watermark's tunable look (`hud_set watermark corner|logo_radius|logo_height|glow`),
 /// set with sliders in the HUD editor until the user picks final defaults.
@@ -136,11 +141,11 @@ pub fn draw(ui: &mut Ui, glass: Glass, compact: bool, stats: &[Stat], look: Look
 
 /// Stats separated by dots.
 pub fn stats(ui: &mut Ui, stats: &[Stat]) {
-    for (i, (glyph, value, unit)) in stats.iter().enumerate() {
+    for (i, (glyph, value, template, unit)) in stats.iter().enumerate() {
         if i > 0 {
             w::dot(ui);
         }
-        w::stat(ui, glyph, value, *unit);
+        w::stat(ui, glyph, value, template, *unit);
     }
 }
 
@@ -181,13 +186,13 @@ pub fn stat(key: &str, data: &HudData) -> Option<Stat> {
                 .find(|it| it.type_id == g::NETOBJTYPE_CLIENTINFO && Some(it.id) == local)
                 .and_then(|info| ints_to_str(&g::ObjClientInfo::from_ints(&info.data).name));
             let name = name.unwrap_or_else(|| data.player_name.to_string());
-            (icons::USER, name, None)
+            (icons::USER, name, "", None)
         }
-        "uid" => (icons::FINGERPRINT, local?.to_string(), Some("uid")),
+        "uid" => (icons::FINGERPRINT, local?.to_string(), "00", Some("uid")),
         // C++: CHud::RenderTextInfo, round_to_int(1.0f / FrameTimeAverage())
         "fps" => {
             let fps = round_to_int(1.0 / data.frame_time_average);
-            (icons::MONITOR, fps.to_string(), Some("fps"))
+            (icons::MONITOR, fps.to_string(), "0000", Some("fps"))
         }
         // C++: CScoreboard::RenderPlayers, std::clamp(m_Latency, 0, 999)
         "ping" => {
@@ -198,16 +203,22 @@ pub fn stat(key: &str, data: &HudData) -> Option<Stat> {
             let ms = g::ObjPlayerInfo::from_ints(&info.data)
                 .latency
                 .clamp(0, 999);
-            (icons::WIFI, ms.to_string(), Some("ms"))
+            (icons::WIFI, ms.to_string(), "000", Some("ms"))
         }
-        "server" => (icons::GLOBE, data.server.to_string(), None),
+        "server" => (icons::GLOBE, data.server.to_string(), "", None),
         // SPEC §1 "bps": the horizontal speed of the movement information (7.6)
         "speed" => {
             let speed = crate::movement::of(data)?.speed.x;
-            (icons::GAUGE, crate::movement::shown(speed), Some("t/s"))
+            let template = crate::movement::SPEED;
+            (
+                icons::GAUGE,
+                crate::movement::shown(speed),
+                template,
+                Some("t/s"),
+            )
         }
-        "time" => (icons::CLOCK, clock(&chrono::Local::now()), None),
-        "tps" => (icons::PULSE, TICK_SPEED.to_string(), Some("tps")),
+        "time" => (icons::CLOCK, clock(&chrono::Local::now()), "00:00", None),
+        "tps" => (icons::PULSE, TICK_SPEED.to_string(), "00", Some("tps")),
         _ => return None,
     })
 }
@@ -217,7 +228,12 @@ pub fn clock(t: &impl chrono::Timelike) -> String {
     format!("{:02}:{:02}", t.hour(), t.minute())
 }
 
-pub struct Watermark;
+/// The watermark widget; remembers the shown framerate (refreshed every
+/// `FPS_REFRESH`).
+#[derive(Default)]
+pub struct Watermark {
+    fps: Option<(f64, String)>,
+}
 
 impl Widget for Watermark {
     fn id(&self) -> &'static str {
@@ -252,7 +268,14 @@ impl Widget for Watermark {
             }
             return;
         }
-        let stats: Vec<Stat> = on.into_iter().filter_map(|k| stat(k, data)).collect();
+        let mut stats: Vec<Stat> = on.into_iter().filter_map(|k| stat(k, data)).collect();
+        let now = ui.input(|i| i.time);
+        if let Some(s) = stats.iter_mut().find(|s| s.0 == icons::MONITOR) {
+            match &self.fps {
+                Some((at, shown)) if now - at < FPS_REFRESH && now >= *at => s.1.clone_from(shown),
+                _ => self.fps = Some((now, s.1.clone())),
+            }
+        }
         draw(ui, data.glass, compact(config), &stats, Look::of(config));
     }
 

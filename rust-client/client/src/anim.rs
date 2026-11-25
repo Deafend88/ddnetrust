@@ -28,6 +28,22 @@ impl Spring {
         self.velocity = (self.velocity - w * c * dt) * e;
         self.value
     }
+
+    /// Like `update`, but underdamped (`zeta` in (0, 1)): a small overshoot, then
+    /// settled within 1% of a step after `settle_time`. Exact solution too.
+    pub fn update_damped(&mut self, target: f32, settle_time: f32, zeta: f32, dt: f32) -> f32 {
+        // x(t) = e^(-z w t) (d cos(wd t) + (v + z w d) / wd sin(wd t)); from rest the
+        // amplitude is d / sqrt(1 - z^2), so it is under 1% after (4.6 + ln that) / (z w)
+        let k = (1.0 - zeta * zeta).sqrt();
+        let w = (4.6 - k.ln()) / (zeta * settle_time.max(1e-3));
+        let wd = w * k;
+        let (d, v) = (self.value - target, self.velocity);
+        let e = (-zeta * w * dt).exp();
+        let (s, c) = (wd * dt).sin_cos();
+        self.value = target + e * (d * c + (v + zeta * w * d) / wd * s);
+        self.velocity = e * (v * c - (w * w * d + zeta * w * v) / wd * s);
+        self.value
+    }
 }
 
 /// Ease-out cubic on `t` in [0, 1].
@@ -64,6 +80,27 @@ mod tests {
             b.update(2.0, 0.3, 0.01);
         }
         assert!((a.value - b.value).abs() < 1e-4 && (a.velocity - b.velocity).abs() < 1e-3);
+    }
+
+    #[test]
+    fn damped_spring_overshoots_a_little_and_settles() {
+        let (mut s, mut peak, mut t) = (Spring::new(0.0), 0.0f32, 0.0f32);
+        while t < 0.45 {
+            peak = peak.max(s.update_damped(1.0, 0.45, 0.75, 1.0 / 240.0));
+            t += 1.0 / 240.0;
+        }
+        assert!(peak > 1.01 && peak < 1.05, "peak {peak}");
+        assert!(
+            (1.0 - s.value).abs() < 0.01,
+            "{} at the settle time",
+            s.value
+        );
+        let (mut a, mut b) = (Spring::new(-3.0), Spring::new(-3.0));
+        a.update_damped(2.0, 0.3, 0.75, 0.1);
+        for _ in 0..10 {
+            b.update_damped(2.0, 0.3, 0.75, 0.01);
+        }
+        assert!((a.value - b.value).abs() < 1e-4 && (a.velocity - b.velocity).abs() < 1e-2);
     }
 
     #[test]

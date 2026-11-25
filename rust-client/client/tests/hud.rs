@@ -8,8 +8,9 @@ use ddnet::net::client::{Client, PlayerInfo};
 use ddnet_rs::config::Settings;
 use ddnet_rs::hud::{self, Anchor, HudConfig, HudData, Placement, Widget};
 use ddnet_rs::hud_editor::{self as editor, Editor};
-use ddnet_rs::style::Glass;
+use ddnet_rs::style::{self, Glass};
 use ddnet_rs::watermark;
+use ddnet_rs::widgets as w;
 use egui::{Rect, pos2, vec2};
 
 #[test]
@@ -176,30 +177,120 @@ fn widgets_stay_on_screen() {
 #[test]
 fn watermark_order_and_items() {
     let mut c = HudConfig::default();
-    // defaults: ping and fps on (the name is off: it shows above the tee), in order
+    // defaults: local time, ping and fps on (the name is off: it shows above the tee)
     let on = |c: &HudConfig| -> Vec<&str> {
         watermark::order(c)
             .into_iter()
             .filter(|k| watermark::shown(c, k))
             .collect()
     };
-    assert_eq!(on(&c), ["ping", "fps"]);
+    assert_eq!(on(&c), ["time", "ping", "fps"]);
     // a saved order (with an unknown key and a duplicate) comes first, the rest follow
     c.execute("hud_set", r#"watermark order "fps, nope,ping,fps""#);
     assert_eq!(
         watermark::order(&c),
         [
-            "fps", "ping", "user", "server", "speed", "time", "uid", "tps"
+            "fps", "ping", "time", "user", "server", "speed", "uid", "tps"
         ]
     );
     c.execute("hud_set", "watermark user 1");
     c.execute("hud_set", "watermark ping 0");
     c.execute("hud_set", "watermark tps 1");
-    assert_eq!(on(&c), ["fps", "user", "tps"]);
+    assert_eq!(on(&c), ["fps", "time", "user", "tps"]);
     // the time item: local HH:MM, 24-hour, zero-padded
     let t = |h, m| chrono::NaiveTime::from_hms_opt(h, m, 59).unwrap();
     assert_eq!(watermark::clock(&t(7, 5)), "07:05");
     assert_eq!(watermark::clock(&t(23, 59)), "23:59");
+}
+
+/// No jitter: Inter's digits are tabular in every weight, a number in a field keeps what
+/// follows it in place, and the watermark shows a new framerate at most every 0.5 s.
+#[test]
+fn hud_numbers_do_not_jitter() {
+    let ctx = egui::Context::default();
+    style::install(&ctx, Glass::Off);
+    let pass = |t: f64, f: &mut dyn FnMut(&egui::Context)| {
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 600.0))),
+            time: Some(t),
+            ..Default::default()
+        };
+        let mut out = ctx.run_pass(input, |ctx| f(ctx));
+        out.textures_delta.clear();
+        out.shapes
+    };
+    let mut after = Vec::new();
+    pass(0.0, &mut |ctx| {
+        for w in [
+            style::Weight::Regular,
+            style::Weight::Medium,
+            style::Weight::SemiBold,
+        ] {
+            let width = |s: &str| {
+                ctx.fonts_mut(|f| {
+                    let g = f.layout_no_wrap(s.into(), style::font(15.0, w), egui::Color32::WHITE);
+                    g.size().x
+                })
+            };
+            let ones = width("1111");
+            for d in "023456789".chars() {
+                assert_eq!(width(&d.to_string().repeat(4)), ones, "{d} in {w:?}");
+            }
+        }
+        egui::Area::new(egui::Id::unique("numbers")).show(ctx, |ui| {
+            for v in ["7", "1234", "60"] {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    w::number(
+                        ui,
+                        v,
+                        "0000",
+                        15.0,
+                        style::Weight::Medium,
+                        egui::Color32::WHITE,
+                    );
+                    after.push(ui.label("fps").rect.left());
+                });
+            }
+        });
+    });
+    assert!(after.windows(2).all(|p| p[0] == p[1]), "{after:?}");
+
+    let client = Client::new(PlayerInfo::default(), "", || [0; 16]);
+    let data = |avg| HudData {
+        client: &client,
+        server: "",
+        player_name: "",
+        frame_time_average: avg,
+        glass: Glass::Off,
+        editing: false,
+        predictor: None,
+        tee: None,
+        events: &[],
+    };
+    let mut widgets: Vec<Box<dyn Widget>> = vec![Box::new(watermark::Watermark::default())];
+    let config = HudConfig::default();
+    let mut fps_at = |t: f64, fps: f32| {
+        // two passes: egui's first pass of a new area only sizes it
+        let mut shapes = Vec::new();
+        for _ in 0..2 {
+            shapes = pass(t, &mut |ctx| {
+                hud::show(ctx, &mut widgets, &data(1.0 / fps), &config)
+            });
+        }
+        (shapes.iter())
+            .find_map(|c| match &c.shape {
+                egui::Shape::Text(t) if t.galley.text().parse::<u32>().is_ok() => {
+                    Some(t.galley.text().to_string())
+                }
+                _ => None,
+            })
+            .unwrap()
+    };
+    assert_eq!(fps_at(0.0, 60.0), "60");
+    assert_eq!(fps_at(0.2, 30.0), "60");
+    assert_eq!(fps_at(0.49, 144.0), "60");
+    assert_eq!(fps_at(0.5, 144.0), "144");
 }
 
 #[test]
@@ -432,7 +523,7 @@ fn watermark_layout_measurements() {
         tee: None,
         events: &[],
     };
-    let mut widgets: Vec<Box<dyn Widget>> = vec![Box::new(watermark::Watermark)];
+    let mut widgets: Vec<Box<dyn Widget>> = vec![Box::new(watermark::Watermark::default())];
     // the name is off by default; on here to measure the gaps between two stats
     let mut config = HudConfig::default();
     config.execute("hud_set", "watermark user 1");
@@ -490,7 +581,7 @@ fn watermark_layout_measurements() {
     // dot slot, 48 (reference: 48; the ping is unknown offline, so user and fps are
     // neighbours)
     assert_eq!(
-        icon(ddnet_rs::icons::USER).left() - logo.2.right(),
+        icon(ddnet_rs::icons::CLOCK).left() - logo.2.right(),
         space::M + space::XXL
     );
     assert_eq!(

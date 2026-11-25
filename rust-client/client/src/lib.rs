@@ -12,6 +12,7 @@ pub mod hud;
 pub mod hud_editor;
 pub mod icons;
 pub mod image;
+pub mod island;
 pub mod keynames;
 pub mod killfeed;
 pub mod movement;

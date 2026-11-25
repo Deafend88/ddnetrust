@@ -120,9 +120,9 @@ fn page(ctx: &egui::Context, glass: Glass) {
                         glass,
                         false,
                         &[
-                            (icons::USER, "TeDeafe".into(), None),
-                            (icons::WIFI, "27".into(), Some("ms")),
-                            (icons::MONITOR, "372".into(), Some("fps")),
+                            (icons::USER, "TeDeafe".into(), "", None),
+                            (icons::WIFI, "27".into(), "000", Some("ms")),
+                            (icons::MONITOR, "372".into(), "0000", Some("fps")),
                         ],
                         watermark::Look::default(),
                     );

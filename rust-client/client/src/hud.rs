@@ -195,6 +195,10 @@ impl HudConfig {
             ("status", "jumps", "cl_showhud_jumps_indicator"),
             ("killfeed", "kills", "cl_showkillmessages"),
             ("killfeed", "finishes", "cl_show_finish_messages"),
+            ("island", "timer", "cl_showhud_timer"),
+            ("island", "checkpoint", "cl_showhud_time_cp_diff"),
+            ("island", "broadcasts", "cl_show_broadcasts"),
+            ("island", "spectator", "cl_showhud_spectator"),
         ] {
             if self.value(id, key).is_none() {
                 self.set(id, key, cpp(var) as i32);

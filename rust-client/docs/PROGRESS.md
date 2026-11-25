@@ -436,7 +436,7 @@ for scenes that do not stay still, or `-RustSubject` to check what the server se
 `examples/maprender.rs` renders a map at a given
 center for fixed-view checks; mask pickups (they bob on each client's own clock).
 
-### M7 — visual identity and HUD (in progress: 7.1-7.8 done and reviewed; next 7.9)
+### M7 — visual identity and HUD (in progress: 7.1-7.8 done and reviewed, 7.9 done; next 7.10)
 
 Pushed and verified: the plan and its review answers (PLAN §10, §10.6), the collision
 leak fix, and 7.1 (fonts + icons, design system, menus + gallery, the review tweaks,
@@ -793,15 +793,49 @@ are final unless the user changes them:
   `scripts/statusbar_check.ps1 [-Kills]`; inputs with the HUD on/off:
   `scripts/hud_input_check.ps1`.
 
+#### 7.9 status (2026-11-25): Dynamic Island + HUD numbers, awaiting review
+- History: the island was merged with the watermark (e9b529b29) at the user's request,
+  then reverted (5f16930dc) when they changed their mind: separate widgets.
+- `island.rs`: widget `island` (top centre 0, 16). Idle: the race timer (TITLE
+  semibold, red/blinking in a time limit's last minute, "Sudden Death") + checkpoint
+  difference, after a status when there is one ("Game paused", "Free-View",
+  "Following <name>"). Events expand it: finish (check, or trophy for a personal /
+  server record from the local `Sv_RaceFinish`, 6 s) and broadcasts (10 s, the timer at
+  their end). Single-line = pill, multi-line = `radius::CARD`. Liquid Glass and
+  `Glass::liquid_fill` at full strength, `hud_fill` otherwise, `HUD_SHADOW`.
+- `Anim`: width/height/corner on underdamped springs (`anim::Spring::update_damped`),
+  content crossfade (old out, swap, new in; the timer and the same broadcast update in
+  place), events never smaller than the idle size, grows out of a small capsule.
+- Items `hud_set island timer|checkpoint|broadcasts|spectator 0|1`; first values from
+  C++ `cl_showhud_timer`, `cl_showhud_time_cp_diff`, `cl_show_broadcasts`,
+  `cl_showhud_spectator` (now known to our config).
+- Watermark: local time on by default and first (then ping, fps); the island has no
+  clock (user decision).
+- No jitter (user request): Inter's digits are tabular (`scripts/gen_tnum.py` edits the
+  three bundled TTFs); `widgets::number` keeps numbers right-aligned in a minimum-width
+  field (watermark stats, movement values); the watermark's fps refreshes every 0.5 s.
+  Island timer and killfeed times get the tabular digits. Gallery reference regenerated
+  (digits and stat widths only).
+- Verified: unit tests (timer cases from RenderGameTimer, race effects, broadcasts,
+  spectating, priority, damped spring), `hud_numbers_do_not_jitter` (equal digit
+  advances in every weight, a field keeps what follows in place, fps 60 -> still 60 at
+  0.2 and 0.49 s -> 144 at 0.5 s), all gates. Live (`scripts/statusbar_check.ps1
+  -Island`, local server, C++ client spectating): timer text equal in all four states
+  (00:15/18/20/22), "Free-View", "Game paused", the rcon broadcast.
+  Not live-checked: a real finish (needs a race route, like 7.8).
+- Review GIF: `cargo run -p ddnet-rs --example island -- data/maps/dm1.map 900 500 2
+  <out dir>` (PNG frames, composed with PIL), sent to the user.
+- Known: at 800x600 the default watermark (with the clock) reaches under the island;
+  from about 1100 pt width they do not touch.
+
 #### Exact next actions (next session starts here)
-1. Read CLAUDE.md, PLAN §10.3 7.9, this section, `git log`.
-2. Next: 7.9 Dynamic Island (PLAN §10.3): top centre; states from
-   `island-concept.png` (idle race timer, track change, broadcast, finish/record,
-   pause/spectate); logic ported exactly (`CHud::RenderGameTimer` hud.cpp:118,
-   `CBroadcast`, finish/record texts with `timefmt::str_time`, already golden-tested);
-   Liquid Glass at full strength. Follow the shape and icon rules above and use the
-   frontend-design skill; live checks with the existing scripts.
-3. Before each commit: gates, `/ponytail-review`, UI rules review; update this file.
+1. Read CLAUDE.md, PLAN §10.3 7.9/7.10, this section, `git log`.
+2. Apply the user's review of the island GIF and the number fix, if any.
+3. Next: 7.10 Media player (SMTC on a background thread, `windows` crate): the mini
+   cover + equalizer in the island's idle state, the track change event (3 s), F7
+   expands the island into the full player (frees the cursor like a menu), compact
+   capsule, the "⋯" menu, binds `media_play_pause`, `media_next`, `media_prev`.
+4. Before each commit: gates, `/ponytail-review`, UI rules review; update this file.
 
 #### Decisions and gotchas from 7.1
 - egui 0.37 panics in debug if a frame's `TexturesDelta` is dropped unapplied: drain
