@@ -436,7 +436,7 @@ for scenes that do not stay still, or `-RustSubject` to check what the server se
 `examples/maprender.rs` renders a map at a given
 center for fixed-view checks; mask pickups (they bob on each client's own clock).
 
-### M7 — visual identity and HUD (in progress: 7.1-7.3 approved; 7.4-7.8 done, status bar chips in review)
+### M7 — visual identity and HUD (in progress: 7.1-7.8 done and reviewed; next 7.9)
 
 Pushed and verified: the plan and its review answers (PLAN §10, §10.6), the collision
 leak fix, and 7.1 (fonts + icons, design system, menus + gallery, the review tweaks,
@@ -758,12 +758,50 @@ Built before the editor (the user chose this order) so the editor drags a real w
 - Watermark container corner default 35 % -> 40 % of its height (user review: a bit
   rounder, closer to the old shape than to the pill); the logo keeps radius 8.
 
+#### Current state and HUD decisions (2026-11-25, HEAD 10ad433d3): 7.1-7.8 done
+Widgets: watermark (top left), race status chips (under it), position/speed (bottom
+right, off by default), killfeed (top right); the HUD editor (F6 / Esc menu) moves them,
+toggles them and opens their settings. All are reviewed by the user; these decisions
+are final unless the user changes them:
+- Shape rule (CLAUDE.md): single-line widgets (watermark, notifications, capsules) are
+  full pills, multi-line widgets and panels rounded rectangles (`radius::CARD`).
+  Exception by review: the watermark container's corner is 40 % of its height
+  (`watermark::Look`, default; the slider `hud_set watermark corner` remains).
+- Watermark: dark translucent container (`Glass::hud_fill`, black 55 % subtle / 45 %
+  full), a soft dark glow around it (`style::HUD_SHADOW`), the white logo rounded
+  rectangle with radius 8, height 41 and the white glow (`style::LOGO_GLOW`), the drawn
+  tee mark + "DDNet-rs"; stats as icon, medium value, grey unit, barely visible dots;
+  defaults ping and fps (name off: it shows above the tee). Look sliders (corner, logo
+  radius, logo height, glow) stay in its editor popover; the user may send final values.
+- Race status: the Chips look of commit 18dc668d2 is final, the only style, no setting
+  (a flat vector redraw was reverted). Rule: a state that changes something already
+  shown changes that element: one pill with the owned weapons (game-skin silhouettes,
+  held full, others dim) and the jump counter; hits off strikes the weapon through,
+  teleport adds a sparkle, jetpack a flame on the gun, endless jump makes the counter
+  "∞", ninja has its timer ring, freeze tints the pill (frozen / deep with a border /
+  live). Only endless hook (drawn hook + "∞"), hooking others off (struck hook), solo,
+  collision off and the lock/practice/team 0 modes keep small chips.
+- Icon rules: Phosphor Fill only (no outline icons anywhere), one meaning per icon
+  (listed with comments in `scripts/gen_icons.py`), simple bold silhouettes without
+  icon backgrounds; reference-image effects (the logo glow) are allowed (CLAUDE.md).
+- Visibility like DDNet: an item that is off is not drawn, a widget with every item off
+  is hidden (placeholder in the editor); the C++ `cl_showhud_*`, `cl_showkillmessages`,
+  `cl_show_finish_messages` settings are imported as first values.
+- Killfeed: capsules with the real skins' tee heads (killer tee, weapon, victim tee),
+  the skull only for a self-kill or death, C++ `CInfoMessages` rules.
+- Review images: `docs/review/7.4` .. `7.8`. Live C++ comparisons:
+  `scripts/statusbar_check.ps1 [-Kills]`; inputs with the HUD on/off:
+  `scripts/hud_input_check.ps1`.
+
 #### Exact next actions (next session starts here)
-1. Read CLAUDE.md, PLAN §10.3, this section, `git log`.
-2. Apply the user's review of the chips and their final watermark slider values.
-3. Do not start 7.9 (Dynamic Island) until the user says so; they start it in a fresh
-   session.
-4. Before each commit: gates, `/ponytail-review`, UI rules review; update this file.
+1. Read CLAUDE.md, PLAN §10.3 7.9, this section, `git log`.
+2. Next: 7.9 Dynamic Island (PLAN §10.3): top centre; states from
+   `island-concept.png` (idle race timer, track change, broadcast, finish/record,
+   pause/spectate); logic ported exactly (`CHud::RenderGameTimer` hud.cpp:118,
+   `CBroadcast`, finish/record texts with `timefmt::str_time`, already golden-tested);
+   Liquid Glass at full strength. Follow the shape and icon rules above and use the
+   frontend-design skill; live checks with the existing scripts.
+3. Before each commit: gates, `/ponytail-review`, UI rules review; update this file.
 
 #### Decisions and gotchas from 7.1
 - egui 0.37 panics in debug if a frame's `TexturesDelta` is dropped unapplied: drain
