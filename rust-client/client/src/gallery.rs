@@ -6,7 +6,7 @@ use egui::Align2;
 use crate::gfx::batch::{Batch, QuadItem};
 use crate::gfx::{Gfx, Size};
 use crate::icons;
-use crate::statusbar::{Status, WeaponIcons};
+use crate::statusbar::WeaponIcons;
 use crate::statusview;
 use crate::storage::Storage;
 use crate::style::{Glass, Weight, color, size, space};
@@ -191,101 +191,43 @@ fn render_page(
     }
 }
 
-/// The race status review page (7.7): every state icon with its name, then the three
-/// layout directions in three states.
+/// The race status review page (7.7): every state, labelled.
 pub const STATUS_SIZE: Size = Size {
     width: 1280,
-    height: 960,
+    height: 720,
 };
-
-/// Three example states: all weapons with jetpack and endless hook; ninja and solo;
-/// deep and live freeze.
-fn status_examples() -> [(&'static str, Status); 3] {
-    use crate::statusbar::Indicator::*;
-    let all = Status {
-        jumps: (2, 2),
-        weapons: vec![(0, false), (1, true), (2, false), (3, false), (4, false)],
-        ninja: None,
-        capabilities: vec![EndlessJump, EndlessHook, Jetpack],
-        prohibited: vec![],
-        modes: vec![],
-    };
-    let ninja = Status {
-        jumps: (1, 2),
-        weapons: vec![(0, false), (1, false), (5, true)],
-        ninja: Some(0.6),
-        capabilities: vec![],
-        prohibited: vec![Solo],
-        modes: vec![],
-    };
-    let frozen = Status {
-        jumps: (0, 2),
-        weapons: vec![(0, false), (1, true)],
-        ninja: None,
-        capabilities: vec![],
-        prohibited: vec![],
-        modes: vec![DeepFrozen, LiveFrozen],
-    };
-    [
-        ("All weapons, jetpack, endless jump and hook", all),
-        ("Ninja and solo", ninja),
-        ("Deep and live freeze", frozen),
-    ]
-}
 
 /// Draws the race status page into the world target of `gfx` (sized `STATUS_SIZE`).
 pub fn render_status(gfx: &mut Gfx, storage: &Storage) {
     let glass = Glass::Subtle;
     let mut icons = WeaponIcons::new(storage);
-    let examples = status_examples();
+    let examples = statusview::examples();
     render_page(gfx, glass, stripes, |ctx| {
         egui::Area::new(egui::Id::unique("status_gallery"))
             .anchor(Align2::LEFT_TOP, [space::XL, space::XL])
             .show(ctx, |ui| {
-                ui.spacing_mut().item_spacing = egui::vec2(space::L, space::L);
-                w::panel(ui, glass, |ui| {
-                    w::text(
-                        ui,
-                        "Race status icons",
-                        size::TITLE,
-                        Weight::SemiBold,
-                        color::TEXT,
-                    );
-                    egui::Grid::new("status_icons")
-                        .spacing([space::L, space::M])
-                        .show(ui, |ui| {
-                            for (n, icon) in statusview::sheet().into_iter().enumerate() {
-                                ui.vertical_centered(|ui| {
-                                    ui.set_width(136.0);
-                                    statusview::draw_icon(
-                                        ui,
-                                        &mut icons,
-                                        icon,
-                                        size::ICON_HUD,
-                                        false,
-                                    );
-                                    let weak = ui.visuals().weak_text_color();
-                                    w::text(ui, icon.name, size::CAPTION, Weight::Regular, weak);
-                                });
-                                if n % 7 == 6 {
-                                    ui.end_row();
-                                }
-                            }
-                        });
-                });
-                ui.horizontal_top(|ui| {
-                    for (layout, name) in statusview::Layout::ALL {
-                        ui.vertical(|ui| {
-                            ui.set_width(380.0);
-                            w::text(ui, name, size::TITLE, Weight::SemiBold, color::TEXT);
-                            for (caption, status) in &examples {
+                w::text(
+                    ui,
+                    "Race status",
+                    size::TITLE,
+                    Weight::SemiBold,
+                    color::TEXT,
+                );
+                egui::Grid::new("status_states")
+                    .spacing([space::XXL, space::M])
+                    .show(ui, |ui| {
+                        for (n, (label, status, freeze)) in examples.iter().enumerate() {
+                            ui.vertical(|ui| {
+                                ui.spacing_mut().item_spacing.y = space::XS;
                                 let weak = ui.visuals().weak_text_color();
-                                w::text(ui, caption, size::CAPTION, Weight::Regular, weak);
-                                statusview::draw(ui, glass, layout, status, &mut icons, false);
+                                w::text(ui, label, size::CAPTION, Weight::Regular, weak);
+                                statusview::draw(ui, glass, status, *freeze, &mut icons, false);
+                            });
+                            if n % 2 == 1 {
+                                ui.end_row();
                             }
-                        });
-                    }
-                });
+                        }
+                    });
             });
     });
 }

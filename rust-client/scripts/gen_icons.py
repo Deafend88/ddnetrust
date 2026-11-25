@@ -51,19 +51,13 @@ ICONS = [
 	("sign-out", "DISCONNECT"),  # disconnect
 	("power", "POWER"),  # quit
 	("snowflake", "SNOWFLAKE"),  # deep freeze
-	("pause-circle", "PAUSE_CIRCLE"),  # live freeze (movement disabled)
-	("rocket", "ROCKET"),  # jetpack
-	("link", "LINK"),  # endless hook
+	("flame", "FLAME"),  # jetpack (a mark on the gun)
 	("arrow-fat-lines-up", "ARROW_FAT_LINES_UP"),  # endless jump
 	("sparkle", "SPARKLE"),  # teleport weapon
 	("person-simple", "PERSON"),  # solo
 	("ghost", "GHOST"),  # collision with others off
-	("link-break", "LINK_BREAK"),  # hooking others off
 	("lock", "LOCK"),  # lock mode
 	("barbell", "BARBELL"),  # practice mode
-	("hammer", "HAMMER"),  # hammer (hitting others off: with a slash)
-	("sword", "SWORD"),  # ninja
-	("prohibit", "PROHIBIT"),  # hitting others with a weapon off
 	("users", "USERS"),  # team (team 0 mode)
 	("info", "INFO"),  # information
 	("caret-up", "CARET_UP"),  # move up

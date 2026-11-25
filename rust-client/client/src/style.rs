@@ -24,6 +24,8 @@ pub mod color {
     pub const BORDER: Color32 = Color32::from_rgba_premultiplied(8, 8, 8, 8);
     pub const ACCENT: Color32 = Color32::from_rgb(10, 132, 255);
     pub const SUCCESS: Color32 = Color32::from_rgb(48, 209, 88);
+    /// Freeze (the race status pill's tint), DDNet's ice blue.
+    pub const FREEZE: Color32 = Color32::from_rgb(130, 200, 255);
     pub const DANGER: Color32 = Color32::from_rgb(255, 69, 58);
     /// The logo pill of the watermark (white, SPEC §1).
     pub const LOGO: Color32 = Color32::from_rgb(250, 250, 252);

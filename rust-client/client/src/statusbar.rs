@@ -318,14 +318,6 @@ impl StatusBar {
     }
 }
 
-/// The chosen design direction (`hud_set status layout 0|1|2`).
-fn layout(config: &HudConfig) -> statusview::Layout {
-    let n = config.number("status", "layout", 0.0) as usize;
-    statusview::Layout::ALL
-        .get(n)
-        .map_or(statusview::Layout::Block, |l| l.0)
-}
-
 impl Widget for StatusBar {
     fn id(&self) -> &'static str {
         "status"
@@ -402,14 +394,10 @@ impl Widget for StatusBar {
             }
             return;
         }
-        statusview::draw(
-            ui,
-            data.glass,
-            layout(config),
-            &s,
-            &mut self.0,
-            data.editing,
-        );
+        // C++: frozen while m_FreezeEnd is ahead (the deep and live flags come first)
+        let frozen = core.freeze_end > data.client.game_tick().unwrap_or(0);
+        let freeze = statusview::freeze_of(&s, frozen);
+        statusview::draw(ui, data.glass, &s, freeze, &mut self.0, data.editing);
     }
 
     fn settings(&mut self, ui: &mut Ui, config: &mut HudConfig) {
@@ -420,14 +408,5 @@ impl Widget for StatusBar {
             ("effects", "Active effects", true),
         ];
         item_toggles(ui, config, "status", &items);
-        // the look, until the user picks one of the three directions
-        let mut n = statusview::Layout::ALL
-            .iter()
-            .position(|l| l.0 == layout(config))
-            .unwrap_or(0);
-        let names = statusview::Layout::ALL.map(|l| l.1);
-        if w::segmented(ui, &mut n, &names).changed() {
-            config.set("status", "layout", n);
-        }
     }
 }

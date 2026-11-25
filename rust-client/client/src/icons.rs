@@ -70,12 +70,8 @@ pub const DISCONNECT: &str = "\u{e42a}";
 pub const POWER: &str = "\u{e3da}";
 /// Phosphor `snowflake` (fill).
 pub const SNOWFLAKE: &str = "\u{e5aa}";
-/// Phosphor `pause-circle` (fill).
-pub const PAUSE_CIRCLE: &str = "\u{e3a0}";
-/// Phosphor `rocket` (fill).
-pub const ROCKET: &str = "\u{e3fc}";
-/// Phosphor `link` (fill).
-pub const LINK: &str = "\u{e2e2}";
+/// Phosphor `flame` (fill).
+pub const FLAME: &str = "\u{e624}";
 /// Phosphor `arrow-fat-lines-up` (fill).
 pub const ARROW_FAT_LINES_UP: &str = "\u{e52a}";
 /// Phosphor `sparkle` (fill).
@@ -84,18 +80,10 @@ pub const SPARKLE: &str = "\u{e6a2}";
 pub const PERSON: &str = "\u{e72e}";
 /// Phosphor `ghost` (fill).
 pub const GHOST: &str = "\u{e62a}";
-/// Phosphor `link-break` (fill).
-pub const LINK_BREAK: &str = "\u{e2e4}";
 /// Phosphor `lock` (fill).
 pub const LOCK: &str = "\u{e2fa}";
 /// Phosphor `barbell` (fill).
 pub const BARBELL: &str = "\u{e0b6}";
-/// Phosphor `hammer` (fill).
-pub const HAMMER: &str = "\u{e80e}";
-/// Phosphor `sword` (fill).
-pub const SWORD: &str = "\u{e5ba}";
-/// Phosphor `prohibit` (fill).
-pub const PROHIBIT: &str = "\u{e3de}";
 /// Phosphor `users` (fill).
 pub const USERS: &str = "\u{e4d6}";
 /// Phosphor `info` (fill).
@@ -106,7 +94,7 @@ pub const CARET_UP: &str = "\u{e13c}";
 pub const CARET_DOWN: &str = "\u{e136}";
 
 /// Every icon above, in order (the gallery shows them all).
-pub const ALL: [&str; 51] = [
+pub const ALL: [&str; 45] = [
     USER,
     FINGERPRINT,
     MONITOR,
@@ -141,19 +129,13 @@ pub const ALL: [&str; 51] = [
     DISCONNECT,
     POWER,
     SNOWFLAKE,
-    PAUSE_CIRCLE,
-    ROCKET,
-    LINK,
+    FLAME,
     ARROW_FAT_LINES_UP,
     SPARKLE,
     PERSON,
     GHOST,
-    LINK_BREAK,
     LOCK,
     BARBELL,
-    HAMMER,
-    SWORD,
-    PROHIBIT,
     USERS,
     INFO,
     CARET_UP,

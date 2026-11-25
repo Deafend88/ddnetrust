@@ -1,8 +1,11 @@
-//! The race status bar's look (7.7 review): one filled icon per DDRace state and three
-//! layout directions to choose from. The icons share one grammar: a filled base (a
-//! Phosphor glyph, or the weapon's silhouette cut from the game skin) and at most one
-//! modifier: a cut slash for "off", or a badge: infinity (endless), sparkle (teleport),
-//! lock (deep). DDNet's HUD icons are only the reference for what each one means.
+//! The race status bar's look (7.7, the user's pick: chips). Rule: a state that changes
+//! something already shown changes that element instead of adding an icon. So the
+//! weapon pill shows every owned weapon as a bold silhouette (held: full, others dim)
+//! with its marks: struck through (hits off), a sparkle (teleport), a flame on the gun
+//! (jetpack), the timer ring around the sword (ninja); the jump counter in the same pill
+//! reads "∞" with endless jump; freeze tints the whole pill. What is left (endless hook,
+//! hooking others off, solo, collision off, the modes) are plain bold glyphs, one small
+//! chip each, without icon backgrounds. DDNet's HUD icons are the reference for meaning.
 
 use egui::{Color32, CornerRadius, Margin, Pos2, Rect, Response, Sense, Shape, Stroke, Ui, vec2};
 
@@ -11,285 +14,143 @@ use crate::statusbar::{Indicator, Status, WeaponIcons};
 use crate::style::{Glass, Weight, color, icon_font, radius, size, space};
 use crate::widgets as w;
 
-/// What an icon is drawn from.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Base {
-    Glyph(&'static str),
-    /// A weapon's silhouette (hammer 0 .. ninja 5).
-    Weapon(usize),
-}
-
-/// The one modifier an icon may carry.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Mark {
-    None,
-    /// Off: a slash cut through the base.
-    Slash,
-    /// A small round badge with a glyph, bottom right.
-    Badge(&'static str),
-    /// Endless: an "∞" badge (Inter's own sign reads at this size, the glyph does not).
-    Endless,
-    /// Deep: a heavy ring around the base.
-    Ring,
-}
-
-/// A state's icon and its name (the HUD editor's tooltip, the gallery's label).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct StateIcon {
-    pub name: &'static str,
-    pub base: Base,
-    pub mark: Mark,
-}
-
-const fn icon(name: &'static str, base: Base, mark: Mark) -> StateIcon {
-    StateIcon { name, base, mark }
-}
-
-/// Frozen (not a status bar indicator in C++: its freeze bar is above the tee).
-pub const FREEZE: StateIcon = icon("Frozen", Base::Glyph(icons::SNOWFLAKE), Mark::None);
-/// Holding ninja (the weapon row shows it; listed for the sheet).
-pub const NINJA: StateIcon = icon("Ninja", Base::Weapon(NINJA_ID), Mark::None);
-
-/// C++ `WEAPON_NINJA`.
-const NINJA_ID: usize = 5;
-
-/// The icon of a status bar indicator.
-pub fn state_icon(ind: Indicator) -> StateIcon {
-    use Base::*;
-    use Indicator::*;
-    use Mark::*;
-    let off = Slash;
-    let tele = Badge(icons::SPARKLE);
-    match ind {
-        EndlessJump => icon("Endless jump", Glyph(icons::ARROW_FAT_LINES_UP), Endless),
-        EndlessHook => icon("Endless hook", Glyph(icons::LINK), Endless),
-        Jetpack => icon("Jetpack", Glyph(icons::ROCKET), None),
-        TeleGun => icon("Teleport gun", Weapon(1), tele),
-        TeleGrenade => icon("Teleport grenade", Weapon(3), tele),
-        TeleLaser => icon("Teleport laser", Weapon(4), tele),
-        Solo => icon("Solo", Glyph(icons::PERSON), None),
-        CollisionDisabled => icon("Collision off", Glyph(icons::GHOST), None),
-        HookHitDisabled => icon("Hooking others off", Glyph(icons::LINK), off),
-        HammerHitDisabled => icon("Hammer hits off", Glyph(icons::HAMMER), off),
-        GunHitDisabled => icon("Gun hits off", Weapon(1), off),
-        ShotgunHitDisabled => icon("Shotgun hits off", Weapon(2), off),
-        GrenadeHitDisabled => icon("Grenade hits off", Weapon(3), off),
-        LaserHitDisabled => icon("Laser hits off", Weapon(4), off),
-        LockMode => icon("Lock mode", Glyph(icons::LOCK), None),
-        PracticeMode => icon("Practice", Glyph(icons::BARBELL), None),
-        Team0Mode => icon("Team 0 mode", Glyph(icons::USERS), None),
-        DeepFrozen => icon("Deep freeze", Glyph(icons::SNOWFLAKE), Ring),
-        LiveFrozen => icon("Live freeze", Glyph(icons::PERSON), Badge(icons::SNOWFLAKE)),
-    }
-}
-
-/// Every icon, for the gallery's sheet.
-pub fn sheet() -> Vec<StateIcon> {
-    use Indicator::*;
-    let mut all = vec![FREEZE];
-    all.extend(
-        [
-            DeepFrozen,
-            LiveFrozen,
-            EndlessJump,
-            EndlessHook,
-            Jetpack,
-            Solo,
-            CollisionDisabled,
-            HookHitDisabled,
-            HammerHitDisabled,
-            GunHitDisabled,
-            ShotgunHitDisabled,
-            GrenadeHitDisabled,
-            LaserHitDisabled,
-            TeleGun,
-            TeleGrenade,
-            TeleLaser,
-            LockMode,
-            PracticeMode,
-            Team0Mode,
-        ]
-        .map(state_icon),
-    );
-    all.push(NINJA);
-    all
-}
-
-/// The weapon names, for tooltips.
+/// C++ weapon ids.
+const GUN: usize = 1;
+const NINJA: usize = 5;
 const WEAPONS: [&str; 6] = ["Hammer", "Gun", "Shotgun", "Grenade", "Laser", "Ninja"];
 
-/// Draws a base (glyph or silhouette) filling `rect`.
-fn draw_base(ui: &Ui, icons: &mut WeaponIcons, base: Base, rect: Rect, tint: Color32) {
-    match base {
-        Base::Glyph(g) => {
-            ui.painter().text(
-                rect.center(),
-                egui::Align2::CENTER_CENTER,
-                g,
-                // Phosphor's ink is about 80% of the em: fill the square
-                icon_font(rect.height() * 1.2),
-                tint,
-            );
-        }
-        Base::Weapon(n) => {
-            if let Some((id, [tw, th])) = icons.silhouette(ui.ctx(), n) {
-                // fit the sprite's aspect into the square
-                let scale = (rect.width() / tw).min(rect.height() / th);
-                let r = Rect::from_center_size(rect.center(), vec2(tw, th) * scale);
-                let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
-                ui.painter().image(id, r, uv, tint);
-            }
-        }
-    }
-}
+/// The icon and sprite size.
+const ICON: f32 = size::ICON_HUD;
 
-/// One state icon, `size` square; its name as a tooltip when `tooltip` (the HUD editor).
-pub fn draw_icon(
-    ui: &mut Ui,
-    icons: &mut WeaponIcons,
-    icon: StateIcon,
-    size: f32,
-    tooltip: bool,
-) -> Response {
-    let (rect, response) = ui.allocate_exact_size(vec2(size, size), Sense::hover());
-    // a ringed base sits inside its ring
-    let base = if icon.mark == Mark::Ring {
-        rect.shrink(size * 0.22)
-    } else {
-        rect
-    };
-    draw_base(ui, icons, icon.base, base, color::TEXT);
-    let p = ui.painter();
-    match icon.mark {
-        Mark::None => {}
-        Mark::Slash => {
-            let (a, b) = (
-                rect.left_top() + vec2(size, size) * 0.12,
-                rect.right_bottom() - vec2(size, size) * 0.12,
-            );
-            // a dark cut, then the white slash in it
-            p.line_segment([a, b], Stroke::new(size * 0.24, color::SURFACE));
-            p.line_segment([a, b], Stroke::new(size * 0.1, color::TEXT));
-        }
-        Mark::Endless => {
-            let c = rect.right_bottom() - vec2(size, size) * 0.2;
-            p.circle_filled(c, size * 0.34, color::SURFACE);
-            p.circle_filled(c, size * 0.28, color::TEXT);
-            let f = crate::style::font(size * 0.5, Weight::SemiBold);
-            p.text(
-                c,
-                egui::Align2::CENTER_CENTER,
-                "\u{221e}",
-                f,
-                color::SURFACE,
-            );
-        }
-        Mark::Ring => {
-            p.circle_stroke(
-                rect.center(),
-                size * 0.44,
-                Stroke::new(size * 0.1, color::TEXT),
-            );
-        }
-        Mark::Badge(g) => {
-            let c = rect.right_bottom() - vec2(size, size) * 0.2;
-            p.circle_filled(c, size * 0.34, color::SURFACE);
-            p.circle_filled(c, size * 0.28, color::TEXT);
-            p.text(
-                c,
-                egui::Align2::CENTER_CENTER,
-                g,
-                icon_font(size * 0.38),
-                color::SURFACE,
-            );
-        }
-    }
-    if tooltip {
-        response.on_hover_text(icon.name)
-    } else {
-        response
-    }
-}
-
-/// A weapon silhouette at `alpha` (C++: 0.4 for weapons not held), named on hover.
-fn weapon(ui: &mut Ui, icons: &mut WeaponIcons, n: usize, size: f32, alpha: f32, tooltip: bool) {
-    let (rect, response) = ui.allocate_exact_size(vec2(size * 1.5, size), Sense::hover());
-    draw_base(
-        ui,
-        icons,
-        Base::Weapon(n),
-        rect,
-        color::TEXT.gamma_multiply(alpha),
-    );
-    if tooltip {
-        response.on_hover_text(WEAPONS[n]);
-    }
-}
-
-/// The effects: capabilities, disabled interactions, modes and freeze, in C++'s order.
-fn effects(s: &Status) -> Vec<Indicator> {
-    (s.capabilities.iter())
-        .chain(&s.prohibited)
-        .chain(&s.modes)
-        .copied()
-        .collect()
-}
-
-/// The three directions.
+/// How the tee is frozen; it tints the weapon pill.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Layout {
-    /// A card of rows: weapons, a segmented jump meter, the effects.
-    Block,
-    /// A narrow vertical rail: the held weapon large, the jumps as a number, the effects
-    /// stacked.
-    Rail,
-    /// Separate small pills: weapon and jumps, then one round chip per effect; the ninja
-    /// timer is a ring.
-    Chips,
+pub enum Freeze {
+    None,
+    /// Frozen for a while (a freeze tile).
+    Frozen,
+    /// Deep freeze: frozen until undeep (C++ `m_DeepFrozen`).
+    Deep,
+    /// Live freeze: movement off, the tee not frozen (C++ `m_LiveFrozen`).
+    Live,
 }
 
-impl Layout {
-    pub const ALL: [(Self, &'static str); 3] = [
-        (Self::Block, "Block"),
-        (Self::Rail, "Rail"),
-        (Self::Chips, "Chips"),
-    ];
+impl Freeze {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::None => "",
+            Self::Frozen => "Frozen",
+            Self::Deep => "Deep freeze",
+            Self::Live => "Live freeze",
+        }
+    }
 }
 
-/// Faint: used jumps, empty tracks.
+/// The marks one weapon carries.
+#[derive(Clone, Copy, Debug, Default)]
+struct Marks {
+    hits_off: bool,
+    teleport: bool,
+    jetpack: bool,
+}
+
+/// What an indicator does to a weapon.
+#[derive(Clone, Copy, Debug)]
+enum Mark {
+    HitsOff,
+    Teleport,
+    Jetpack,
+}
+
+/// The weapon an indicator changes, and how.
+fn weapon_mark(ind: Indicator) -> Option<(usize, Mark)> {
+    use Indicator::*;
+    use Mark::{HitsOff, Teleport};
+    Some(match ind {
+        HammerHitDisabled => (0, HitsOff),
+        GunHitDisabled => (GUN, HitsOff),
+        ShotgunHitDisabled => (2, HitsOff),
+        GrenadeHitDisabled => (3, HitsOff),
+        LaserHitDisabled => (4, HitsOff),
+        TeleGun => (GUN, Teleport),
+        TeleGrenade => (3, Teleport),
+        TeleLaser => (4, Teleport),
+        Indicator::Jetpack => (GUN, Mark::Jetpack),
+        _ => return None,
+    })
+}
+
+#[derive(Clone, Copy, Debug)]
+enum Chip {
+    Glyph(&'static str),
+    Hook { endless: bool, off: bool },
+}
+
+/// The indicators that keep a chip of their own: the glyph (or the drawn hook) and name.
+fn chip_of(ind: Indicator) -> Option<(Chip, &'static str)> {
+    use Indicator::*;
+    Some(match ind {
+        EndlessHook => (
+            Chip::Hook {
+                endless: true,
+                off: false,
+            },
+            "Endless hook",
+        ),
+        HookHitDisabled => (
+            Chip::Hook {
+                endless: false,
+                off: true,
+            },
+            "Hooking others off",
+        ),
+        Solo => (Chip::Glyph(icons::PERSON), "Solo"),
+        CollisionDisabled => (Chip::Glyph(icons::GHOST), "Collision off"),
+        LockMode => (Chip::Glyph(icons::LOCK), "Lock mode"),
+        PracticeMode => (Chip::Glyph(icons::BARBELL), "Practice"),
+        Team0Mode => (Chip::Glyph(icons::USERS), "Team 0 mode"),
+        _ => return None,
+    })
+}
+
+/// Faint: tracks.
 fn faint() -> Color32 {
     color::TEXT.gamma_multiply(0.25)
 }
 
-/// Jumps as a segmented meter: one rounded segment per jump, the used ones faint.
-fn meter(ui: &mut Ui, (available, total): (i32, i32)) {
-    let (seg, gap, h) = (space::M, space::XS, space::S);
-    let width = total as f32 * (seg + gap) - gap;
-    let (rect, _) = ui.allocate_exact_size(vec2(width.max(0.0), size::ICON_HUD), Sense::hover());
-    for n in 0..total {
-        let x = rect.left() + n as f32 * (seg + gap);
-        let r = Rect::from_min_size(Pos2::new(x, rect.center().y - h / 2.0), vec2(seg, h));
-        let fill = if n < available { color::TEXT } else { faint() };
-        ui.painter()
-            .rect_filled(r, CornerRadius::same(radius::PILL), fill);
-    }
+/// The "off" strike: a dark cut with a white line in it, corner to corner.
+fn strike(ui: &Ui, rect: Rect) {
+    let d = rect.height() * 0.12;
+    let (a, b) = (
+        rect.left_top() + vec2(d, d),
+        rect.right_bottom() - vec2(d, d),
+    );
+    let p = ui.painter();
+    p.line_segment([a, b], Stroke::new(rect.height() * 0.24, color::SURFACE));
+    p.line_segment([a, b], Stroke::new(rect.height() * 0.1, color::TEXT));
 }
 
-/// The ninja timer as a bar: white on a faint track.
-fn bar(ui: &mut Ui, progress: f32, width: f32) {
-    let (rect, _) = ui.allocate_exact_size(vec2(width, space::XS), Sense::hover());
-    let round = CornerRadius::same(radius::PILL);
-    ui.painter().rect_filled(rect, round, faint());
-    let mut fill = rect;
-    fill.set_width(rect.width() * progress);
-    ui.painter().rect_filled(fill, round, color::TEXT);
+/// A small mark glyph at a corner, outlined dark so it reads over the silhouette (no
+/// background).
+fn corner_glyph(ui: &Ui, at: Pos2, glyph: &str) {
+    let f = icon_font(ICON * 0.6);
+    for d in [
+        vec2(-1.0, 0.0),
+        vec2(1.0, 0.0),
+        vec2(0.0, -1.0),
+        vec2(0.0, 1.0),
+    ] {
+        let a = egui::Align2::CENTER_CENTER;
+        ui.painter()
+            .text(at + d, a, glyph, f.clone(), color::SURFACE);
+    }
+    ui.painter()
+        .text(at, egui::Align2::CENTER_CENTER, glyph, f, color::TEXT);
 }
 
 /// A ring around `rect`: the faint track and `progress` of it from the top, clockwise.
 fn ring(ui: &Ui, rect: Rect, progress: f32) {
-    let c = rect.center();
-    let r = rect.width() / 2.0;
-    let stroke = space::XS - 1.0;
+    let (c, r) = (rect.center(), rect.width() / 2.0);
+    let stroke = 3.0;
     ui.painter()
         .circle_stroke(c, r, Stroke::new(stroke, faint()));
     let n = 48;
@@ -305,151 +166,364 @@ fn ring(ui: &Ui, rect: Rect, progress: f32) {
     }
 }
 
-/// Draws the status in `layout`. `tooltip`: icons named on hover (the HUD editor).
+/// A bold hook: eye, shaft and the curve with its point, drawn (Phosphor has none).
+fn hook(ui: &Ui, rect: Rect) {
+    let (w, h) = (rect.width(), rect.height());
+    let s = Stroke::new(h * 0.14, color::TEXT);
+    let x = rect.left() + w * 0.58;
+    let p = ui.painter();
+    p.circle_stroke(Pos2::new(x, rect.top() + h * 0.14), h * 0.09, s);
+    let shaft = [
+        Pos2::new(x, rect.top() + h * 0.23),
+        Pos2::new(x, rect.top() + h * 0.62),
+    ];
+    p.line_segment(shaft, s);
+    // the curve: half a circle from the shaft's foot round to the left and up
+    let c = Pos2::new(x - w * 0.2, rect.top() + h * 0.62);
+    let r = w * 0.2;
+    let points: Vec<Pos2> = (0..=16)
+        .map(|i| {
+            let a = i as f32 / 16.0 * std::f32::consts::PI;
+            c + vec2(a.cos(), a.sin()) * r
+        })
+        .collect();
+    p.add(Shape::line(points, s));
+    // the point
+    let tip = c + vec2(-r, 0.0);
+    p.line_segment([tip, tip + vec2(w * 0.12, -h * 0.14)], s);
+}
+
+/// One owned weapon in the pill. `tooltip`: its name and marks on hover.
+fn weapon(
+    ui: &mut Ui,
+    icons: &mut WeaponIcons,
+    n: usize,
+    held: bool,
+    marks: Marks,
+    ninja: Option<f32>,
+    tooltip: bool,
+) -> Response {
+    let (rect, response) = ui.allocate_exact_size(vec2(ICON * 1.5, ICON), Sense::hover());
+    let ringed = n == NINJA && ninja.is_some();
+    let area = if ringed {
+        rect.shrink(space::XS + 1.0)
+    } else {
+        rect
+    };
+    if let Some((id, [tw, th])) = icons.silhouette(ui.ctx(), n) {
+        let scale = (area.width() / tw).min(area.height() / th);
+        let r = Rect::from_center_size(area.center(), vec2(tw, th) * scale);
+        // C++: 0.4 for weapons not held
+        let tint = if held {
+            color::TEXT
+        } else {
+            color::TEXT.gamma_multiply(0.4)
+        };
+        let uv = Rect::from_min_max(Pos2::ZERO, Pos2::new(1.0, 1.0));
+        ui.painter().image(id, r, uv, tint);
+    }
+    if let Some(p) = ninja.filter(|_| ringed) {
+        let d = ICON + space::S;
+        ring(ui, Rect::from_center_size(rect.center(), vec2(d, d)), p);
+    }
+    if marks.hits_off {
+        strike(ui, rect);
+    }
+    if marks.teleport {
+        corner_glyph(ui, rect.right_top() + vec2(-2.0, 3.0), icons::SPARKLE);
+    }
+    if marks.jetpack {
+        // behind the gun, where the push comes from
+        corner_glyph(ui, rect.left_bottom() + vec2(3.0, -4.0), icons::FLAME);
+    }
+    if !tooltip {
+        return response;
+    }
+    let mut text = WEAPONS[n].to_string();
+    for (on, what) in [
+        (marks.hits_off, "hits off"),
+        (marks.teleport, "teleport"),
+        (marks.jetpack, "jetpack"),
+    ] {
+        if on {
+            text += &format!(", {what}");
+        }
+    }
+    response.on_hover_text(text)
+}
+
+/// Draws the status as chips. `freeze` tints the weapon pill; `tooltip`: everything is
+/// named on hover (the HUD editor).
 pub fn draw(
     ui: &mut Ui,
     glass: Glass,
-    layout: Layout,
     s: &Status,
+    freeze: Freeze,
     icons: &mut WeaponIcons,
     tooltip: bool,
 ) {
-    let icon_size = size::ICON_HUD;
-    let fx = effects(s);
-    match layout {
-        Layout::Block => {
-            let margin = Margin::same(space::M as i8);
-            w::hud_bar(ui, glass, radius::CARD, margin, icon_size, |ui| {
-                ui.vertical(|ui| {
-                    ui.spacing_mut().item_spacing = vec2(space::XS, space::XS);
-                    ui.spacing_mut().interact_size.y = icon_size;
-                    if !s.weapons.is_empty() {
-                        ui.horizontal(|ui| {
-                            for &(n, active) in &s.weapons {
-                                ui.vertical(|ui| {
-                                    ui.spacing_mut().item_spacing.y = space::XS;
-                                    weapon(
-                                        ui,
-                                        icons,
-                                        n,
-                                        icon_size,
-                                        if active { 1.0 } else { 0.35 },
-                                        tooltip,
-                                    );
-                                    if n == NINJA_ID
-                                        && let Some(p) = s.ninja
-                                    {
-                                        bar(ui, p, icon_size * 1.5);
-                                    }
-                                });
-                            }
-                        });
-                    }
-                    if s.jumps.1 > 0 {
-                        ui.horizontal(|ui| meter(ui, s.jumps));
-                    }
-                    if !fx.is_empty() {
-                        ui.horizontal(|ui| {
-                            for &ind in &fx {
-                                draw_icon(ui, icons, state_icon(ind), icon_size, tooltip);
-                            }
-                        });
-                    }
-                });
-            });
+    let all: Vec<Indicator> = (s.capabilities.iter())
+        .chain(&s.prohibited)
+        .chain(&s.modes)
+        .copied()
+        .collect();
+    let mut marks = [Marks::default(); 6];
+    for ind in &all {
+        if let Some((n, mark)) = weapon_mark(*ind) {
+            let m = &mut marks[n];
+            match mark {
+                Mark::HitsOff => m.hits_off = true,
+                Mark::Teleport => m.teleport = true,
+                Mark::Jetpack => m.jetpack = true,
+            }
         }
-        Layout::Rail => {
-            let margin = Margin::symmetric(space::S as i8, space::M as i8);
-            w::hud_bar(ui, glass, radius::CARD, margin, icon_size, |ui| {
-                // as narrow as the held weapon
-                ui.set_max_width(icon_size * 2.0);
-                ui.vertical_centered(|ui| {
-                    ui.spacing_mut().item_spacing = vec2(space::XS, space::S);
-                    if let Some(&(n, _)) = s.weapons.iter().find(|w| w.1).or(s.weapons.first()) {
-                        weapon(ui, icons, n, size::ICON_HUD + space::XS, 1.0, tooltip);
-                        if n == NINJA_ID
-                            && let Some(p) = s.ninja
-                        {
-                            bar(ui, p, icon_size * 1.5);
+    }
+    let endless_jump = all.contains(&Indicator::EndlessJump);
+    let chips: Vec<(Chip, &str)> = all.iter().filter_map(|&i| chip_of(i)).collect();
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = space::XS;
+        let show_pill = !s.weapons.is_empty() || s.jumps.1 > 0 || freeze != Freeze::None;
+        if show_pill {
+            let margin = Margin::symmetric(space::M as i8, space::XS as i8);
+            let pill = w::hud_bar(ui, glass, radius::PILL, margin, ICON, |ui| {
+                ui.spacing_mut().item_spacing.x = space::S;
+                if freeze != Freeze::None {
+                    let glyph = if freeze == Freeze::Live {
+                        icons::PERSON
+                    } else {
+                        icons::SNOWFLAKE
+                    };
+                    let r = w::icon(ui, glyph, ICON, color::FREEZE);
+                    if tooltip {
+                        r.on_hover_text(freeze.name());
+                    }
+                }
+                for &(n, held) in &s.weapons {
+                    weapon(ui, icons, n, held, marks[n], s.ninja, tooltip);
+                }
+                if s.jumps.1 > 0 || endless_jump {
+                    // endless jump: "∞" instead of the count
+                    let text = if endless_jump {
+                        "\u{221e}".to_string()
+                    } else {
+                        format!("{}/{}", s.jumps.0, s.jumps.1)
+                    };
+                    let r = w::text(ui, &text, size::BODY, Weight::SemiBold, color::TEXT);
+                    if tooltip {
+                        r.on_hover_text(if endless_jump {
+                            "Endless jump"
+                        } else {
+                            "Jumps left"
+                        });
+                    }
+                }
+            });
+            // freeze tints the whole pill; deep freeze also rings it
+            let rect = pill.response.rect;
+            let round = CornerRadius::same(radius::PILL);
+            let (alpha, border) = match freeze {
+                Freeze::None => (0.0, false),
+                Freeze::Frozen => (0.28, false),
+                Freeze::Deep => (0.4, true),
+                Freeze::Live => (0.16, false),
+            };
+            if alpha > 0.0 {
+                ui.painter()
+                    .rect_filled(rect, round, color::FREEZE.gamma_multiply(alpha));
+            }
+            if border {
+                let stroke = Stroke::new(2.0, color::FREEZE);
+                ui.painter()
+                    .rect_stroke(rect, round, stroke, egui::StrokeKind::Inside);
+            }
+        }
+        for (chip, name) in chips {
+            let margin = Margin::symmetric(space::S as i8, space::XS as i8);
+            let r = w::hud_bar(ui, glass, radius::PILL, margin, ICON, |ui| {
+                ui.spacing_mut().item_spacing.x = space::XS;
+                match chip {
+                    Chip::Glyph(g) => {
+                        w::icon(ui, g, ICON, color::TEXT);
+                    }
+                    Chip::Hook { endless, off } => {
+                        let (rect, _) = ui.allocate_exact_size(vec2(ICON, ICON), Sense::hover());
+                        hook(ui, rect);
+                        if off {
+                            strike(ui, rect);
+                        }
+                        if endless {
+                            w::text(ui, "\u{221e}", size::BODY, Weight::SemiBold, color::TEXT);
                         }
                     }
-                    if s.jumps.1 > 0 {
-                        ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing.x = space::XS;
-                            w::icon(
-                                ui,
-                                icons::ARROW_FAT_LINES_UP,
-                                size::ICON_SMALL,
-                                ui.visuals().weak_text_color(),
-                            );
-                            w::text(
-                                ui,
-                                &s.jumps.0.to_string(),
-                                size::LARGE,
-                                Weight::SemiBold,
-                                color::TEXT,
-                            );
-                        });
-                    }
-                    for &ind in &fx {
-                        draw_icon(ui, icons, state_icon(ind), icon_size, tooltip);
-                    }
-                });
-            });
-        }
-        Layout::Chips => {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = space::XS;
-                let chip = Margin::symmetric(space::S as i8, space::XS as i8);
-                if let Some(&(n, _)) = s.weapons.iter().find(|w| w.1).or(s.weapons.first()) {
-                    w::hud_bar(
-                        ui,
-                        glass,
-                        radius::PILL,
-                        Margin::symmetric(space::M as i8, space::XS as i8),
-                        icon_size,
-                        |ui| {
-                            ui.spacing_mut().item_spacing.x = space::S;
-                            let (rect, _) = ui.allocate_exact_size(
-                                vec2(icon_size * 1.5, icon_size),
-                                Sense::hover(),
-                            );
-                            draw_base(
-                                ui,
-                                icons,
-                                Base::Weapon(n),
-                                rect.shrink(if n == NINJA_ID && s.ninja.is_some() {
-                                    space::XS
-                                } else {
-                                    0.0
-                                }),
-                                color::TEXT,
-                            );
-                            if n == NINJA_ID
-                                && let Some(p) = s.ninja
-                            {
-                                ring(
-                                    ui,
-                                    Rect::from_center_size(
-                                        rect.center(),
-                                        vec2(icon_size, icon_size) + vec2(space::XS, space::XS),
-                                    ),
-                                    p,
-                                );
-                            }
-                            if s.jumps.1 > 0 {
-                                let text = format!("{}/{}", s.jumps.0, s.jumps.1);
-                                w::text(ui, &text, size::BODY, Weight::Medium, color::TEXT);
-                            }
-                        },
-                    );
-                }
-                for &ind in &fx {
-                    w::hud_bar(ui, glass, radius::PILL, chip, icon_size, |ui| {
-                        draw_icon(ui, icons, state_icon(ind), icon_size, tooltip);
-                    });
                 }
             });
+            if tooltip {
+                r.response.on_hover_text(name);
+            }
         }
+    });
+}
+
+/// The pill's freeze from the indicators and the core's freeze (deep and live first).
+pub fn freeze_of(s: &Status, frozen: bool) -> Freeze {
+    if s.modes.contains(&Indicator::DeepFrozen) {
+        Freeze::Deep
+    } else if s.modes.contains(&Indicator::LiveFrozen) {
+        Freeze::Live
+    } else if frozen {
+        Freeze::Frozen
+    } else {
+        Freeze::None
+    }
+}
+
+/// Every state, for the gallery page: (label, status, freeze).
+pub fn examples() -> Vec<(&'static str, Status, Freeze)> {
+    use Indicator::*;
+    let base = |weapons: Vec<(usize, bool)>| Status {
+        jumps: (2, 2),
+        weapons,
+        ..Default::default()
+    };
+    let two = || vec![(0, false), (GUN, true)];
+    let all = || vec![(0, false), (GUN, true), (2, false), (3, false), (4, false)];
+    let with = |mut s: Status, caps: Vec<Indicator>, off: Vec<Indicator>, modes: Vec<Indicator>| {
+        (s.capabilities, s.prohibited, s.modes) = (caps, off, modes);
+        s
+    };
+    let ninja = Status {
+        ninja: Some(0.6),
+        ..base(vec![(0, false), (GUN, false), (NINJA, true)])
+    };
+    let off = vec![
+        HammerHitDisabled,
+        ShotgunHitDisabled,
+        GrenadeHitDisabled,
+        LaserHitDisabled,
+    ];
+    let no_jumps = || Status {
+        jumps: (0, 2),
+        ..base(two())
+    };
+    vec![
+        (
+            "Spawn: hammer, gun held, 2 of 2 jumps",
+            base(two()),
+            Freeze::None,
+        ),
+        (
+            "One jump used",
+            Status {
+                jumps: (1, 2),
+                ..base(two())
+            },
+            Freeze::None,
+        ),
+        (
+            "All weapons, jetpack (a flame on the gun)",
+            with(base(all()), vec![Jetpack], vec![], vec![]),
+            Freeze::None,
+        ),
+        (
+            "Endless jump (the counter reads \u{221e})",
+            with(base(two()), vec![EndlessJump], vec![], vec![]),
+            Freeze::None,
+        ),
+        (
+            "Endless hook; hooking others off",
+            with(
+                base(two()),
+                vec![EndlessHook],
+                vec![HookHitDisabled],
+                vec![],
+            ),
+            Freeze::None,
+        ),
+        ("Ninja held: the timer ring", ninja, Freeze::None),
+        (
+            "Hits off: hammer, shotgun, grenade, laser (struck through)",
+            with(base(all()), vec![], off, vec![]),
+            Freeze::None,
+        ),
+        (
+            "Teleport gun, grenade and laser (a sparkle)",
+            with(
+                base(all()),
+                vec![TeleGun, TeleGrenade, TeleLaser],
+                vec![],
+                vec![],
+            ),
+            Freeze::None,
+        ),
+        (
+            "Solo; collision off",
+            with(base(two()), vec![], vec![Solo, CollisionDisabled], vec![]),
+            Freeze::None,
+        ),
+        (
+            "Lock mode; practice; team 0 mode",
+            with(
+                base(two()),
+                vec![],
+                vec![],
+                vec![LockMode, PracticeMode, Team0Mode],
+            ),
+            Freeze::None,
+        ),
+        ("Frozen", no_jumps(), Freeze::Frozen),
+        (
+            "Deep freeze",
+            with(no_jumps(), vec![], vec![], vec![DeepFrozen]),
+            Freeze::Deep,
+        ),
+        (
+            "Live freeze",
+            with(base(two()), vec![], vec![], vec![LiveFrozen]),
+            Freeze::Live,
+        ),
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Merging: weapon states become marks on their weapon, endless jump the counter,
+    /// freeze the pill; only the rest keep chips.
+    #[test]
+    fn states_merge_into_what_is_shown() {
+        use Indicator::*;
+        let left: Vec<Indicator> = [
+            EndlessJump,
+            EndlessHook,
+            Jetpack,
+            TeleGun,
+            TeleGrenade,
+            TeleLaser,
+            Solo,
+            CollisionDisabled,
+            HookHitDisabled,
+            HammerHitDisabled,
+            GunHitDisabled,
+            ShotgunHitDisabled,
+            GrenadeHitDisabled,
+            LaserHitDisabled,
+            LockMode,
+            PracticeMode,
+            Team0Mode,
+            DeepFrozen,
+            LiveFrozen,
+        ]
+        .into_iter()
+        .filter(|&i| weapon_mark(i).is_none() && chip_of(i).is_none())
+        .collect();
+        // shown by the counter and the pill tint
+        assert_eq!(left, [EndlessJump, DeepFrozen, LiveFrozen]);
+        let s = Status {
+            modes: vec![LiveFrozen, DeepFrozen],
+            ..Default::default()
+        };
+        assert_eq!(freeze_of(&s, false), Freeze::Deep);
+        assert_eq!(freeze_of(&Status::default(), true), Freeze::Frozen);
     }
 }

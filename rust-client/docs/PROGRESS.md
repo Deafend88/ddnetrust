@@ -436,7 +436,7 @@ for scenes that do not stay still, or `-RustSubject` to check what the server se
 `examples/maprender.rs` renders a map at a given
 center for fixed-view checks; mask pickups (they bob on each client's own clock).
 
-### M7 — visual identity and HUD (in progress: 7.1-7.3 approved; 7.4-7.8 done, status bar direction to pick)
+### M7 — visual identity and HUD (in progress: 7.1-7.3 approved; 7.4-7.8 done, status bar chips in review)
 
 Pushed and verified: the plan and its review answers (PLAN §10, §10.6), the collision
 leak fix, and 7.1 (fonts + icons, design system, menus + gallery, the review tweaks,
@@ -733,11 +733,24 @@ Built before the editor (the user chose this order) so the editor drags a real w
 - Verified: gates (88 tests), the live C++ comparison of the status states (Block,
   docs/review/7.7/cpp-vs-rust-states.png).
 
+#### Review round 4 (2026-11-25): Chips chosen, states merged; awaiting review
+- The user picked Chips; Block, Rail and the layout setting are gone. Rule (also for
+  later widgets): a state that changes something already shown changes that element.
+  `statusview.rs`: one weapon pill (owned weapons as bold silhouettes, held full, others
+  40 %, then the jump counter); weapon marks instead of icons: strike-through (hits off),
+  sparkle (teleport), flame on the gun (jetpack); "∞" in the counter (endless jump); the
+  ninja ring around the sword; freeze tints the pill (`color::FREEZE`): frozen
+  (`core.freeze_end > tick`), deep (stronger tint + border), live (light tint, figure).
+  Only endless hook (a drawn hook + "∞"), hooking others off (hook struck through),
+  solo, collision off and the modes keep small chips, plain glyphs without backgrounds.
+  Everything is named on hover in the HUD editor (not checked live).
+- With deep and live freeze both on, the pill shows deep only (C++ draws both icons).
+- Gallery page: every state labelled (docs/review/7.7/states.png); live C++ comparison
+  rerun (docs/review/7.7/cpp-vs-rust-states.png). Unused icons pruned.
+
 #### Exact next actions (next session starts here)
 1. Read CLAUDE.md, PLAN §10.3, this section, `git log`.
-2. The user picks a status bar direction (docs/review/7.7/directions.png) and sends final
-   watermark slider values; make them the defaults, drop the other directions and the
-   sliders they no longer need.
+2. Apply the user's review of the chips and their final watermark slider values.
 3. Do not start 7.9 (Dynamic Island) until the user says so; they start it in a fresh
    session.
 4. Before each commit: gates, `/ponytail-review`, UI rules review; update this file.
