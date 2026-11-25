@@ -992,13 +992,12 @@ are final unless the user changes them:
   scratch APPDATA), kills via `statusbar_check.ps1 -Kills`.
 
 #### Exact next actions (next session starts here)
-State (2026-11-25, pushed): M7 done, HUD fixes done; next: antiping. Waiting for the
-user's review: the HUD fixes above, the volume popover (d04d4040a) and 7.11 (89a3b16b2).
-1. Read CLAUDE.md, PLAN ง10-11, this file, `git log`.
-2. If the review asks for changes, do those first.
-3. Antiping: plan it in PLAN.md (a ง12 like ง10) for the user's approval before
-   coding: `cl_antiping` and sub-settings, smoothing, weapon/projectile prediction,
-   margins, verified with `rs_parity` worlds at 100 %.
+State (2026-11-25, pushed): M7 done, HUD fixes done. The antiping plan (M8) is in
+PLAN.md ยง12, waiting for the user's review (questions in ยง12.6). Also waiting: the HUD
+fixes above, the volume popover (d04d4040a) and 7.11 (89a3b16b2).
+1. Read CLAUDE.md, PLAN ยง11-12, this file, `git log`.
+2. If a review asks for changes, do those first.
+3. Once ยง12 is approved (answers recorded as ยง12.7): start M8 at 8.1.
 
 #### Decisions and gotchas from 7.1
 - egui 0.37 panics in debug if a frame's `TexturesDelta` is dropped unapplied: drain

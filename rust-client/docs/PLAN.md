@@ -712,4 +712,293 @@ Verify: all gates; the M6 screenshot comparisons still pass with the HUD disable
   sandboxed scripts, read-only data in, drawing out, never input or commands.
 
 The order between them is decided when M7 is done; antiping comes before any public
-server.
+server. Antiping is planned in §12.
+
+---
+
+## 12. M8 plan: antiping (draft for review, 2026-11-25)
+
+Goal: `cl_antiping` and every sub-setting behave exactly as in the C++ client: other
+players, projectiles, lasers, pickups, draggers and plasma predicted ahead like the local
+tee; the local player's weapons predicted (fire, reload, weapon switch, ninja dash,
+hammer, grenade jumps, shotgun and laser bounces); the C++ smoothing of other players'
+corrections; preinputs; the prediction margin and the antiping limit/percent. Reference:
+the C++ client prediction (§8.1). Every physics part is verified against the real C++
+prediction code tick for tick (raw `f32` bits), like M4/M5.
+
+Not in M8 (each noted in DECISIONS.md when its code lands):
+- **Dummy:** there is no dummy yet; the `PredictDummy()` branches are left out and
+  marked `// C++ dummy branch not ported` at each site, so the dummy milestone finds them.
+- **Predicted events** (`cl_predict_events`, default 0: sounds, explosions, hammer hits,
+  damage indicators) and `CItems::ReconstructSmokeTrail` (only spawns particles; uses
+  `random_float`): we draw no particles and play no sounds yet. The parent/child entity
+  links of `CopyWorld` only feed `m_DestroyTick` for that trail, so they are left out too.
+- **Demo playback:** the `STATE_DEMOPLAYBACK` checks are always false.
+
+### 12.1 What the C++ client does
+
+**Settings** (`config_variables.h:15-27, 730`, all `CFGFLAG_CLIENT | CFGFLAG_SAVE`):
+
+| Setting | Default | Effect |
+|---|---|---|
+| `cl_predict` | 1 | prediction at all (`Predict()`) |
+| `cl_antiping` | 0 | master switch for everything below except margin, freeze, preinput |
+| `cl_antiping_players` | 1 | 0 off; 1 all other players predicted; 2 only players we interfere with (`IsInterfering`); 3 = 2, and frozen players keep being predicted |
+| `cl_antiping_weapons` | 1 | `WorldConfig.m_PredictWeapons`: `FireWeapon` runs, and snapshot projectiles, pickups, lasers, draggers and plasma enter the prediction world |
+| `cl_antiping_grenade` | 1 | snapshot projectiles drawn at the predicted tick (items.cpp:60) |
+| `cl_antiping_gunfire` | 1 | with grenade and weapons on: projectiles, lasers and pickups drawn from the predicted world, the local tee's attack tick and weapon from prediction |
+| `cl_antiping_smooth` | 0 | smooth corrections of mispredicted other players |
+| `cl_antiping_preinput` | 1 | apply other players' `Sv_PreInput`s in prediction |
+| `cl_antiping_limit` | 0 | ms; when set, others are predicted only that far ahead |
+| `cl_antiping_percent` | 100 | how far ahead others are predicted when the limit is 0 |
+| `cl_prediction_margin` | 10 | ms added to the predicted time; used only if the server has the `SyncWeaponInput` capability, else 10 (client.cpp:5454) |
+| `cl_predict_freeze` | 1 | 0 off, 1 on, 2 "partial": the local tee may move in freeze for the last 1-2 predicted ticks (gameclient.cpp:2662) |
+
+Gates (gameclient.cpp:955-997): `AntiPingPlayers/Grenade/Weapons` need `cl_antiping`,
+their own setting and not spectating; `AntiPingGunfire` = Grenade && Weapons &&
+`cl_antiping_gunfire`; `Predict` = `cl_predict` && world not paused && not spectating &&
+a local character. The client also reads `sv_deepfly` and `sv_hit` in prediction
+(character.cpp:296, projectile.cpp:96, laser.cpp:39, gameworld.cpp:379): the server never
+sends them, so the client always uses its own defaults (1, 1); we use constants.
+
+**Snapshot switch** (`UpdatePrediction`, gameclient.cpp:3487): world config incl.
+`m_PredictWeapons = AntiPingWeapons()`; strong/weak order; the server-state world is
+advanced to the snapshot tick with our stored inputs and, for others, `ApplyPreInputs`
+(direct, then predicted input, 2540); every tick's positions go into
+`m_aPredPos/m_aPredTick[tick % 200]`; then `NetObjBegin`, `NetCharAdd`, `NetObjAdd` for
+every snapshot entity (gameworld.cpp:437) and `NetObjEnd`:
+- projectiles: dropped if not local team or a non-shotgun direction is not unit length
+  (ball mods); matched by id (`Keep`, DDRace shotgun lifespan reset); else matched to a
+  locally fired projectile (id -1) which takes the snapshot id; else, if fired within 4
+  ticks, the owner is guessed as the only character near the spawn point (`PrevPos` or
+  `PrevPrevPos`, nearest < 200 and 1.2x closer than the second);
+- pickups: skipped with `PICKUPFLAG_NO_PREDICT`; matched by type/subtype within 2 px
+  (position taken over), inserted at the end of the list;
+- lasers: rifle/shotgun matched by id or to a local one; a laser that stopped earlier
+  than predicted gets energy 0 and the server's end point; draggers (strength > 0),
+  doors (done in 5.3), plasma matched and re-read.
+
+**Prediction** (`OnPredict`, 2580): copy the server-state world; destroy inactive
+characters (`SnapTicks > 10`), other-team characters and other-team projectiles; for
+each tick from `GameTick + 1` to `PredGameTick`: at `PredictionTick = GetPredictionTick()`
+store every character's `m_PrevPredicted` before the tick and `m_Predicted` after it and
+copy the world to `m_PrevPredictedWorld` (what the items are drawn from); the local tee's
+pair is stored at `PredGameTick`; inputs in the order local direct, preinputs direct,
+set tick, local predicted, preinputs predicted, then `Tick()`; positions into the
+`m_aPredPos` ring. `GetPredictionTick` (client.cpp:5389): with limit 0 and percent 100
+it is `PredGameTick`; otherwise `PredGameTick - PredictionMin`, at least `GameTick + 1`.
+
+**World tick** (gameworld.cpp:200): entity lists in `ENTTYPE` order (projectile, laser,
+door, dragger, light, gun, plasma, pickup, flag, character), each from its head
+(`InsertEntity` puts new entities first unless `Last`); characters PreTick+Tick
+(or TickDeferred first with `NoWeakHookAndBounce`); then TickDeferred of all;
+`RemoveEntities` (marked for destroy); switch timers. Projectiles therefore move before
+characters in the same tick.
+
+**Weapons** (prediction/entities/character.cpp:99-536): `HandleWeapons` = `HandleNinja`
+(expiry, the dash: `MoveBox` with the ninja velocity, hits within 2x radius, once per
+player, not in solo or other teams) + `HandleJetpack` + pain-sound timer + reload timer
++ `FireWeapon`: needs 2 inputs, `m_PredictWeapons`, no reload; full-auto rules (grenade,
+shotgun, laser, jetpack gun, frozen last tick); deep-frozen hammer; `CountInput` presses;
+frozen = only the pain timer. Hammer (`FindEntities`, force from `normalize(Dir +
+(0,-1.1)) * 10`, `ClampVel`, FNG variant, `Unfreeze`, interference, hit fire delay), gun
+(projectile, not with jetpack), shotgun (vanilla: 5 spread projectiles; DDRace: a
+shotgun laser), grenade (explosive projectile), laser, ninja (dash start, velocity
+clamp 6000). Then attack tick and reload from the tuned fire delay. `TakeDamage` only
+adds velocity through `ClampVel`.
+
+**Entities:** `CProjectile::Tick` (`CalcPos` at previous/current time, `IntersectLine`,
+`IntersectCharacter` with radius 6 or 1 for freeze, hit rules incl. `CanCollide` and
+`GrenadeHitDisabled`, explosion, freeze projectiles per switch, bouncing, lifespan);
+`CLaser` (`DoBounce`: `IntersectLineTeleWeapon`, `HitCharacter` incl. the shotgun push
+and the stacked-shotgun `-2^31` velocity bug, a temporary `SetCollisionAt(TILE_SOLID)`
+on tele-weapon tiles around `MovePoint`, the zero-distance bounce guard, bounce cost and
+count, vanilla vs DDNet delay comparison); `CreateExplosion` (radius 135, inner 48,
+strength from the owner's tune zone, team and hit rules, break when hits are disabled);
+`CPickup::Tick` (movers via `MoverSpeed` every `(int)(50 * 0.15)` ticks, freeze, armor,
+weapons, ninja effects, switch layer); `CDragger` and `CPlasma` ticks.
+
+**Interference** (character.cpp:653, 1345): under `cl_antiping_players` 2/3 a player
+becomes predicted when the local (or an already interfering) player hooks, bumps,
+hammers, shotguns or blasts them; it stops when they change direction/jump or hook a wall
+(unless frozen with 3). DDNet-rs already ports the hook/bump part (4.4).
+
+**Smoothing** (`cl_antiping_smooth`, 2755-2812): on a new tick with a stable prediction
+tick, for each other active player compare last frame's predicted position with the new
+one; for a small error (0.05-5 px per ms of prediction time) start or extend a per-axis
+smoothing window of `1000 * PredTime * (4 - 1.5 * PredTime / 800)` (capped at 700 ms and
+300 ms between axes). `GetSmoothPos` (3951) then mixes the stored prediction history
+`m_aPredPos` at a time between game time and predicted time (`GetSmoothTick`,
+client.cpp:5418) with `1 - (1 - t)^1.2`.
+
+**Rendering:** `UpdateRenderedCharacters` (3762): other players predicted per the mode
+above, with their snapshot aim, and the smooth position when smoothing is on; the local
+tee's attack tick and weapon from prediction with gunfire on. `players.cpp:216, 224,
+615` (intra tick, hook from the predicted core, attack time). `items.cpp`: predicted
+projectile time (60), predicted laser width timing (319), the `UsePredicted` path
+(472-600: draw `m_PrevPredictedWorld`'s projectiles, the local player's lasers and
+moving pickups, and skip snapshot items that `FindMatch` finds in the world).
+
+**Messages that feed the prediction world:** `Sv_PreInput` (1236; stored by intended
+tick % 200; the engine accepts it unreliable, client.cpp:2414; DDNet-rs already lets it
+through), `Sv_KillMsg`/`Sv_KillMsgTeam` (1192-1228: `GiveWeak`, `ResetPrediction`,
+`ReleaseHooked`), `Sv_TuneParams` (1053) with `UpdateLocalTuning` (3409, tune zones), and
+`Sv_TeamsState` (1168: team membership for `IsOtherTeam`/`IsLocalTeam`/`CanCollide`).
+The last three matter with antiping off too, but weapons and other players expose them
+far more (gun speed, laser reach, explosion strength, team-only hits).
+
+### 12.2 What DDNet-rs has today
+
+`predict.rs`: OnNewSnapshot/UpdatePrediction/OnPredict for characters and doors, the
+`cl_antiping 0` rendering, strong/weak order from the extended object, the input
+history. `physics/world.rs`: characters with interference flags, jetpack, ninja expiry,
+weapon switching; `FireWeapon` is a no-op and the ninja dash is never started.
+`net/client.rs`: CSmoothTime with the margin fixed at 10 ms. `ddnet/src/items.rs`:
+the Extract*Info functions and `CalcPos` (6.6). Missing: everything in 12.1 that
+involves weapons, entities, `GetPredictionTick`, preinputs, smoothing, and the four
+messages.
+
+### 12.3 C++ → Rust mapping
+
+| C++ | Rust | Notes |
+|---|---|---|
+| `config_variables.h:15-27, 730` | `client/src/config.rs` | same names, defaults and ranges; passed into `ddnet` as a plain `PredictConfig` struct (no globals, PLAN §7 risk 4) |
+| `CClient::GetPredictionTime/GetPredictionTick/GetSmoothTick/PredictionMargin` | `net/client.rs` | pure functions of `now` and the smoothed times; margin from `PredictConfig` |
+| `CCollision::IntersectLine`, `IntersectLineTeleWeapon`, `MovePoint`, `MoverSpeed`, `SetCollisionAt` | `physics/collision.rs` | the game tile grid becomes `Cell`-based like the door grid (5.3), so a laser can set and restore a tile through the shared `&Collision` exactly like C++ |
+| `CGameWorld` entity lists, `InsertEntity(Last)`, `RemoveEntities`, `Tick` order, `FindEntities`, `IntersectCharacter(s)`, `CreateExplosion`, `CopyWorld`, `FindMatch`, `GetEntity` | `physics/world.rs` | one `Vec` per entity type in C++ list order (front insert = `insert(0)`), destroy flags removed after TickDeferred like `RemoveEntities` |
+| `CCharacter::HandleWeapons`, `FireWeapon`, `HandleNinja` (dash), `TakeDamage`, `AntiPingInterference` call sites | `physics/world.rs` | weapon fire delays from tuning; `sv_deepfly`/`sv_hit` constants 1 |
+| `prediction/entities/projectile.cpp` | `physics/projectile.rs` | `GetPos` = `items::calc_pos`; `Match`, `GetData`, `SetBouncing` |
+| `prediction/entities/laser.cpp` | `physics/laser.rs` | `DoBounce`, `HitCharacter` incl. the stacked-shotgun bug, `Match`, `GetData` |
+| `prediction/entities/pickup.cpp` | `physics/pickup.rs` | `Tick`, `Move`, `Match`, `FillInfo`, `InDDNetTile` |
+| `prediction/entities/dragger.cpp`, `plasma.cpp` | `physics/dragger.rs`, `physics/plasma.rs` | as in C++ |
+| `CGameWorld::NetObjAdd` (projectile/pickup/laser/dragger/plasma branches) | `physics/world.rs` | extends the door branch from 5.3 |
+| `CGameClient::UpdatePrediction`, `OnPredict`, `ApplyPreInputs`, `UpdateRenderedCharacters`, `GetSmoothPos`, smoothing block | `predict.rs` | per-client `prev_predicted`/`predicted` at `PredictionTick`, the 200-slot `pred_pos/pred_tick` ring, `m_PrevPredictedWorld`, preinput ring, smoothing state; `time_get()` becomes a `now` argument |
+| `Sv_PreInput`, `Sv_KillMsg(Team)`, `Sv_TuneParams` + `UpdateLocalTuning`, `Sv_TeamsState` | `predict.rs` (+ `net/client.rs` for tuning per connection) | messages already unpacked by the generated code |
+| `CItems` antiping branches, `CPlayers` predicted attack time | `client/src/render/items.rs`, `render/players.rs` | `RenderLaser(IsPredicted)` timing, `RenderPickup(IsPredicted)` |
+| `menus_settings_ddnet.cpp:150-205` | `client/src/ui.rs` | the same options in our style (§12.4 step 8.8) |
+
+### 12.4 Steps
+
+Two kinds of reference:
+1. **Physics: the real C++ prediction code** linked into `rs_parity` (as for `world` and
+   `doors`). Dumps hold raw `f32` bits of every character and entity field every tick.
+   100% identical on all 7 maps (and the hook-teleporter variants), plus hand-made
+   mutations of the Rust code that must be caught.
+2. **Client-level functions** that are `CClient`/`CGameClient` members and cannot be
+   linked into the `CLIENT=OFF` tool (`GetPredictionTick`, `GetSmoothTick`, the
+   smoothing block, `GetSmoothPos`, `UpdateRenderedCharacters`' choice, the item
+   timings): copied verbatim into `rs_parity` as `interp` did for `CClient::Update`,
+   and a small script checks that each copy is textually identical (whitespace aside) to
+   the C++ lines it names, so the copy cannot drift from the source. 100% identical.
+
+**8.1 Messages the prediction world needs.** `Sv_TuneParams` (unpack stops at the first
+error, jetpack strength defaults to 0 for that message, `m_ServerMode`), `UpdateLocalTuning`
+(the tune-zone list, the expected-tuning state), `Sv_TeamsState` (+ legacy) into
+`TeamsCore`, `Sv_KillMsg`/`Sv_KillMsgTeam` (GiveWeak in the C++ stable-sorted order,
+ResetPrediction, ReleaseHooked), the `Sv_PreInput` ring.
+Verify: `rs_parity msgs`: the real `CTuningParams`/`CTeamsCore` fed byte streams
+(valid, truncated, garbage) give the same tuning arrays and teams; kill-message order on
+constructed strong/weak states through the real `CCharOrder`. Live (local server):
+`prediction_matches_server` variants after `tune gun_speed 3000`, in a tune zone
+(coverage) and after joining a team: still 0 mismatched snapshots of the local tee.
+
+**8.2 Collision for weapons.** `IntersectLine`, `IntersectLineTeleWeapon`, `MovePoint`,
+`MoverSpeed`, `SetCollisionAt` (Cell grid).
+Verify: `rs_parity collision` gains these queries on its random boxes and rays (incl.
+the tele-weapon tiles turned on in the `hooktele` variant): 100%.
+
+**8.3 Weapons and entities in the world.** `HandleWeapons`, `FireWeapon`, ninja dash,
+`TakeDamage`, `CreateExplosion`, `FindEntities`, `IntersectCharacter(s)`, projectile,
+laser, pickup, dragger, plasma, the entity lists and tick order.
+Verify: new `rs_parity weapons`: per map, 4 characters with all weapons (and runs with
+only some weapons, infinite and limited ammo), random aim/fire/weapon switch/next/prev
+plus the 4.4 movement inputs, spawned next to each other and on effect tiles; runs with
+`m_PredictWeapons` on, vanilla / DDRace / FNG world configs, `OldLaser`, changed tuning
+and tune zones, solo, teams, hit-disabled flags, jetpack, deep freeze, ninja. Pickups
+and draggers placed from the map's entities; plasma from turrets where a map has them,
+otherwise synthetic. Every tick: every character and every entity (positions,
+directions, energies, bounces, lifespans, eval ticks, interference flags). 100% on all
+7 maps; every weapon and branch hit at least once (counted in the dump header).
+
+**8.4 Snapshot entities into the world.** `NetObjAdd` for projectiles (all three object
+types, with and without `EntityEx`), pickups, lasers, draggers, plasma; `Keep`/`NetObjEnd`,
+the id -1 matching to locally fired entities, the owner guess, the shotgun lifespan,
+the "stopped earlier" laser fix, `CopyWorld`, `FindMatch`.
+Verify: new `rs_parity netents` (like `doors`): 60 snapshots per map that mix server-like
+entities, locally fired ones predicted a few ticks earlier, odd objects (other team,
+no-predict, ball-mod directions, unknown owners) and entities that leave and come back;
+after every snapshot the world's entity lists and `FindMatch` answers for each item are
+compared. 100%.
+
+**8.5 Prediction loop.** `GetPredictionTick` (limit/percent), `PredictionMargin`
+(configurable, `SyncWeaponInput`), per-client predicted cores at `PredictionTick`, the
+`pred_pos` ring, `m_PrevPredictedWorld`, `ApplyPreInputs` in both worlds,
+`cl_predict_freeze 2`.
+Verify: `rs_parity antiping` timing vectors (copied C++ functions, checked by the
+script): `GetPredictionTick`/`GetSmoothTick` over random game/predicted times, limits
+and percents. The loop itself through the real `CGameWorld`: `rs_parity weapons` gets an
+`OnPredict` mode that replays the 4.4 inputs from a snapshot world with preinputs for
+the others and dumps `PrevPredicted`/`Predicted` for every client at random
+`PredictionTick`s. Live: `prediction_matches_server` with `cl_antiping 1` and scripted
+fire on dm1 and coverage (grenade jumps, hammer and shotgun on a second client, laser
+bounces): 0 mismatched local snapshots, 0 prediction errors, every server projectile
+and laser of ours matched to a locally fired one.
+
+**8.6 Smoothing.** The `cl_antiping_smooth` block, `GetSmoothPos`, the smooth state per
+client.
+Verify: `rs_parity antiping` feeds the copied block recorded sequences (positions,
+prediction times, `now` values, ticks) incl. the edge cases (error outside 0.05-5, window
+overlap, the 700/300 ms caps, axis equalisation): mix amounts, windows and positions
+identical. Live: a second scripted client walks/jumps with sudden direction changes;
+with smoothing on, the largest per-frame step of the other tee's rendered position is
+logged and shown to you next to smoothing off.
+
+**8.7 Rendering.** `UpdateRenderedCharacters` (modes 0-3, interference, frozen, other
+team, gunfire attack tick and weapon), players' predicted intra tick and attack time,
+items: predicted projectile time, `m_PrevPredictedWorld` projectiles/lasers/pickups,
+skipping matched snapshot items, predicted laser timing.
+Verify: `rs_parity antiping` vectors for the copied choice and timing formulas (100%);
+`rs_parity items` gains the predicted time branches. Live: a capture series with the
+C++ client (build-rs-client, `cl_antiping 1`) next to ours on the same local server for
+your review (a short recording of firing every weapon; moving scenes have no pixel
+threshold, as in 6.5).
+
+**8.8 Settings and finish.** An "Antiping" group on the settings page in our style,
+matching C++'s structure: master toggle; when on: other players (Off / All / Interact,
+plus "Always predict frozen players" for Interact), predict weapons, predict grenade
+paths; secondary options (smooth, gunfire, preinput, limit, percent, prediction margin,
+predict freeze) behind a detail view. Frame time with antiping on and 8 tees firing
+(target: within 1 ms of antiping off at 1440p).
+Verify: all gates; the UI review against the CLAUDE.md UI rules and frontend-design;
+the M5/M6 prediction tests still pass with `cl_antiping 0` (default path unchanged).
+
+### 12.5 Risks
+
+1. **Shared collision mutation.** The laser's temporary `SetCollisionAt` writes the grid
+   every prediction world shares; the `Cell` grid keeps that exact, and nothing runs
+   between set and restore (single thread).
+2. **Entity order.** Hits and explosions depend on list order (front inserts, pickups
+   at the end, removal timing, copy order). Dumps compare lists in order, not as sets.
+3. **Others' inputs are unknown.** Live checks for other players cannot reach 100%;
+   they report counts. The 100% claims rest on the `rs_parity` worlds with the same
+   inputs on both sides.
+4. **Verbatim copies.** Client-level functions are compared with copies, not the linked
+   C++ functions; the textual check is what makes that acceptable (question 3).
+5. **Public servers:** older servers without `SyncWeaponInput` use the 10 ms margin
+   (ported); servers without `DDNetCharacter` need `DetectStrongHook` and the vanilla
+   `Read` path (question 2).
+6. **Size of `world.rs`** (1,364 lines today): entities go to their own files like
+   `door.rs`; character weapons stay in `world.rs` next to the rest of `CCharacter`.
+
+### 12.6 Questions for review
+
+1. **Default `cl_antiping`:** C++ ships 0. Keep 0, or default to 1 in DDNet-rs (since it
+   is the reason for this milestone)? And import the `cl_antiping*` /
+   `cl_prediction_margin` values from `settings_ddnet.cfg` once, like name/skin/binds?
+2. **Servers without `DDNetCharacter`** (vanilla and very old DDNet): port
+   `DetectStrongHook` and the vanilla `Read` path in M8, or keep refusing to predict
+   others there until it is needed?
+3. **Verbatim copies + textual check** for the `CClient`/`CGameClient` members (the
+   alternative is building `rs_parity` against the full client sources with SDL etc.,
+   a large CMake change): OK?
+4. **Settings layout** as in 8.8 (C++ structure, secondary options in a detail view): OK?
