@@ -1,7 +1,7 @@
 //! Glass (PLAN §10.3, 7.2): a dual-Kawase blur pyramid of the world image, and panel
 //! backdrops drawn from it inside egui's render pass (egui-wgpu paint callbacks), so each
 //! backdrop has the z-order and clip of the panel it belongs to. Liquid Glass (refraction
-//! near the edge, a specular rim, a tint from the backdrop's brightness) is for the
+//! near the edge, a tint from the backdrop's brightness) is for the
 //! Dynamic Island at full strength only (SPEC: less glass everywhere else).
 
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -112,9 +112,8 @@ fn fs_panel(@builtin(position) pos: vec4f) -> @location(0) vec4f {
     }
     let lum = dot(mean / 5.0, vec3f(0.299, 0.587, 0.114));
     col *= 1.0 - mix(0.2, 0.55, lum);
-    // specular rim, lit from the top left, within ~2 px of the edge
-    let rim = pow(t, 24.0) * max(dot(n, normalize(vec2f(-1.0, -1.0))), 0.0) * 0.5;
-    return vec4f((col + rim) * cover, cover);
+    // no specular rim: on a dark tint it read as an outline (user review 2026-11-25)
+    return vec4f(col * cover, cover);
 }
 ";
 

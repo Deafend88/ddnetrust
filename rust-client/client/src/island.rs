@@ -1187,7 +1187,7 @@ fn card_glass(p: &egui::Painter, rect: Rect, radius: f32, glass: Glass, opacity:
     // the blur cannot fade, so it goes with the shape's first and last frames
     if glass != Glass::Off && opacity > 0.5 {
         let liquid = glass == Glass::Full;
-        p.add(crate::glass::shape(rect.shrink(1.0), radius - 1.0, liquid));
+        p.add(crate::glass::shape(rect, radius, liquid));
     }
     let fill = if glass == Glass::Full {
         Glass::liquid_fill()

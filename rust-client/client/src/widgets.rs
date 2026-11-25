@@ -30,12 +30,12 @@ fn glass_frame<R>(
     ui.painter()
         .set(shadow_at, shadow.as_shape(rect, frame.corner_radius));
     if glass != Glass::Off {
-        // 1 px inside the fill's anti-aliased edge, or the sharper-cut blur shows as a
-        // bright rim around the panel
-        let radius = frame.corner_radius.nw as f32 - 1.0;
+        // the blur's edge (0.5 px each side) matches the fill's, so no ring of unblurred
+        // game shows between them
+        let radius = frame.corner_radius.nw as f32;
         let liquid = liquid && glass == Glass::Full;
         ui.painter()
-            .set(backdrop_at, glass::shape(rect.shrink(1.0), radius, liquid));
+            .set(backdrop_at, glass::shape(rect, radius, liquid));
     }
     r
 }
