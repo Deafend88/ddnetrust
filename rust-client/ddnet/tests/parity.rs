@@ -6,6 +6,7 @@
 //!     build-rs/rs_parity.exe map "data/maps/<name>.map" rust-client/tests/golden/maps/<name>.txt <scratch dir>
 //! with spaces in <name> replaced by '_' in the output file name.
 
+use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use ddnet::map::{Layer, Map};
@@ -18,7 +19,9 @@ use ddnet::physics::vmath::{PI, Vec2, direction, round_to_int, vec2};
 use ddnet::physics::world::{
     Character, GameWorld, NUM_TUNE_ZONES, TUNE_ZONE_OVERRIDE_NONE, WorldConfig,
 };
-use ddnet::protocol::generated::{self as g, ObjCharacter, ObjDDNetCharacter, ObjPlayerInput};
+use ddnet::protocol::generated::{
+    self as g, ObjCharacter, ObjDDNetCharacter, ObjEntityEx, ObjPlayerInput,
+};
 
 /// The maps of PLAN.md §5 (M4).
 const MAPS: [&str; 7] = [
@@ -905,7 +908,7 @@ fn front_door_layers(map: &Map) -> Layers {
 }
 
 /// Door lasers snapshot by snapshot through `GameWorld` (`net_obj_begin`,
-/// `net_obj_add_laser`, `net_obj_end`): the collision door grid after each snapshot
+/// `net_obj_add`, `net_obj_end`): the collision door grid after each snapshot
 /// must equal `rs_parity doors`.
 #[test]
 fn doors() {
@@ -938,7 +941,7 @@ fn doors() {
                 let ex = (!ex.is_empty()).then(|| g::ObjEntityEx::from_ints(&ex));
                 let mut data = v[1..].to_vec();
                 data.resize(10, 0);
-                world.net_obj_add_laser(v[0], type_id, &data, ex.as_ref());
+                world.net_obj_add(v[0], type_id, &data, ex.as_ref());
             }
             world.net_obj_end();
             let mut q = Queries::default();
@@ -1614,6 +1617,226 @@ fn weapons() {
             name,
             Rc::new(Collision::from_layers(layers)),
             &golden_file(name, "weapons"),
+        );
+    }
+}
+
+/// `DumpNetWorld` of rs_parity.
+fn dump_net_world(tag: &str, w: &GameWorld) -> String {
+    let chars: Vec<String> = (0..ddnet::physics::teams::MAX_CLIENTS)
+        .filter_map(|i| {
+            let (ch, c) = w.character(i)?;
+            Some(format!(
+                "{i}:{:08x}",
+                weapon_char_state(ch, c, &w.teams).crc()
+            ))
+        })
+        .collect();
+    format!(
+        "{tag} {} | {} {} {} {} {} {} {:08x}",
+        chars.join(" "),
+        w.projectiles.len(),
+        w.lasers.len(),
+        w.doors().len(),
+        w.draggers.len(),
+        w.plasmas.len(),
+        w.pickups.len(),
+        weapon_entity_state(w).crc()
+    )
+}
+
+/// Snapshot entities into the prediction world (M8.4) against `rs_parity netents`.
+fn check_netents(name: &str, col: Rc<Collision>, text: &str) {
+    use ddnet::physics::snap::EntityRef;
+
+    const SORTED: [usize; 4] = [0, 1, 3, 6];
+    const LOCAL: i32 = 3;
+    let zones: Vec<Tuning> = (0..NUM_TUNE_ZONES).map(weapon_zone_tuning).collect();
+    let num = |s: &str| s.parse::<i32>().unwrap();
+    let mut world: Option<GameWorld> = None;
+    let mut teams = TeamsCore::default();
+    let mut exts: BTreeMap<usize, (ObjDDNetCharacter, i32)> = BTreeMap::new();
+    let mut inputs = [ObjPlayerInput::default(); 4];
+    let mut items: Vec<(i32, i32, Vec<i32>, Option<ObjEntityEx>)> = Vec::new();
+    let mut netchars: Vec<(usize, ObjCharacter)> = Vec::new();
+    let (mut snaps, mut matched) = (0, 0);
+    let tick = |w: &mut GameWorld, inputs: &[ObjPlayerInput; 4]| {
+        for (k, &id) in SORTED.iter().enumerate() {
+            if w.character(id).is_some() {
+                w.on_direct_input(id, &inputs[k]);
+            }
+        }
+        w.game_tick += 1;
+        for (k, &id) in SORTED.iter().enumerate() {
+            if w.character(id).is_some() {
+                w.on_predicted_input(id, &inputs[k]);
+            }
+        }
+        w.tick();
+    };
+    for line in text.lines() {
+        let w: Vec<&str> = line.split(' ').collect();
+        match w[0] {
+            "run" => {
+                let mode = num(w[3]);
+                let config = WorldConfig {
+                    is_ddrace: mode < 2,
+                    is_vanilla: mode == 2,
+                    is_fng: mode == 3,
+                    infinite_ammo: true,
+                    predict_tiles: mode != 2,
+                    predict_freeze: true,
+                    predict_weapons: true,
+                    predict_ddrace: mode < 2,
+                    use_tune_zones: mode != 1,
+                    freeze_delay: 3,
+                    antiping_players: 1,
+                    ..Default::default()
+                };
+                let mut wd = GameWorld::new(Rc::clone(&col), config);
+                wd.tunings = zones.clone();
+                wd.game_tick = 10000;
+                teams = TeamsCore::default();
+                if mode == 1 {
+                    teams.set_team(6, 1);
+                }
+                wd.teams = teams.clone();
+                world = Some(wd);
+                inputs = [ObjPlayerInput::default(); 4];
+                exts.clear();
+            }
+            "char" => {
+                let wd = world.as_mut().unwrap();
+                let (obj, ext) = line.split_once(" |").unwrap();
+                let obj =
+                    ObjCharacter::from_ints(&obj.split(' ').skip(3).map(num).collect::<Vec<_>>());
+                let ext = ObjDDNetCharacter::from_ints(
+                    &ext.split_whitespace().map(num).collect::<Vec<_>>(),
+                );
+                let (id, game_team) = (num(w[1]) as usize, num(w[2]));
+                wd.add_character(id, &obj, &ext);
+                wd.character_mut(id).unwrap().game_team = game_team;
+                if id as i32 == LOCAL {
+                    wd.read_character(id, &obj, &ext, true);
+                }
+                exts.insert(id, (ext, game_team));
+            }
+            "t" => {
+                let v: Vec<i32> = w[1..].iter().map(|s| num(s)).collect();
+                for (k, input) in inputs.iter_mut().enumerate() {
+                    let v = &v[k * 7..k * 7 + 7];
+                    *input = ObjPlayerInput {
+                        direction: v[0],
+                        jump: v[1],
+                        hook: v[2],
+                        target_x: v[3],
+                        target_y: v[4],
+                        fire: v[5],
+                        wanted_weapon: v[6],
+                        ..Default::default()
+                    };
+                }
+                tick(world.as_mut().unwrap(), &inputs);
+            }
+            "item" => {
+                let (data, ex) = match line.split_once(" | ") {
+                    Some((d, e)) => {
+                        let e: Vec<i32> = e.split(' ').map(num).collect();
+                        (d, Some(ObjEntityEx::from_ints(&e)))
+                    }
+                    None => (line, None),
+                };
+                let mut v: Vec<i32> = data.split(' ').skip(3).map(num).collect();
+                v.resize(16, 0);
+                let type_id = match w[1] {
+                    "projectile" => g::NETOBJTYPE_PROJECTILE,
+                    "ddraceprojectile" => g::NETOBJTYPE_DDRACEPROJECTILE,
+                    "ddnetprojectile" => g::NETOBJTYPE_DDNETPROJECTILE,
+                    "pickup" => g::NETOBJTYPE_PICKUP,
+                    "ddnetpickup" => g::NETOBJTYPE_DDNETPICKUP,
+                    "laser" => g::NETOBJTYPE_LASER,
+                    "ddnetlaser" => g::NETOBJTYPE_DDNETLASER,
+                    other => panic!("{name}: object type {other}"),
+                };
+                items.push((type_id, num(w[2]), v, ex));
+            }
+            "netchar" => {
+                let obj =
+                    ObjCharacter::from_ints(&w[2..].iter().map(|s| num(s)).collect::<Vec<_>>());
+                netchars.push((num(w[1]) as usize, obj));
+            }
+            "world" => {
+                let wd = world.as_mut().unwrap();
+                wd.net_obj_begin(teams.clone(), LOCAL);
+                for (id, obj) in netchars.drain(..) {
+                    let (ext, game_team) = exts[&id];
+                    wd.net_char_add(id, &obj, &ext, game_team, id as i32 == LOCAL);
+                }
+                for (type_id, id, data, ex) in &items {
+                    wd.net_obj_add(*id, *type_id, data, ex.as_ref());
+                }
+                wd.net_obj_end();
+                snaps += 1;
+                assert_eq!(
+                    dump_net_world("world", wd),
+                    line,
+                    "{name}, snapshot {snaps}"
+                );
+            }
+            "match" => {
+                let wd = world.as_ref().unwrap();
+                let got: Vec<String> = items
+                    .drain(..)
+                    .map(
+                        |(type_id, id, data, _)| match wd.find_match(id, type_id, &data) {
+                            None => "-".into(),
+                            Some(r) => {
+                                matched += 1;
+                                let (t, i) = match r {
+                                    EntityRef::Projectile(i) => (0, i),
+                                    EntityRef::Laser(i) => (1, i),
+                                    EntityRef::Door(i) => (2, i),
+                                    EntityRef::Dragger(i) => (3, i),
+                                    EntityRef::Plasma(i) => (6, i),
+                                    EntityRef::Pickup(i) => (7, i),
+                                };
+                                format!("{t}:{i}")
+                            }
+                        },
+                    )
+                    .collect();
+                let got = if got.is_empty() {
+                    "match".to_string()
+                } else {
+                    format!("match {}", got.join(" "))
+                };
+                assert_eq!(got, line, "{name}, snapshot {snaps}");
+            }
+            "copy" => {
+                let mut copy = world.as_ref().unwrap().copy_world();
+                tick(&mut copy, &inputs);
+                assert_eq!(
+                    dump_net_world("copy", &copy),
+                    line,
+                    "{name}, snapshot {snaps} (copy)"
+                );
+            }
+            other => panic!("{name}: unknown line {other}"),
+        }
+    }
+    assert_eq!(snaps, 4 * 60, "{name}");
+    assert!(matched > 1000, "{name}: {matched} matches");
+}
+
+#[test]
+fn netents() {
+    for name in MAPS {
+        let map = load(name);
+        let layers = make_movers(Layers::from_map(&map));
+        check_netents(
+            name,
+            Rc::new(Collision::from_layers(layers)),
+            &golden_file(name, "netents"),
         );
     }
 }

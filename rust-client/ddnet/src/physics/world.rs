@@ -24,7 +24,7 @@ use super::vmath::{Vec2, distance, dot, normalize, trunc_i32, vec2};
 use std::rc::Rc;
 
 use crate::protocol::generated::{
-    self as g, ObjCharacter, ObjCharacterCore, ObjDDNetCharacter, ObjEntityEx, ObjPlayerInput,
+    self as g, ObjCharacter, ObjCharacterCore, ObjDDNetCharacter, ObjPlayerInput,
 };
 
 const TILE_UNFREEZE: i32 = 11;
@@ -1052,11 +1052,11 @@ pub struct GameWorld {
     pub pickups: Vec<Pickup>,
     pub draggers: Vec<Dragger>,
     pub plasmas: Vec<Plasma>,
-    /// Doors in entity list order. C++ copies none into the predicted world; a clone
-    /// keeps them, but only `net_obj_end` reads them.
-    doors: Vec<Door>,
+    /// Doors in entity list order. C++ copies none into the predicted world (see
+    /// `copy_world`).
+    pub(super) doors: Vec<Door>,
     /// C++: `m_LocalClientId`, set by `net_obj_begin`.
-    local_id: i32,
+    pub(super) local_id: i32,
 }
 
 impl GameWorld {
@@ -1081,6 +1081,19 @@ impl GameWorld {
             doors: Vec::new(),
             local_id: -1,
         }
+    }
+
+    /// C++: `CGameWorld::CopyWorld` (gameworld.cpp:667): every entity but the doors, in
+    /// the same list order (the parent/child links only feed effects and are left out).
+    pub fn copy_world(&self) -> GameWorld {
+        let mut w = self.clone();
+        w.doors.clear();
+        w
+    }
+
+    /// The doors, in list order.
+    pub fn doors(&self) -> &[Door] {
+        &self.doors
     }
 
     /// The non-core part of character `id` (for the parity tests).
@@ -1187,36 +1200,21 @@ impl GameWorld {
         for door in &mut self.doors {
             door.marked_for_destroy = true;
         }
-    }
-
-    /// C++: `CGameWorld::NetObjAdd` for `NETOBJTYPE_LASER`/`NETOBJTYPE_DDNETLASER`, with
-    /// `ExtractLaserInfo`. Only doors are predicted. `data` holds at least the object's
-    /// ints.
-    pub fn net_obj_add_laser(
-        &mut self,
-        id: i32,
-        type_id: i32,
-        data: &[i32],
-        ex: Option<&ObjEntityEx>,
-    ) {
-        let l = crate::items::extract_laser(type_id, data, None, ex);
-        let (from, to, owner, type_, number, predict) =
-            (l.from, l.to, l.owner, l.type_, l.switch_number, l.predict);
-        // C++: IsLocalTeam (no local player: as in net_char_add)
-        let local_team =
-            owner < 0 || self.local_id < 0 || self.teams.can_collide(self.local_id, owner);
-        // doors follow the tile config, everything else needs weapon prediction
-        if !local_team || !predict || type_ != g::LASERTYPE_DOOR || !self.config.predict_tiles {
-            return;
-        }
-        let net = Door::new(id, from, to, number);
-        if let Some(door) = self.doors.iter_mut().find(|d| d.id == id)
-            && net.matches(door)
-        {
-            door.marked_for_destroy = false; // C++: Keep (Read sets the same positions)
-            return;
-        }
-        self.doors.insert(0, net);
+        self.projectiles
+            .iter_mut()
+            .for_each(|e| e.marked_for_destroy = true);
+        self.lasers
+            .iter_mut()
+            .for_each(|e| e.marked_for_destroy = true);
+        self.draggers
+            .iter_mut()
+            .for_each(|e| e.marked_for_destroy = true);
+        self.plasmas
+            .iter_mut()
+            .for_each(|e| e.marked_for_destroy = true);
+        self.pickups
+            .iter_mut()
+            .for_each(|e| e.marked_for_destroy = true);
     }
 
     /// C++: `CGameWorld::NetCharAdd` (with the extended object, see `Character::read`).
@@ -1277,6 +1275,7 @@ impl GameWorld {
                 self.remove_character(i);
             }
         }
+        self.remove_entities();
         let col = &self.col;
         self.doors.retain(|d| {
             if d.marked_for_destroy {
@@ -1285,6 +1284,15 @@ impl GameWorld {
             !d.marked_for_destroy
         });
         reset_door_collision(&mut self.doors, col);
+    }
+
+    /// C++: `CGameWorld::RemoveEntities` for the entity lists (not characters or doors).
+    fn remove_entities(&mut self) {
+        self.projectiles.retain(|e| !e.marked_for_destroy);
+        self.lasers.retain(|e| !e.marked_for_destroy);
+        self.draggers.retain(|e| !e.marked_for_destroy);
+        self.plasmas.retain(|e| !e.marked_for_destroy);
+        self.pickups.retain(|e| !e.marked_for_destroy);
     }
 
     /// C++: `CEntity::Destroy` of a character.
@@ -1425,12 +1433,8 @@ impl GameWorld {
                 ch.snap_ticks += 1;
             }
         }
-        // RemoveEntities (characters are not destroyed while ticking)
-        self.projectiles.retain(|e| !e.marked_for_destroy);
-        self.lasers.retain(|e| !e.marked_for_destroy);
-        self.draggers.retain(|e| !e.marked_for_destroy);
-        self.plasmas.retain(|e| !e.marked_for_destroy);
-        self.pickups.retain(|e| !e.marked_for_destroy);
+        // characters are not destroyed while ticking
+        self.remove_entities();
 
         // update switch state
         let tick = self.game_tick;

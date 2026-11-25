@@ -287,3 +287,13 @@ only matters for names so long that neither file can exist.
   FNG's melt hammer reads it).
 - CEntity leaves `m_Number`/`m_Layer` of fired lasers uninitialized; nothing reads them,
   so the Rust laser has no such fields.
+
+## 2026-11-26 — Antiping 8.4: snapshot entities into the prediction world
+
+- `GameWorld::copy_world` is C++ `CopyWorld`: a clone without the doors (C++ copies no
+  doors). The parent/child links C++ sets only feed the smoke-trail reconstruction
+  (`m_DestroyTick`), which is not ported.
+- `find_match` leaves out the character case of C++ `FindMatch`: only the renderer's
+  entity lookups use it.
+- `IsLocalTeam` without a local player (-1) indexes the C++ teams array out of bounds;
+  DDNet-rs treats every owner as local then (as the door code already did).

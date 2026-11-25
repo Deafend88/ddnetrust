@@ -1453,6 +1453,421 @@ static int WeaponsMode(const char *pMapFile, const char *pOutFile, bool Verbose)
 	return 0;
 }
 
+// A snapshot entity item for the netents mode.
+struct SNetItem
+{
+	int m_Type;
+	int m_Id;
+	std::vector<int> m_vData;
+	bool m_HasEx = false;
+	CNetObj_EntityEx m_Ex = {};
+};
+
+// The C++ and Rust ids of extended object types differ, so the data names them.
+static const char *NetObjTypeName(int Type)
+{
+	switch(Type)
+	{
+	case NETOBJTYPE_PROJECTILE: return "projectile";
+	case NETOBJTYPE_DDRACEPROJECTILE: return "ddraceprojectile";
+	case NETOBJTYPE_DDNETPROJECTILE: return "ddnetprojectile";
+	case NETOBJTYPE_PICKUP: return "pickup";
+	case NETOBJTYPE_DDNETPICKUP: return "ddnetpickup";
+	case NETOBJTYPE_LASER: return "laser";
+	case NETOBJTYPE_DDNETLASER: return "ddnetlaser";
+	}
+	return "?";
+}
+
+static constexpr int NETENT_RUNS = 4;
+static constexpr int NETENT_SNAPS = 60;
+
+// Where FindMatch found an item: list (ENTTYPE) and index in it, or -1.
+static void PrintMatch(FILE *f, CGameWorld &World, CEntity *pFound)
+{
+	if(!pFound)
+	{
+		fprintf(f, " -");
+		return;
+	}
+	for(int Type = 0; Type < CGameWorld::NUM_ENTTYPES; Type++)
+	{
+		int Index = 0;
+		for(CEntity *pEnt = World.FindFirst(Type); pEnt; pEnt = pEnt->TypeNext(), Index++)
+			if(pEnt == pFound)
+			{
+				fprintf(f, " %d:%d", Type, Index);
+				return;
+			}
+	}
+	fprintf(f, " ?");
+}
+
+static void DumpNetWorld(FILE *f, const char *pTag, CGameWorld &World)
+{
+	fprintf(f, "%s", pTag);
+	for(int Id = 0; Id < MAX_CLIENTS; Id++)
+		if(CCharacter *pChar = World.GetCharacterById(Id))
+		{
+			SQueries Q;
+			WeaponCharState(Q, pChar);
+			fprintf(f, " %d:%08x", Id, Q.Crc());
+		}
+	SQueries E;
+	WeaponEntityState(E, World);
+	fprintf(f, " | %d %d %d %d %d %d %08x\n", EntityCount(World, CGameWorld::ENTTYPE_PROJECTILE), EntityCount(World, CGameWorld::ENTTYPE_LASER),
+		EntityCount(World, CGameWorld::ENTTYPE_DOOR), EntityCount(World, CGameWorld::ENTTYPE_DRAGGER),
+		EntityCount(World, CGameWorld::ENTTYPE_PLASMA), EntityCount(World, CGameWorld::ENTTYPE_PICKUP), E.Crc());
+}
+
+// Snapshot entities into the prediction world (M8.4): characters fire for real, and each
+// snapshot sends server versions of their projectiles and lasers (matching, moved,
+// stopped early), server-only projectiles (all three objects, owner guessing), pickups,
+// draggers, plasma, doors and odd objects that come, change and go. After each
+// NetObjEnd: every character and entity, FindMatch for every item, and a CopyWorld that
+// ticks once.
+static int NetEntsMode(const char *pMapFile, const char *pOutFile)
+{
+	std::unique_ptr<IStorage> pStorage = CreateLocalStorage();
+	std::unique_ptr<IMap> pMap = CreateMap();
+	CLayers Layers;
+	FILE *f = fopen(pOutFile, "wb");
+	if(!pStorage || !f || !LoadMapAndLayers(pStorage.get(), pMapFile, pMap.get(), &Layers))
+		return -1;
+	MakeMovers(pMap.get(), &Layers);
+	CCollision Collision;
+	Collision.Init(&Layers);
+	const int Width = Collision.GetWidth(), Height = Collision.GetHeight();
+
+	g_Config.m_SvFreezeDelay = 3;
+	g_Config.m_ClAntiPingPlayers = 1;
+	g_Config.m_SvDeepfly = 1;
+	g_Config.m_SvHit = 1;
+	g_Config.m_SvDraggerRange = 700;
+	g_Config.m_SvOldTeleportHook = 0;
+
+	static CTuningParams s_aTuning[TuneZone::NUM];
+	for(int z = 0; z < TuneZone::NUM; z++)
+	{
+		s_aTuning[z] = CTuningParams();
+		WeaponZoneTuning(&s_aTuning[z], z);
+	}
+	const int aIds[WEAPON_CHARS] = {3, 0, 6, 1};
+	const int aSorted[WEAPON_CHARS] = {0, 1, 3, 6};
+	const auto Free = [&](int x, int y) {
+		const int t = Collision.GetTileIndex(std::clamp(y, 0, Height - 1) * Width + std::clamp(x, 0, Width - 1));
+		return t != TILE_SOLID && t != TILE_NOHOOK;
+	};
+	for(int Run = 0; Run < NETENT_RUNS; Run++)
+	{
+		int Index = 0;
+		for(int Try = 0; Try < 300; Try++)
+		{
+			Index = Rand() % (Width * Height);
+			const int x = Index % Width, y = Index / Width;
+			if(Free(x - 2, y) && Free(x - 1, y) && Free(x, y) && Free(x + 1, y) && Free(x + 2, y))
+				break;
+		}
+		const int Mode = Run % 4;
+		fprintf(f, "run %d %d %d\n", Run, Index, Mode);
+
+		CGameWorld World;
+		World.Init(&Collision, s_aTuning, nullptr);
+		World.m_Core.InitSwitchers(Collision.m_HighestSwitchNumber);
+		World.m_GameTick = WORLD_START_TICK;
+		auto &Config = World.m_WorldConfig;
+		Config.m_IsDDRace = Mode < 2;
+		Config.m_IsVanilla = Mode == 2;
+		Config.m_IsFNG = Mode == 3;
+		Config.m_InfiniteAmmo = true;
+		Config.m_PredictTiles = Mode != 2;
+		Config.m_PredictFreeze = 1;
+		Config.m_PredictWeapons = true;
+		Config.m_PredictDDRace = Config.m_IsDDRace;
+		Config.m_IsSolo = false;
+		Config.m_UseTuneZones = Mode != 1;
+		Config.m_BugDDRaceInput = false;
+		Config.m_NoWeakHookAndBounce = false;
+		Config.m_PredictEvents = false;
+		Config.m_OldLaser = false;
+		CTeamsCore Teams;
+		if(Mode == 1)
+			Teams.Team(aIds[2], 1);
+		World.m_Teams = Teams;
+		const int Local = aIds[0];
+
+		const vec2 Spot = vec2((Index % Width) * 32 + 16, (Index / Width) * 32 + 16);
+		CNetObj_DDNetCharacter aExt[MAX_CLIENTS] = {};
+		CNetObj_Character aLastObj[MAX_CLIENTS] = {};
+		for(int i = 0; i < WEAPON_CHARS; i++)
+		{
+			CNetObj_Character Obj = {};
+			Obj.m_X = (int)Spot.x + i * 24 - 36;
+			Obj.m_Y = (int)Spot.y;
+			Obj.m_HookX = Obj.m_X;
+			Obj.m_HookY = Obj.m_Y;
+			Obj.m_HookedPlayer = -1;
+			Obj.m_Weapon = 1 + (i + Run) % 4;
+			Obj.m_AmmoCount = 10;
+			Obj.m_AttackTick = WORLD_START_TICK - 30;
+			CNetObj_DDNetCharacter &Ext = aExt[aIds[i]];
+			Ext.m_Flags = CHARACTERFLAG_WEAPON_HAMMER | CHARACTERFLAG_WEAPON_GUN | CHARACTERFLAG_WEAPON_SHOTGUN |
+				      CHARACTERFLAG_WEAPON_GRENADE | CHARACTERFLAG_WEAPON_LASER;
+			Ext.m_Jumps = 2;
+			Ext.m_JumpedTotal = -1;
+			Ext.m_NinjaActivationTick = -1;
+			Ext.m_FreezeStart = -1;
+			Ext.m_StrongWeakId = i;
+			Ext.m_TuneZoneOverride = TuneZone::OVERRIDE_NONE;
+			CCharacter *pChar = new CCharacter(&World, aIds[i], &Obj, &Ext);
+			World.InsertEntity(pChar);
+			pChar->m_GameTeam = i % 2;
+			if(i == 0)
+				pChar->Read(&Obj, &Ext, true);
+			aLastObj[aIds[i]] = Obj;
+			fprintf(f, "char %d %d", aIds[i], i % 2);
+			for(int k = 0; k < (int)(sizeof(Obj) / sizeof(int)); k++)
+				fprintf(f, " %d", ((const int *)&Obj)[k]);
+			fprintf(f, " |");
+			for(int k = 0; k < (int)(sizeof(Ext) / sizeof(int)); k++)
+				fprintf(f, " %d", ((const int *)&Ext)[k]);
+			fprintf(f, "\n");
+		}
+
+		CNetObj_PlayerInput aInputs[MAX_CLIENTS] = {};
+		int aHold[WEAPON_CHARS][4] = {};
+		const auto TickWorld = [&](CGameWorld &W, bool Print) {
+			if(Print)
+			{
+				for(int i = 0; i < WEAPON_CHARS; i++)
+				{
+					CNetObj_PlayerInput &In = aInputs[aIds[i]];
+					if(--aHold[i][0] <= 0)
+					{
+						In.m_Direction = (int)(Rand() % 3) - 1;
+						aHold[i][0] = 1 + Rand() % 30;
+					}
+					if(--aHold[i][1] <= 0)
+					{
+						In.m_Hook = Rand() % 5 == 0;
+						aHold[i][1] = 1 + Rand() % 40;
+						const float Angle = (Rand() % 360) * (pi / 180.0f);
+						const int Length = 10 + Rand() % 300;
+						In.m_TargetX = (int)(std::cos(Angle) * Length);
+						In.m_TargetY = (int)(std::sin(Angle) * Length);
+					}
+					if(--aHold[i][2] <= 0)
+					{
+						In.m_Jump = Rand() % 5 == 0;
+						aHold[i][2] = 1 + Rand() % 15;
+					}
+					if(--aHold[i][3] <= 0)
+					{
+						if((In.m_Fire & 1) != (int)(Rand() % 2))
+							In.m_Fire = (In.m_Fire + 1) & INPUT_STATE_MASK;
+						aHold[i][3] = 1 + Rand() % 6;
+					}
+					const int Extra = Rand() % 100;
+					In.m_WantedWeapon = Extra < 6 ? 2 + Extra % 4 : 0;
+				}
+				fprintf(f, "t");
+				for(int Id : aSorted)
+				{
+					const CNetObj_PlayerInput &In = aInputs[Id];
+					fprintf(f, " %d %d %d %d %d %d %d", In.m_Direction, In.m_Jump, In.m_Hook, In.m_TargetX, In.m_TargetY, In.m_Fire, In.m_WantedWeapon);
+				}
+				fprintf(f, "\n");
+			}
+			for(int Id : aSorted)
+				if(CCharacter *pChar = W.GetCharacterById(Id))
+					pChar->OnDirectInput(&aInputs[Id]);
+			W.m_GameTick++;
+			for(int Id : aSorted)
+				if(CCharacter *pChar = W.GetCharacterById(Id))
+					pChar->OnPredictedInput(&aInputs[Id]);
+			W.Tick();
+		};
+
+		// server entities that stay over several snapshots, by id
+		std::map<int, SNetItem> Server;
+		int NextId = 1000;
+		const auto Near = [&](int Range) { return Spot + vec2((int)(Rand() % (2 * Range + 1)) - Range, (int)(Rand() % (Range + 1)) - Range * 3 / 4); };
+		for(int Snap = 0; Snap < NETENT_SNAPS; Snap++)
+		{
+			const int Ticks = 1 + Rand() % 3;
+			for(int t = 0; t < Ticks; t++)
+				TickWorld(World, true);
+			const int GameTick = World.GameTick();
+
+			std::vector<SNetItem> vItems;
+			// the server's versions of locally fired projectiles and lasers
+			for(CEntity *pEnt = World.FindFirst(CGameWorld::ENTTYPE_PROJECTILE); pEnt; pEnt = pEnt->TypeNext())
+			{
+				CProjectile *p = static_cast<CProjectile *>(pEnt);
+				if(p->GetId() != -1 || Rand() % 10 < 3)
+					continue;
+				const vec2 Dir = p->*Get(SProjDir());
+				const int aOffsets[] = {0, 0, 0, 2, 3, 40}; // near the 2 px match limit, or too far
+				const int Off = aOffsets[Rand() % 6];
+				vItems.push_back({NETOBJTYPE_PROJECTILE, NextId++, {(int)p->m_Pos.x + Off, (int)p->m_Pos.y, (int)(Dir.x * 100.0f), (int)(Dir.y * 100.0f), p->*Get(SProjType()), p->*Get(SProjStart())}});
+			}
+			for(CEntity *pEnt = World.FindFirst(CGameWorld::ENTTYPE_LASER); pEnt; pEnt = pEnt->TypeNext())
+			{
+				CLaser *p = static_cast<CLaser *>(pEnt);
+				if(p->GetId() != -1 || Rand() % 10 < 3)
+					continue;
+				const vec2 From = p->*Get(SLaserFrom());
+				vec2 To = p->m_Pos;
+				const int Cut = Rand() % 4; // stopped earlier than predicted, around the 2 px limit
+				if(Cut == 1)
+					To = From + (To - From) * 0.5f;
+				else if(Cut >= 2 && length(To - From) > 4.0f)
+					To = To - normalize(To - From) * (Cut == 2 ? 1.5f : 3.0f);
+				vItems.push_back({NETOBJTYPE_DDNETLASER, NextId++, {(int)To.x, (int)To.y, (int)From.x, (int)From.y, p->*Get(SLaserEval()), p->*Get(SLaserOwner()), p->*Get(SLaserType()) == WEAPON_SHOTGUN ? LASERTYPE_SHOTGUN : LASERTYPE_RIFLE, -1, -1, 0}});
+			}
+			// new server entities
+			const int New = Rand() % 4;
+			for(int k = 0; k < New; k++)
+			{
+				SNetItem It;
+				It.m_Id = NextId++;
+				const vec2 Pos = Near(150);
+				const int Owner = Rand() % 4 == 0 ? -1 : (Rand() % 6 == 0 ? 99 : aIds[Rand() % WEAPON_CHARS]);
+				const int Kind = Rand() % 11;
+				const int Type = (int)(Rand() % 3) + 1; // gun, shotgun, grenade
+				const int Start = GameTick - (int)(Rand() % 7);
+				if(Kind == 0)
+				{
+					It.m_Type = NETOBJTYPE_PROJECTILE;
+					const vec2 Dir = direction((Rand() % 360) * (pi / 180.0f)) * (Rand() % 8 == 0 ? 1.5f : 1.0f);
+					It.m_vData = {(int)Pos.x, (int)Pos.y, (int)(Dir.x * 100.0f), (int)(Dir.y * 100.0f), Type, Start};
+				}
+				else if(Kind == 1)
+				{
+					It.m_Type = NETOBJTYPE_DDRACEPROJECTILE;
+					const int Data = (Owner & 255) | (Rand() % 4 == 0 ? LEGACYPROJECTILEFLAG_NO_OWNER : 0) | ((int)(Rand() % 4) << 10) |
+							 (Rand() % 2 ? LEGACYPROJECTILEFLAG_EXPLOSIVE : 0) | (Rand() % 3 == 0 ? LEGACYPROJECTILEFLAG_FREEZE : 0);
+					It.m_vData = {(int)(Pos.x * 100), (int)(Pos.y * 100), (int)(Rand() % 6283185), Data, Type, Start};
+				}
+				else if(Kind == 2)
+				{
+					It.m_Type = NETOBJTYPE_DDNETPROJECTILE;
+					const vec2 Dir = direction((Rand() % 360) * (pi / 180.0f));
+					const int Flags = (Rand() % 2 ? PROJECTILEFLAG_EXPLOSIVE : 0) | (Rand() % 3 == 0 ? PROJECTILEFLAG_FREEZE : 0) |
+							  (Rand() % 3 == 0 ? PROJECTILEFLAG_BOUNCE_HORIZONTAL : 0) | (Rand() % 4 == 0 ? PROJECTILEFLAG_NORMALIZE_VEL : 0);
+					const int DdOwner = Rand() % 2 ? -1 : Owner;
+					It.m_vData = {(int)(Pos.x * 100), (int)(Pos.y * 100), DdOwner < 0 ? (int)(Dir.x * 1e6f) : (int)(Rand() % 21) - 10,
+						DdOwner < 0 ? (int)(Dir.y * 1e6f) : (int)(Rand() % 21) - 10, Type, Start, DdOwner, (int)(Rand() % 3), 0, Flags};
+				}
+				else if(Kind <= 4)
+				{
+					It.m_Type = Kind == 3 ? NETOBJTYPE_PICKUP : NETOBJTYPE_DDNETPICKUP;
+					const int PType = Rand() % 9, Sub = Rand() % 6;
+					if(Kind == 3)
+						It.m_vData = {(int)Pos.x, (int)Pos.y, PType, Sub};
+					else
+						It.m_vData = {(int)Pos.x, (int)Pos.y, PType, Sub, (int)(Rand() % 3), Rand() % 5 == 0 ? PICKUPFLAG_NO_PREDICT : 0};
+				}
+				else
+				{
+					It.m_Type = Kind == 5 ? NETOBJTYPE_LASER : NETOBJTYPE_DDNETLASER;
+					const int aLaserTypes[] = {LASERTYPE_RIFLE, LASERTYPE_SHOTGUN, LASERTYPE_DOOR, LASERTYPE_DRAGGER, LASERTYPE_PLASMA, LASERTYPE_FREEZE};
+					const int LType = aLaserTypes[Rand() % 6];
+					const vec2 To = Pos + direction((Rand() % 360) * (pi / 180.0f)) * (float)(Rand() % 200);
+					if(Kind == 5)
+						It.m_vData = {(int)To.x, (int)To.y, (int)Pos.x, (int)Pos.y, Start};
+					else
+						It.m_vData = {(int)To.x, (int)To.y, (int)Pos.x, (int)Pos.y, Start, LType == LASERTYPE_PLASMA ? Owner : (Rand() % 3 ? -1 : Owner),
+							LType, (int)(Rand() % 3) - 1, (int)(Rand() % 8) - 1, Rand() % 6 == 0 ? LASERFLAG_NO_PREDICT : 0};
+				}
+				if(Rand() % 4 == 0)
+				{
+					It.m_HasEx = true;
+					It.m_Ex.m_SwitchNumber = Rand() % 3;
+					It.m_Ex.m_Layer = Rand() % 2 ? LAYER_SWITCH : LAYER_GAME;
+					It.m_Ex.m_EntityClass = Rand() % 2 ? ENTITYCLASS_PROJECTILE : ENTITYCLASS_LIGHT;
+				}
+				Server[It.m_Id] = It;
+			}
+			// server entities stay, move a little, change or leave
+			for(auto It = Server.begin(); It != Server.end();)
+			{
+				const int Roll = Rand() % 20;
+				if(Roll == 0)
+				{
+					It = Server.erase(It);
+					continue;
+				}
+				SNetItem Item = It->second;
+				if(Roll == 1 && !Item.m_vData.empty())
+					Item.m_vData[0] += Rand() % 2 ? 1 : 5;
+				if(Roll == 2 && Item.m_Type == NETOBJTYPE_DDNETLASER)
+					Item.m_vData[8] = (int)(Rand() % 8) - 1; // dragger strength, plasma kind
+				if(Roll == 3 && Item.m_Type == NETOBJTYPE_DDNETLASER)
+					Item.m_vData[5] = aIds[Rand() % WEAPON_CHARS]; // dragger target, plasma owner
+				It->second = Item;
+				if(Roll != 7) // sometimes missing from one snapshot
+					vItems.push_back(Item);
+				++It;
+			}
+			std::stable_sort(vItems.begin(), vItems.end(), [](const SNetItem &a, const SNetItem &b) { return a.m_Id < b.m_Id; });
+			for(const SNetItem &It : vItems)
+			{
+				fprintf(f, "item %s %d", NetObjTypeName(It.m_Type), It.m_Id);
+				for(int v : It.m_vData)
+					fprintf(f, " %d", v);
+				if(It.m_HasEx)
+					fprintf(f, " | %d %d %d", It.m_Ex.m_SwitchNumber, It.m_Ex.m_Layer, It.m_Ex.m_EntityClass);
+				fprintf(f, "\n");
+			}
+
+			// the snapshot's characters: their predicted state; one leaves for a while
+			World.NetObjBegin(Teams, Local);
+			for(int i = 0; i < WEAPON_CHARS; i++)
+			{
+				const int Id = aIds[i];
+				CCharacter *pChar = World.GetCharacterById(Id);
+				if(i == 2 && Snap % 10 >= 7)
+					continue;
+				CNetObj_Character Obj = aLastObj[Id]; // a character that left comes back there
+				if(pChar)
+				{
+					pChar->GetCore().Write((CNetObj_CharacterCore *)&Obj);
+					Obj.m_Weapon = pChar->GetActiveWeapon();
+					Obj.m_AttackTick = pChar->GetAttackTick();
+				}
+				Obj.m_Tick = GameTick;
+				Obj.m_AmmoCount = 10;
+				aLastObj[Id] = Obj;
+				fprintf(f, "netchar %d", Id);
+				for(int k = 0; k < (int)(sizeof(Obj) / sizeof(int)); k++)
+					fprintf(f, " %d", ((const int *)&Obj)[k]);
+				fprintf(f, "\n");
+				World.NetCharAdd(Id, &Obj, &aExt[Id], i % 2, Id == Local);
+			}
+			for(SNetItem &It : vItems)
+			{
+				It.m_vData.resize(16, 0);
+				World.NetObjAdd(It.m_Id, It.m_Type, It.m_vData.data(), It.m_HasEx ? &It.m_Ex : nullptr);
+			}
+			World.NetObjEnd();
+			DumpNetWorld(f, "world", World);
+			fprintf(f, "match");
+			for(SNetItem &It : vItems)
+				PrintMatch(f, World, World.FindMatch(It.m_Id, It.m_Type, It.m_vData.data()));
+			fprintf(f, "\n");
+
+			CGameWorld Copy;
+			Copy.CopyWorld(&World);
+			TickWorld(Copy, false);
+			DumpNetWorld(f, "copy", Copy);
+			World.m_pChild = nullptr; // the copy goes away
+		}
+	}
+	fclose(f);
+	return 0;
+}
+
 // One laser snapshot item: its type, id, ints and optional EntityEx.
 struct SLaserItem
 {
@@ -2624,6 +3039,8 @@ int main(int argc, const char **argv)
 		return MapImagesMode(argv[2], argv[3]);
 	if(argc == 4 && str_comp(argv[1], "doors") == 0)
 		return DoorsMode(argv[2], argv[3]);
+	if(argc == 4 && str_comp(argv[1], "netents") == 0)
+		return NetEntsMode(argv[2], argv[3]);
 	if(argc == 4 && str_comp(argv[1], "msgs") == 0)
 	{
 		std::unique_ptr<IStorage> pStorage = CreateLocalStorage();
@@ -2651,6 +3068,6 @@ int main(int argc, const char **argv)
 			return CoreMode(argv[2], argv[3], HookTele, Verbose);
 		return CollisionMode(argv[2], argv[3], HookTele, Verbose);
 	}
-	log_error(TOOL_NAME, "Usage: %s map <map file> <output file> <scratch dir> | collision|core|world|weapons <map file> <output file> [hooktele] [verbose] | doors|mapimages|envelopes|items|msgs <map file> <output file> | envelopes-synthetic|screen|anims|colors|interp|camera|movement <output file> | png <output file> <dir>... | skins <output file> <dir>", argc > 0 ? argv[0] : TOOL_NAME);
+	log_error(TOOL_NAME, "Usage: %s map <map file> <output file> <scratch dir> | collision|core|world|weapons <map file> <output file> [hooktele] [verbose] | doors|netents|mapimages|envelopes|items|msgs <map file> <output file> | envelopes-synthetic|screen|anims|colors|interp|camera|movement <output file> | png <output file> <dir>... | skins <output file> <dir>", argc > 0 ? argv[0] : TOOL_NAME);
 	return -1;
 }

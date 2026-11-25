@@ -29,7 +29,7 @@ use crate::physics::world::{
 };
 use crate::protocol::generated::{
     self as g, MsgSvPreInput, ObjCharacter, ObjCharacterCore, ObjDDNetCharacter, ObjDDNetLaser,
-    ObjEntityEx, ObjGameInfoEx, ObjSpectatorInfo, ObjSwitchState,
+    ObjGameInfoEx, ObjSpectatorInfo, ObjSwitchState,
 };
 use crate::protocol::snapshot::Item;
 
@@ -761,21 +761,12 @@ impl Predictor {
                     .net_char_add(i, cur, ext, game_team(i), i == local);
             }
         }
-        // C++: SnapCollectEntities: entities sorted by id with their EntityEx; only
-        // lasers matter here (doors)
-        if let Some(items) = client.snapshot_at(tick) {
-            let mut lasers: Vec<&Item> = items
-                .iter()
-                .filter(|it| [g::NETOBJTYPE_LASER, g::NETOBJTYPE_DDNETLASER].contains(&it.type_id))
-                .collect();
-            lasers.sort_by_key(|it| it.id);
-            for it in lasers {
-                let ex = find(items, g::NETOBJTYPE_ENTITYEX, it.id)
-                    .map(|e| ObjEntityEx::from_ints(&ints(e, ObjEntityEx::NUM_INTS)));
-                let data = ints(it, ObjDDNetLaser::NUM_INTS);
-                self.world
-                    .net_obj_add_laser(it.id, it.type_id, &data, ex.as_ref());
-            }
+        // C++: SnapCollectEntities: entities sorted by id with their EntityEx
+        for (i, ex) in crate::items::snap_entities(items) {
+            let it = &items[i];
+            let data = ints(it, ObjDDNetLaser::NUM_INTS); // the largest entity object
+            self.world
+                .net_obj_add(it.id, it.type_id, &data, ex.as_ref());
         }
         self.world.net_obj_end();
     }
@@ -893,7 +884,7 @@ impl Predictor {
         let local = self.local_id as usize;
         let before = self.predicted_char;
 
-        let mut w = self.world.clone();
+        let mut w = self.world.copy_world();
         // don't predict inactive players, or players from other teams
         for i in 0..MAX_CLIENTS {
             if let Some((ch, _)) = w.character(i)

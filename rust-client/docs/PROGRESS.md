@@ -1060,15 +1060,37 @@ are final unless the user changes them:
 - Regenerate: `build-rs/rs_parity.exe weapons "data/maps/<name>.map"
   rust-client/tests/golden/maps/<name>.weapons.txt` (add `verbose` for entity values).
 
+#### 8.4 (2026-11-26): snapshot entities into the prediction world — done
+- `physics/snap.rs`: `GameWorld::net_obj_add` for projectiles (all three objects: Keep,
+  DDRace shotgun lifespan, matching a locally fired one, guessing the owner from
+  `PrevPos`/`PrevPrevPos`), pickups (appended, no-predict flag), lasers (rifle/shotgun
+  matching incl. a local one, "stopped earlier"), draggers, doors, plasma; `find_match`
+  (`EntityRef`); the entities' `Match`/`Read`; `Laser::from_data`. `net_obj_begin`/`end`
+  cover every list; `copy_world` (C++ CopyWorld: no doors) replaces the clone in
+  `predict`. `predict.rs` feeds every snapshot entity (`snap_entities` order).
+- Verified: `rs_parity netents` (new): per map 4 configs x 60 snapshots; tees fire for
+  real, and each snapshot sends server versions of their projectiles (vanilla objects,
+  offsets 0/2/3/40 px) and lasers (DDNet objects, cut 0/1.5/3 px or in half), new
+  server entities of every object type (owners local/other/other team/none/invalid,
+  DDRace flags, DDNet flags incl. normalize, EntityEx classes) that stay, move, change
+  or skip a snapshot, and a tee that leaves and comes back. After each NetObjEnd: every
+  character and entity, `FindMatch` for every item, and a CopyWorld ticked once. 100%
+  identical on all 7 maps (1,680 snapshots, ~33,000 items, about half matched); 17 of
+  17 mutations caught.
+- Regenerate: `build-rs/rs_parity.exe netents "data/maps/<name>.map"
+  rust-client/tests/golden/maps/<name>.netents.txt`.
+- Antiping stays off by default (`predict_weapons` false until 8.5 wires the settings),
+  so the live behaviour is unchanged; the M5/M6 live tests still pass.
+
 #### Exact next actions (next session starts here)
-State (2026-11-26): M8 8.1, 8.2 and 8.3 done and pushed. Waiting for the user's review of earlier
-work: the HUD fixes, the volume popover (d04d4040a) and 7.11 (89a3b16b2).
+State (2026-11-26): M8 8.1-8.4 done and pushed; stopped for the user's review of 8.2-8.4.
+Also waiting: the HUD fixes, the volume popover (d04d4040a) and 7.11 (89a3b16b2).
 1. Read CLAUDE.md, PLAN §12 (incl. §12.7), this file, `git log`.
-2. Next: 8.4 (snapshot entities into the world: NetObjAdd, CopyWorld, FindMatch;
-   `rs_parity netents`), then stop for the user's review.
-3. When the `cl_antiping*` config variables are added (8.8 at the latest), read them
-   and `cl_prediction_margin` from `settings_ddnet.cfg` once, like name/skin/binds
-   (§12.7 answer 1).
+2. If the review asks for changes, do those first.
+3. Next: 8.5 (prediction loop: GetPredictionTick, PredictionMargin setting, per-client
+   predicted cores at PredictionTick, pred_pos ring, PrevPredictedWorld, ApplyPreInputs,
+   `cl_predict_freeze 2`, the antiping config gates with `cl_antiping*` settings read
+   once from `settings_ddnet.cfg` (§12.7 answer 1)).
 
 #### Decisions and gotchas from 7.1
 - egui 0.37 panics in debug if a frame's `TexturesDelta` is dropped unapplied: drain
