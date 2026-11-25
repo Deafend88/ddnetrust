@@ -17,8 +17,9 @@ wgpu = "30.0.2"
 winit = "0.30.13"
 
 [target.'cfg(windows)'.dependencies]
-# SMTC (now playing, 7.10) and Windows' image decoder for its covers; PLAN §10.6 answer 2
-windows = { version = "0.62", features = ["Foundation", "Foundation_Collections", "Media_Control", "Graphics_Imaging", "Storage_Streams"] }
+# SMTC (now playing, 7.10), Windows' image decoder for its covers, and WinRT's HTTP client
+# and JSON parser for the lyrics; PLAN §10.6 answer 2
+windows = { version = "0.62", features = ["Foundation", "Foundation_Collections", "Media_Control", "Graphics_Imaging", "Storage_Streams", "Web_Http", "Web_Http_Headers", "Data_Json"] }
 
 [dev-dependencies]
 flate2 = "1.1.11"

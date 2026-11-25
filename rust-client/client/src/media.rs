@@ -7,6 +7,8 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+use crate::lyrics::{self, Lyrics};
+
 /// A cover image, RGBA8 straight alpha; `id` changes with every new image.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Cover {
@@ -53,6 +55,8 @@ pub struct State {
     /// The session the user chose (`None`: automatic).
     pub chosen: Option<String>,
     pub track: Option<Track>,
+    /// The track's synced lyrics while they are on (`Command::Lyrics`).
+    pub lyrics: Option<Lyrics>,
 }
 
 /// A user's command for the chosen session.
@@ -65,6 +69,8 @@ pub enum Command {
     Seek(f64),
     /// Choose a session by app id (`None`: the system's current one).
     Source(Option<String>),
+    /// Fetch synced lyrics for the tracks (LRCLIB) or not.
+    Lyrics(bool),
 }
 
 /// The handle the game holds.
@@ -97,6 +103,43 @@ impl Media {
 
     pub fn send(&self, command: Command) {
         let _ = self.commands.send(command);
+    }
+}
+
+/// (title, artist) and their lyrics so far.
+type TrackLyrics = ((String, String), Lyrics);
+
+/// The lyrics of the playing track: fetched on their own thread when the track changes
+/// (a slow request never stalls the polling).
+#[derive(Default)]
+struct LyricsJob {
+    enabled: bool,
+    shared: Arc<Mutex<Option<TrackLyrics>>>,
+}
+
+impl LyricsJob {
+    #[cfg_attr(not(windows), allow(dead_code))]
+    fn update(&mut self, track: Option<&Track>) -> Option<Lyrics> {
+        let track = track.filter(|_| self.enabled)?;
+        let key = (track.title.clone(), track.artist.clone());
+        let mut shared = self.shared.lock().ok()?;
+        match &*shared {
+            Some((k, l)) if *k == key => return Some(l.clone()),
+            _ => *shared = Some((key.clone(), Lyrics::Loading)),
+        }
+        let (slot, duration) = (self.shared.clone(), track.timeline.map(|t| t.1));
+        let dir = crate::storage::save_dir().map(|d| d.join("lyrics"));
+        let _ = std::thread::Builder::new()
+            .name("lyrics".into())
+            .spawn(move || {
+                let found = lyrics::fetch(&key.0, &key.1, duration, dir);
+                if let Ok(mut s) = slot.lock()
+                    && s.as_ref().is_some_and(|(k, _)| *k == key)
+                {
+                    *s = Some((key, found));
+                }
+            });
+        Some(Lyrics::Loading)
     }
 }
 
@@ -144,13 +187,16 @@ fn run(shared: &Mutex<State>, rx: &Receiver<Command>, source: Option<String>) {
     use std::time::Duration;
     let mut smtc = smtc::Smtc::default();
     smtc.command(Command::Source(source));
+    let mut lyrics = LyricsJob::default();
     loop {
         match rx.recv_timeout(Duration::from_millis(500)) {
+            Ok(Command::Lyrics(on)) => lyrics.enabled = on,
             Ok(command) => smtc.command(command),
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => return,
         }
-        let state = smtc.poll();
+        let mut state = smtc.poll();
+        state.lyrics = lyrics.update(state.track.as_ref());
         if let Ok(mut s) = shared.lock() {
             *s = state;
         }
@@ -228,7 +274,7 @@ mod smtc {
                     let start = start.map_or(0, |t| t.Duration);
                     s.TryChangePlaybackPositionAsync(start + (secs.max(0.0) * 1e7) as i64)
                 }
-                Command::Source(_) => return,
+                Command::Source(_) | Command::Lyrics(_) => return,
             };
             let _ = op.and_then(|op| op.join());
         }
@@ -248,6 +294,7 @@ mod smtc {
                 source,
                 chosen: self.chosen.clone(),
                 track,
+                lyrics: None,
             }
         }
 

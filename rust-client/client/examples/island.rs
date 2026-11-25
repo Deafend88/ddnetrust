@@ -81,6 +81,7 @@ fn script(t: f64) -> Option<View> {
             track: Some((track(), Some((133.0 + (t - 18.4), 144.0)), [true; 3])),
             sessions: vec!["Spotify.exe".into()],
             source: None,
+            lyrics: None,
         })),
         t if t < 22.4 => idle(None, None),
         _ => None,

@@ -17,6 +17,7 @@ use egui::{Color32, CornerRadius, Galley, Rect, Sense, Ui, pos2, vec2};
 use crate::anim::Spring;
 use crate::hud::{self, Anchor, HudConfig, HudData, Placement, Widget};
 use crate::icons;
+use crate::lyrics::{self, Lyrics};
 use crate::media::{self, Command, Media, time};
 use crate::style::{
     Glass, HUD_SHADOW, Weight, color, display, font, icon_font, motion, radius, size, space,
@@ -295,6 +296,8 @@ pub struct Player {
     pub track: Option<PlayerTrack>,
     pub sessions: Vec<String>,
     pub source: Option<String>,
+    /// Synced lyrics while they are on.
+    pub lyrics: Option<Lyrics>,
 }
 
 /// The first active event (they come in priority order), else the idle row if it has
@@ -317,6 +320,10 @@ pub const ITEMS: [hud::Item; 7] = [
     ("track", true, "Track change"),
 ];
 
+/// The lyrics switch (`hud_set island lyrics 0|1`, off by default): the playing track's
+/// title, artist and duration are sent to lrclib.net when it is on.
+pub const LYRICS_SETTING: &str = "Synced lyrics (from lrclib.net)";
+
 /// How long a track change shows (the concept's 3 s; C++ has no such notice).
 pub const TRACK_TICKS: i32 = TICK_SPEED * 3;
 
@@ -328,8 +335,7 @@ pub struct Island {
     /// The last track (title, artist) and the tick its change shows until.
     track: Option<(String, String)>,
     track_until: i32,
-    /// The cover's texture, by the media thread's cover id.
-    cover: Option<(u64, egui::TextureHandle)>,
+    cover: CoverCache,
     anim: Anim,
 }
 
@@ -354,7 +360,7 @@ pub struct Anim {
 /// The island's top offset, the broadcast's wrap width, the player's width (points).
 const TOP: i32 = 16;
 const WRAP: f32 = 480.0;
-const PLAYER_WIDTH: f32 = 360.0;
+pub const PLAYER_WIDTH: f32 = 360.0;
 /// Damping of the size springs: a small overshoot (about 3 %), the island's motion.
 const ZETA: f32 = 0.75;
 /// The equalizer: bars, their width and gap.
@@ -677,7 +683,7 @@ impl Anim {
                 child.set_clip_rect(rect.intersect(ui.clip_rect()));
                 child.set_opacity(alpha);
                 let player = player.clone();
-                let command = player_ui(&mut child, &player, &mut self.seeking, weak);
+                let command = player_ui(&mut child, &player, true, 3, &mut self.seeking, weak);
                 self.player_h = Some(child.min_rect().height());
                 return command;
             }
@@ -818,10 +824,24 @@ pub fn source_name(id: &str) -> &str {
 /// The expanded player (SPEC §2, iOS style): cover, title and artist with the "⋯" source
 /// menu; elapsed, progress bar (click or drag to seek), remaining; previous, play/pause,
 /// next. Without a track: a hint and the source menu.
-fn player_ui(ui: &mut Ui, p: &Player, seeking: &mut Option<f32>, weak: Color32) -> Option<Command> {
+/// `controls`: the interactive F7 player (source menu, seeking, buttons); without them
+/// a display-only card (the "Now playing" widget). `lyric_lines`: how many lyrics lines
+/// show around the current one (0: none, 1: the current line, 3: previous, current,
+/// next).
+pub fn player_ui(
+    ui: &mut Ui,
+    p: &Player,
+    controls: bool,
+    lyric_lines: usize,
+    seeking: &mut Option<f32>,
+    weak: Color32,
+) -> Option<Command> {
     let mut command = None;
     // the source menu, top right
     let menu = |ui: &mut Ui, command: &mut Option<Command>| {
+        if !controls {
+            return;
+        }
         let r = dots_button(ui).on_hover_text("Source");
         egui::Popup::menu(&r).show(|ui| {
             w::text(ui, "Source", size::CAPTION, Weight::Regular, weak);
@@ -900,7 +920,8 @@ fn player_ui(ui: &mut Ui, p: &Player, seeking: &mut Option<f32>, weak: Color32) 
         };
         let frac_now = if *dur > 0.0 { (pos / dur) as f32 } else { 0.0 };
         let frac = seeking.unwrap_or(frac_now).clamp(0.0, 1.0);
-        let shown = frac as f64 * dur;
+        // the reported position (the fraction rounds it), or where the bar is dragged
+        let shown = seeking.map_or(*pos, |f| f as f64 * dur);
         let (elapsed, remaining) = (
             caption(time(shown)),
             caption(format!("-{}", time(dur - shown))),
@@ -932,7 +953,7 @@ fn player_ui(ui: &mut Ui, p: &Player, seeking: &mut Option<f32>, weak: Color32) 
             vec2(track_rect.width() * frac, track_rect.height()),
         );
         painter.rect_filled(filled, pill, color::TEXT.gamma_multiply(ui.opacity()));
-        if *can_seek {
+        if controls && *can_seek {
             let r = ui.interact(bar, ui.scope_id().with("seek"), Sense::click_and_drag());
             let at = |r: &egui::Response| {
                 r.interact_pointer_pos()
@@ -950,45 +971,99 @@ fn player_ui(ui: &mut Ui, p: &Player, seeking: &mut Option<f32>, weak: Color32) 
         }
     }
     // previous, play/pause (larger), next, centred
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = space::XL;
-        let control = |ui: &mut Ui, glyph: &str, size: f32, enabled: bool, tip: &str| {
-            let t = egui::RichText::new(glyph)
-                .font(icon_font(size))
-                .color(color::TEXT);
-            ui.add_enabled(enabled, egui::Button::new(t).frame(false))
-                .on_hover_text(tip)
-                .clicked()
-        };
-        let w = 2.0 * size::ICON_LARGE + size::CONTROL + 2.0 * space::XL;
-        ui.add_space(((ui.available_width() - w) / 2.0).max(0.0));
-        if control(
-            ui,
-            icons::SKIP_BACK,
-            size::ICON_LARGE,
-            *can_prev,
-            "Previous",
-        ) {
-            command = Some(Command::Prev);
-        }
-        let play = if track.playing {
-            icons::PAUSE
-        } else {
-            icons::PLAY
-        };
-        if control(ui, play, size::CONTROL, true, "Play or pause") {
-            command = Some(Command::PlayPause);
-        }
-        if control(ui, icons::SKIP_FORWARD, size::ICON_LARGE, *can_next, "Next") {
-            command = Some(Command::Next);
-        }
-    });
+    if controls {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = space::XL;
+            let control = |ui: &mut Ui, glyph: &str, size: f32, enabled: bool, tip: &str| {
+                let t = egui::RichText::new(glyph)
+                    .font(icon_font(size))
+                    .color(color::TEXT);
+                ui.add_enabled(enabled, egui::Button::new(t).frame(false))
+                    .on_hover_text(tip)
+                    .clicked()
+            };
+            let w = 2.0 * size::ICON_LARGE + size::CONTROL + 2.0 * space::XL;
+            ui.add_space(((ui.available_width() - w) / 2.0).max(0.0));
+            if control(
+                ui,
+                icons::SKIP_BACK,
+                size::ICON_LARGE,
+                *can_prev,
+                "Previous",
+            ) {
+                command = Some(Command::Prev);
+            }
+            let play = if track.playing {
+                icons::PAUSE
+            } else {
+                icons::PLAY
+            };
+            if control(ui, play, size::CONTROL, true, "Play or pause") {
+                command = Some(Command::PlayPause);
+            }
+            if control(ui, icons::SKIP_FORWARD, size::ICON_LARGE, *can_next, "Next") {
+                command = Some(Command::Next);
+            }
+        });
+    }
+    if lyric_lines > 0
+        && let Some(l) = &p.lyrics
+    {
+        lyrics_ui(ui, l, timeline.map(|t| t.0), lyric_lines, weak);
+    }
     command
 }
 
-impl Island {
-    /// The cover's texture for the media thread's cover (uploaded once per cover).
-    fn cover(
+/// Synced lyrics at `position`: the current line in Inter Display, with the previous and
+/// next ones dimmed when `lines` is 3; a short note while loading or without lyrics.
+pub fn lyrics_ui(ui: &mut Ui, lyrics: &Lyrics, position: Option<f64>, lines: usize, weak: Color32) {
+    let note = |ui: &mut Ui, s: &str| w::text(ui, s, size::BODY, Weight::Regular, weak);
+    let all = match lyrics {
+        Lyrics::Loading => return drop(note(ui, "Looking for lyrics")),
+        Lyrics::NotFound => return drop(note(ui, "No synced lyrics for this track")),
+        Lyrics::Unavailable => return drop(note(ui, "Lyrics unavailable (offline?)")),
+        Lyrics::Lines(all) => all,
+    };
+    let Some(position) = position else {
+        return drop(note(ui, "This player does not report the position"));
+    };
+    let now = lyrics::current(all, position);
+    let line = |i: Option<usize>| i.and_then(|i| all.get(i)).map_or("", |l| l.1.as_str());
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = space::XS;
+        let label = |ui: &mut Ui, s: &str, f: egui::FontId, c: Color32| {
+            let t = egui::RichText::new(if s.is_empty() { " " } else { s })
+                .font(f)
+                .color(c);
+            ui.add(egui::Label::new(t).truncate());
+        };
+        if lines >= 3 {
+            let prev = now.and_then(|i| i.checked_sub(1));
+            label(ui, line(prev), font(size::BODY, Weight::Regular), weak);
+        }
+        // "..." between lines before the first one
+        let current = now.map_or("…", |i| line(Some(i)));
+        label(
+            ui,
+            current,
+            display(size::LABEL, Weight::SemiBold),
+            color::TEXT,
+        );
+        if lines >= 3 {
+            let next = now.map_or(Some(0), |i| Some(i + 1));
+            label(ui, line(next), font(size::BODY, Weight::Regular), weak);
+        }
+    });
+}
+
+/// A cover's texture, uploaded once per cover (the media thread's cover id).
+#[derive(Default)]
+pub struct CoverCache {
+    cover: Option<(u64, egui::TextureHandle)>,
+}
+
+impl CoverCache {
+    pub fn get(
         &mut self,
         ctx: &egui::Context,
         cover: Option<&media::Cover>,
@@ -1066,7 +1141,7 @@ impl Widget for Island {
         // now playing; a new title or artist is a track change
         let state = data.media.map(Media::state).unwrap_or_default();
         let ctx = ui.ctx().clone();
-        let cover = self.cover(&ctx, state.track.as_ref().and_then(|t| t.cover.as_ref()));
+        let cover = (self.cover).get(&ctx, state.track.as_ref().and_then(|t| t.cover.as_ref()));
         let playing = state.track.as_ref().map(|t| NowPlaying {
             title: t.title.clone(),
             artist: t.artist.clone(),
@@ -1123,6 +1198,7 @@ impl Widget for Island {
                     }),
                     sessions: state.sessions.clone(),
                     source: state.source.clone(),
+                    lyrics: state.lyrics.clone(),
                 }))
             } else {
                 view(events, idle)
@@ -1133,6 +1209,7 @@ impl Widget for Island {
     }
 
     fn settings(&mut self, ui: &mut Ui, config: &mut HudConfig) {
+        hud::item_toggles(ui, config, "island", &[("lyrics", LYRICS_SETTING, false)]);
         hud::item_list(ui, config, "island", &ITEMS);
     }
 }

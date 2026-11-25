@@ -33,6 +33,7 @@ use ddnet_rs::island::Island;
 use ddnet_rs::killfeed::Killfeed;
 use ddnet_rs::media::{self, Media};
 use ddnet_rs::movement::Movement;
+use ddnet_rs::nowplaying::{LyricsLine, NowPlayingCard};
 use ddnet_rs::render::items::{self, Items};
 use ddnet_rs::render::map::{MapRender, View, hsl_packed_to_rgb};
 use ddnet_rs::render::players::Players;
@@ -176,6 +177,8 @@ struct App {
     media: Media,
     /// The island is expanded into the media player (F7).
     player_open: bool,
+    /// The lyrics switch as last sent to the media thread.
+    lyrics_on: Option<bool>,
     /// C++ `CClient::m_FrameTimeAverage`.
     frame_time_average: f32,
     /// C++ `m_aCurrentKeyStates`.
@@ -465,6 +468,12 @@ impl App {
         if let Err(e) = self.update_session() {
             self.end_session();
             self.menu.error = Some(e);
+        }
+        // the lyrics switch (island settings) goes to the media thread
+        let lyrics = self.settings.hud.on("island", "lyrics", false);
+        if self.lyrics_on != Some(lyrics) {
+            self.media.send(media::Command::Lyrics(lyrics));
+            self.lyrics_on = Some(lyrics);
         }
         // the player's source choice lasts across restarts
         let chosen = self.media.state().chosen.unwrap_or_default();
@@ -915,6 +924,8 @@ fn main() {
         Box::new(Movement),
         Box::new(Killfeed::new(&storage)),
         Box::new(Island::default()),
+        Box::new(NowPlayingCard::default()),
+        Box::new(LyricsLine::default()),
     ];
     // the C++ HUD switches are the first values of our HUD items
     let mut settings = settings;
@@ -935,6 +946,7 @@ fn main() {
             Some(settings.config.rs_media_source.clone()).filter(|s| !s.is_empty()),
         ),
         player_open: false,
+        lyrics_on: None,
         frame_time_average: 0.0001,
         options,
         storage,

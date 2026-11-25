@@ -232,3 +232,7 @@ only matters for names so long that neither file can exist.
 - The "⋯" menu offers the source only; "compact" and "hide" from SPEC §2 are covered by
   the idle mini player and the HUD editor's item toggle. The chosen source lasts for the
   run.
+- Lyrics come from LRCLIB (lrclib.net) only when the user turns them on; the request
+  carries the track's title and artist and a plain client name, nothing else. WinRT's
+  HTTP client and JSON parser are used (no new crate). "None found" is cached.
+- Large text uses Inter Display (Apple's SF fonts and symbols may not be embedded).

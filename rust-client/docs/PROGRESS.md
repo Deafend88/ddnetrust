@@ -870,12 +870,41 @@ are final unless the user changes them:
   extrapolation), gates, a live run on the local server (client starts and plays with
   the media thread). Review GIF sent (stand-in track, rendered by examples/island.rs).
 
+#### 7.10 review round (2026-11-25)
+- User's live check: title, artist and cover correct (Yandex Music, Spotify) in the
+  island and the F7 player.
+- Fixed: the dark edge on bright maps (a 55 % shadow with spread showed through the 1 px
+  ring at the glass backdrop's edge): `HUD_SHADOW` blur 40, no spread, 14 %, on every HUD
+  bar; the "⋯" button is three drawn dots (32 pt click area); Inter Display Medium/
+  SemiBold (Inter 4.1 release, same OFL, tabular digits) for the timer, finish time,
+  track title, player times (`style::display`, `island::job` for sizes >= LABEL);
+  the source choice is saved (`rs_media_source`, given to `Media::start`).
+- Icons: `examples/icon_compare.rs <material.ttf> <codepoints> <out.png>` renders Phosphor
+  Fill next to Material Symbols Rounded filled (a static FILL 1/wght 400/opsz 24 instance
+  made with fontTools from Google's variable font; not bundled). Waiting for the pick.
+- Lyrics (`lyrics.rs`): LRCLIB `/api/search` by title and artist through WinRT
+  `HttpClient` + `JsonArray` (UA "DDNet-rs/0.1.0"), best synced result within 3 s of
+  the duration, LRC parsed, cached in `<save dir>/lyrics/<fnv>.lrc` (empty file = none
+  found), failures not cached. Fetched on its own thread on a track change while
+  `hud_set island lyrics 1` (off by default; toggle in the island's settings). Shown in
+  the F7 player (previous, current in Inter Display, next) with notes for loading / none
+  / offline / no position. Live check: 61 lines for a known track, NotFound for a fake.
+- Widgets (`nowplaying.rs`, off by default): "Now playing" card (player look without
+  controls, `hud_set nowplaying lyrics` adds the lyrics line), "Lyrics line" (current
+  line in a pill, top 0, 64). `island::player_ui(.., controls, lyric_lines, ..)` and
+  `lyrics_ui` are shared; `island::CoverCache` per widget.
+- Not done: per-app volume (item 6). Windows offers it only through Core Audio COM
+  (`IAudioSessionManager2`, `ISimpleAudioVolume`), which needs `unsafe` (CLAUDE.md: no
+  `unsafe`); `wasapi` 0.27 lists sessions but has no session volume, and
+  `volumecontrol-windows` is device-wide. Waiting for the user's decision.
+- Verified: unit tests (LRC parsing, current line, result matching, cache incl. none
+  found), gates, live runs (local server: real cover in the island, soft shadow).
+  Review images: `examples/media_review.rs`, `icon_compare.rs` (sent to the user).
+
 #### Exact next actions (next session starts here)
 1. Read CLAUDE.md, PLAN §10.3 7.10/7.11, this section, `git log`.
-2. The user's live checklist for 7.10 (their player: Spotify, Yandex Music or a
-   browser): title/artist/cover in the idle row and the track change; F7 player:
-   progress moves, seek, previous/play-pause/next act on the chosen source; "⋯"
-   switches sources; closing the source hides the media parts. Fix what fails.
+2. The user's answers: icon set (Phosphor or Material), per-app volume (allow a small
+   documented `unsafe` block for Core Audio, a crate, or skip).
 3. Then 7.11 (settings page entries, default HUD layout, frame time check, docs).
 4. Before each commit: gates, `/ponytail-review`, UI rules review; update this file.
 
