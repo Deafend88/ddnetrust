@@ -687,21 +687,7 @@ impl Anim {
         let opacity = self.opacity.value.clamp(0.0, 1.0);
         let radius = self.corner.value.clamp(0.0, rect.height() / 2.0);
         let p = ui.painter().clone();
-        let cr = CornerRadius::same(radius.round() as u8);
-        let mut shadow = HUD_SHADOW;
-        shadow.color = shadow.color.gamma_multiply(opacity);
-        p.add(shadow.as_shape(rect, cr));
-        // the blur cannot fade, so it goes with the shape's first and last frames
-        if glass != Glass::Off && opacity > 0.5 {
-            let liquid = glass == Glass::Full;
-            p.add(crate::glass::shape(rect.shrink(1.0), radius - 1.0, liquid));
-        }
-        let fill = if glass == Glass::Full {
-            Glass::liquid_fill()
-        } else {
-            glass.hud_fill()
-        };
-        p.rect_filled(rect, cr, fill.gamma_multiply(opacity));
+        card_glass(&p, rect, radius, glass, opacity);
 
         let alpha = (self.content.value * opacity).clamp(0.0, 1.0);
         match &self.shown {
@@ -718,6 +704,7 @@ impl Anim {
                     volume: &mut self.volume,
                     volume_open: &mut self.volume_open,
                     card: rect,
+                    glass,
                 };
                 let command = player_ui(&mut child, &player, Some(&mut controls), 0, weak);
                 self.player_h = Some(child.min_rect().height());
@@ -872,6 +859,8 @@ pub struct Controls<'a> {
     pub volume_open: &'a mut Option<f64>,
     /// The player card's rect (the slider slides out of its side).
     pub card: Rect,
+    /// The card's glass strength (the slider looks the same).
+    pub glass: Glass,
 }
 
 /// `controls`: the interactive F7 player (source menu, lyrics button, seeking, buttons,
@@ -1174,7 +1163,7 @@ fn volume_button(ui: &mut Ui, area: Rect, level: f32, c: &mut Controls) -> Optio
         *c.volume_open = c.volume_open.is_none().then_some(now);
     }
     if let Some(opened) = *c.volume_open {
-        let (cmd, pane) = volume_pane(ui, c.card, rect, shown, now - opened, c.volume);
+        let (cmd, pane) = volume_pane(ui, c.card, rect, shown, now - opened, c.glass, c.volume);
         command = command.or(cmd);
         // a click anywhere else closes it
         if pane.clicked_elsewhere() && !r.clicked() {
@@ -1186,6 +1175,26 @@ fn volume_button(ui: &mut Ui, area: Rect, level: f32, c: &mut Controls) -> Optio
         *c.volume = None;
     }
     command
+}
+
+/// The island's shape: shadow, blurred game (Liquid Glass at full strength), tint, all
+/// faded by `opacity`. The volume slider uses it too, so both look the same.
+fn card_glass(p: &egui::Painter, rect: Rect, radius: f32, glass: Glass, opacity: f32) {
+    let cr = CornerRadius::same(radius.round() as u8);
+    let mut shadow = HUD_SHADOW;
+    shadow.color = shadow.color.gamma_multiply(opacity);
+    p.add(shadow.as_shape(rect, cr));
+    // the blur cannot fade, so it goes with the shape's first and last frames
+    if glass != Glass::Off && opacity > 0.5 {
+        let liquid = glass == Glass::Full;
+        p.add(crate::glass::shape(rect.shrink(1.0), radius - 1.0, liquid));
+    }
+    let fill = if glass == Glass::Full {
+        Glass::liquid_fill()
+    } else {
+        glass.hud_fill()
+    };
+    p.rect_filled(rect, cr, fill.gamma_multiply(opacity));
 }
 
 /// Whether the volume slider fits left of the card (else it opens on the right).
@@ -1203,6 +1212,7 @@ fn volume_pane(
     speaker: Rect,
     shown: f32,
     age: f64,
+    glass: Glass,
     dragged: &mut Option<f32>,
 ) -> (Option<Command>, egui::Response) {
     let mut command = None;
@@ -1226,10 +1236,8 @@ fn volume_pane(
         .show(ui.ctx(), |ui| {
             ui.set_opacity(t);
             let (pane, br) = ui.allocate_exact_size(size, Sense::click_and_drag());
-            let pill = CornerRadius::same(radius::PILL);
             let p = ui.painter();
-            p.add(HUD_SHADOW.as_shape(pane, pill));
-            p.rect_filled(pane, pill, color::SURFACE.gamma_multiply(0.92 * t));
+            card_glass(p, pane, pane.width() / 2.0, glass, t);
             let track = Rect::from_center_size(
                 pane.center(),
                 vec2(space::XS, pane.height() - 2.0 * space::L),

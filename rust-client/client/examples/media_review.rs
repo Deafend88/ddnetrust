@@ -127,6 +127,7 @@ fn main() {
                                 volume: &mut volume,
                                 volume_open: &mut volume_open,
                                 card: ui.max_rect(),
+                                glass,
                             };
                             player_ui(ui, &player(true), Some(&mut c), 0, weak);
                         });
