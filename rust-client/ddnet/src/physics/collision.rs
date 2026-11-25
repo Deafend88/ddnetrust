@@ -35,6 +35,8 @@ pub const TILE_ALLOW_BLUE_TELE_GUN: i32 = 99;
 pub const TILE_NPH_ENABLE: i32 = 107;
 pub const TILE_TELE_LASER_DISABLE: i32 = 129;
 pub const TILE_LFREEZE: i32 = 144;
+pub const TILE_CP: i32 = 64;
+pub const TILE_CP_F: i32 = 65;
 pub const TILE_LUNFREEZE: i32 = 145;
 pub const TILEFLAG_XFLIP: i32 = 1;
 pub const TILEFLAG_YFLIP: i32 = 2;
@@ -706,6 +708,85 @@ impl Collision {
             || front.is_some_and(|f| f.index as i32 == TILE_THROUGH_ALL)
             || blocks_dir(tile)
             || front.is_some_and(blocks_dir)
+    }
+
+    /// C++: `CCollision::IntersectLine` (collision.cpp:326). Returns (hit tile,
+    /// collision point, point before it).
+    pub fn intersect_line(&self, pos0: Vec2, pos1: Vec2) -> (i32, Vec2, Vec2) {
+        let end = trunc_i32(distance(pos0, pos1) + 1.0);
+        let mut last = pos0;
+        let mut i = 0;
+        while i <= end {
+            let pos = mix(pos0, pos1, i as f32 / end as f32);
+            let (ix, iy) = (round_to_int(pos.x), round_to_int(pos.y));
+            if self.is_solid(ix, iy) {
+                return (self.get_tile(ix, iy), pos, last);
+            }
+            last = pos;
+            i += 1;
+        }
+        (0, pos1, pos1)
+    }
+
+    /// C++: `CCollision::IntersectLineTeleWeapon` (collision.cpp:417) as the prediction
+    /// calls it (lasers), without `pTeleNr`: the tele lookup is skipped, which leaves
+    /// the same loop as `IntersectLine`.
+    pub fn intersect_line_tele_weapon(&self, pos0: Vec2, pos1: Vec2) -> (i32, Vec2, Vec2) {
+        self.intersect_line(pos0, pos1)
+    }
+
+    /// C++: `CCollision::MovePoint` (collision.cpp:466); returns the bounce count.
+    pub fn move_point(&self, pos: &mut Vec2, vel: &mut Vec2, elasticity: f32) -> i32 {
+        let (p, v) = (*pos, *vel);
+        let mut bounces = 0;
+        if self.check_point(p + v) {
+            let mut affected = 0;
+            if self.check_point(vec2(p.x + v.x, p.y)) {
+                vel.x *= -elasticity;
+                bounces += 1;
+                affected += 1;
+            }
+            if self.check_point(vec2(p.x, p.y + v.y)) {
+                vel.y *= -elasticity;
+                bounces += 1;
+                affected += 1;
+            }
+            if affected == 0 {
+                vel.x *= -elasticity;
+                vel.y *= -elasticity;
+            }
+        } else {
+            *pos = p + v;
+        }
+        bounces
+    }
+
+    /// C++: `CCollision::MoverSpeed` (collision.cpp:786): the tile index if the game tile
+    /// at (x, y) is a mover (`TILE_CP`, `TILE_CP_F`) with its speed, else `None` (C++
+    /// returns 0 and leaves the speed untouched).
+    pub fn mover_speed(&self, x: i32, y: i32) -> Option<(i32, Vec2)> {
+        let nx = (x / 32).clamp(0, self.width - 1);
+        let ny = (y / 32).clamp(0, self.height - 1);
+        let tile = self.tiles[(ny * self.width + nx) as usize];
+        let index = tile.index as i32;
+        if index != TILE_CP && index != TILE_CP_F {
+            return None;
+        }
+        let target = match tile.flags as i32 {
+            ROTATION_0 => vec2(0.0, -4.0),
+            ROTATION_90 => vec2(4.0, 0.0),
+            ROTATION_180 => vec2(0.0, 4.0),
+            ROTATION_270 => vec2(-4.0, 0.0),
+            _ => vec2(0.0, 0.0),
+        };
+        Some((
+            index,
+            if index == TILE_CP_F {
+                target * 4.0
+            } else {
+                target
+            },
+        ))
     }
 
     /// C++: `CCollision::IntersectLineTeleHook` (collision.cpp:357) with

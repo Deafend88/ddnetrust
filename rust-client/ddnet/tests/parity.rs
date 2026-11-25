@@ -14,7 +14,7 @@ use ddnet::physics::core::{CharacterCore, WorldCore};
 use ddnet::physics::teams::NUM_DDRACE_TEAMS;
 use ddnet::physics::teams::TeamsCore;
 use ddnet::physics::tuning::{Param, Tuning};
-use ddnet::physics::vmath::{PI, Vec2, direction, vec2};
+use ddnet::physics::vmath::{PI, Vec2, direction, round_to_int, vec2};
 use ddnet::physics::world::{
     Character, GameWorld, NUM_TUNE_ZONES, TUNE_ZONE_OVERRIDE_NONE, WorldConfig,
 };
@@ -222,6 +222,20 @@ fn check_collision(name: &str, map: &Map, col: &Collision, text: &str) {
             lines.next().unwrap(),
             "{name}"
         );
+        let mut movers = Queries::default();
+        for i in 0..col.width() * col.height() {
+            let (x, y) = ((i % col.width()) * 32 + 5, (i / col.width()) * 32 + 30);
+            if let Some((index, speed)) = col.mover_speed(x, y) {
+                movers.int(i);
+                movers.int(index);
+                movers.vec(speed);
+            }
+        }
+        assert_eq!(
+            format!("movers {} {:08x}", movers.0.len() / 4, movers.crc()),
+            lines.next().unwrap(),
+            "{name}"
+        );
 
         let switch_active = |n: u8| n.is_multiple_of(2);
         let mut ticks = 0;
@@ -299,6 +313,29 @@ fn check_collision(name: &str, map: &Map, col: &Collision, text: &str) {
                 if let Some(&first) = outs.first() {
                     q.vec(first);
                 }
+                // weapons (M8.2)
+                for (hit, coll, before) in [
+                    col.intersect_line(pos, end),
+                    col.intersect_line_tele_weapon(pos, end),
+                ] {
+                    q.int(hit);
+                    q.vec(coll);
+                    q.vec(before);
+                }
+                let (mut point_pos, mut point_vel) = (pos, (end - pos) * 0.05);
+                let bounces = col.move_point(&mut point_pos, &mut point_vel, elasticity.x);
+                q.vec(point_pos);
+                q.vec(point_vel);
+                q.int(bounces);
+                let (mut point_pos, mut point_vel) = (pos, vel * 4.0);
+                col.move_point(&mut point_pos, &mut point_vel, 1.0);
+                q.vec(point_pos);
+                q.vec(point_vel);
+                let (mover, speed) = col
+                    .mover_speed(round_to_int(pos.x), round_to_int(pos.y))
+                    .unwrap_or((0, vec2(0.0, 0.0)));
+                q.int(mover);
+                q.vec(speed);
 
                 let got = format!(
                     "{:08x} {:08x} {:08x} {:08x} {:08x}",
@@ -347,10 +384,25 @@ fn collision_hook_teleporters() {
         check_collision(
             name,
             &map,
-            &Collision::from_layers(hook_tele_layers(&map)),
+            &Collision::from_layers(make_movers(hook_tele_layers(&map))),
             &golden_file(name, "collision-hooktele"),
         );
     }
+}
+
+/// rs_parity's `MakeMovers` (collision "hooktele" variant): every 7th empty game tile
+/// becomes a mover, with the four rotations and one unknown flag value.
+fn make_movers(mut layers: Layers) -> Layers {
+    let flags = [0, 8, 3, 11, 1]; // ROTATION_0/90/180/270, TILEFLAG_XFLIP
+    let mut made = 0;
+    for t in layers.tiles.iter_mut().step_by(7) {
+        if t.index == 0 {
+            t.index = if made % 2 == 1 { 65 } else { 64 }; // TILE_CP_F, TILE_CP
+            t.flags = flags[made % 5];
+            made += 1;
+        }
+    }
+    layers
 }
 
 /// The "hooktele" variant of rs_parity: every tele-in tile becomes a hook tele-in.

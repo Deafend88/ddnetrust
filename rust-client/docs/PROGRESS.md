@@ -1023,13 +1023,22 @@ are final unless the user changes them:
   freezes there, which C++ client prediction does not model either (DECISIONS.md).
 - Regenerate: `build-rs/rs_parity.exe msgs data/maps/coverage.map rust-client/tests/golden/msgs.txt`.
 
+#### 8.2 (2026-11-25): collision for weapons — done
+- `Collision::intersect_line`, `intersect_line_tele_weapon` (without tele number, as the
+  laser calls it), `move_point` (bounce count), `mover_speed`. `SetCollisionAt` is not
+  needed: the laser's branch that calls it is unreachable in C++ (DECISIONS.md).
+- Verified: `rs_parity collision` queries all four on every box tick (both line casts to
+  the random ray end, `MovePoint` with that ray and with the box velocity x4,
+  `MoverSpeed` at the box) plus every map tile's `MoverSpeed`; the "hooktele" variant
+  also turns every 7th empty tile into a mover (`MakeMovers`: no bundled map has one).
+  100% identical on all 7 maps and both variants (125 and 15,878 movers); 6 of 6
+  mutations caught.
+
 #### Exact next actions (next session starts here)
-State (2026-11-25): M8 8.1 done and pushed. Waiting for the user's review of earlier
+State (2026-11-25): M8 8.1 and 8.2 done and pushed. Waiting for the user's review of earlier
 work: the HUD fixes, the volume popover (d04d4040a) and 7.11 (89a3b16b2).
 1. Read CLAUDE.md, PLAN §12 (incl. §12.7), this file, `git log`.
-2. Next: 8.2 (collision for weapons: `IntersectLine`, `IntersectLineTeleWeapon`,
-   `MovePoint`, `MoverSpeed`, `SetCollisionAt` with a `Cell` game grid), verified by
-   extending `rs_parity collision`.
+2. Next: 8.3 (weapons and entities in the world, `rs_parity weapons`), then 8.4.
 3. When the `cl_antiping*` config variables are added (8.8 at the latest), read them
    and `cl_prediction_margin` from `settings_ddnet.cfg` once, like name/skin/binds
    (§12.7 answer 1).

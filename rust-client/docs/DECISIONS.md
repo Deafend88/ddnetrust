@@ -262,3 +262,12 @@ only matters for names so long that neither file can exist.
   string (0). ponytail: hex mantissas are exact up to 15 significant digits.
 - C++ client prediction does not model the server's practice-mode death tiles (freeze
   instead of death), so it mispredicts the tick a practice tee touches one; so do we.
+
+## 2026-11-25 — Antiping 8.2: collision for weapons
+
+- `CLaser::DoBounce` tests `Res == -1` around a temporary `SetCollisionAt`, but the
+  prediction calls `IntersectLineTeleWeapon` without `pTeleNr`, so it returns a tile
+  index (1..=TILE_NOLASER) or 0, never -1: that branch is dead in C++. It is not ported,
+  so the game tile grid stays immutable (no `Cell`, unlike PLAN §12.3 assumed).
+- `intersect_line_tele_weapon` is the prediction's call without `pTeleNr`, which skips
+  the tele lookup and is the same loop as `IntersectLine`.

@@ -311,6 +311,23 @@ static void MakeHookTeleporters(IMap *pMap, CLayers *pLayers)
 			pTele[i].m_Type = TILE_TELEINHOOK;
 }
 
+// No bundled map has mover tiles (CPickup::Move): every 7th empty game tile becomes one,
+// with the rotations MoverSpeed knows and one it does not.
+static void MakeMovers(IMap *pMap, CLayers *pLayers)
+{
+	CTile *pTiles = static_cast<CTile *>(pMap->GetData(pLayers->GameLayer()->m_Data));
+	const int Count = pLayers->GameLayer()->m_Width * pLayers->GameLayer()->m_Height;
+	const int aFlags[] = {ROTATION_0, ROTATION_90, ROTATION_180, ROTATION_270, TILEFLAG_XFLIP};
+	int Made = 0;
+	for(int i = 0; pTiles && i < Count; i += 7)
+		if(pTiles[i].m_Index == 0)
+		{
+			pTiles[i].m_Index = Made % 2 ? TILE_CP_F : TILE_CP;
+			pTiles[i].m_Flags = aFlags[Made % 5];
+			Made++;
+		}
+}
+
 static int CollisionMode(const char *pMapFile, const char *pOutFile, bool HookTele, bool Verbose)
 {
 	std::unique_ptr<IStorage> pStorage = CreateLocalStorage();
@@ -320,7 +337,10 @@ static int CollisionMode(const char *pMapFile, const char *pOutFile, bool HookTe
 	if(!pStorage || !f || !LoadMapAndLayers(pStorage.get(), pMapFile, pMap.get(), &Layers))
 		return -1;
 	if(HookTele)
+	{
 		MakeHookTeleporters(pMap.get(), &Layers);
+		MakeMovers(pMap.get(), &Layers);
+	}
 	CCollision Collision;
 	Collision.Init(&Layers);
 
@@ -330,6 +350,20 @@ static int CollisionMode(const char *pMapFile, const char *pOutFile, bool HookTe
 		for(int i = 0; i < Width * Height; i++)
 			vSwitchTypes.push_back(Collision.GetSwitchType(i));
 	fprintf(f, "static %d %08x\n", Collision.m_HighestSwitchNumber, Crc(vSwitchTypes.data(), vSwitchTypes.size() * sizeof(int)));
+	// the mover tiles (CPickup::Move) of the whole map
+	SQueries Movers;
+	for(int i = 0; i < Width * Height; i++)
+	{
+		vec2 Speed(0.0f, 0.0f);
+		const int Mover = Collision.MoverSpeed((i % Width) * 32 + 5, (i / Width) * 32 + 30, &Speed);
+		if(Mover)
+		{
+			Movers.Int(i);
+			Movers.Int(Mover);
+			Movers.Vec(Speed);
+		}
+	}
+	fprintf(f, "movers %d %08x\n", (int)Movers.m_vValues.size() / 4, Movers.Crc());
 
 	const float aElasticities[] = {0.0f, 0.0f, 0.5f, 1.0f, -0.3f, 2.0f};
 	for(int Body = 0; Body < 24; Body++)
@@ -419,6 +453,27 @@ static int CollisionMode(const char *pMapFile, const char *pOutFile, bool HookTe
 			Q.Int((int)vOuts.size());
 			if(!vOuts.empty())
 				Q.Vec(vOuts[0]);
+			// weapons (M8.2)
+			Q.Int(Collision.IntersectLine(Pos, End, &Coll, &Before));
+			Q.Vec(Coll);
+			Q.Vec(Before);
+			Q.Int(Collision.IntersectLineTeleWeapon(Pos, End, &Coll, &Before));
+			Q.Vec(Coll);
+			Q.Vec(Before);
+			vec2 PointPos = Pos, PointVel = (End - Pos) * 0.05f;
+			int Bounces = -1;
+			Collision.MovePoint(&PointPos, &PointVel, Elasticity.x, &Bounces);
+			Q.Vec(PointPos);
+			Q.Vec(PointVel);
+			Q.Int(Bounces);
+			PointPos = Pos;
+			PointVel = Vel * 4.0f;
+			Collision.MovePoint(&PointPos, &PointVel, 1.0f, nullptr);
+			Q.Vec(PointPos);
+			Q.Vec(PointVel);
+			vec2 Speed(0.0f, 0.0f);
+			Q.Int(Collision.MoverSpeed(round_to_int(Pos.x), round_to_int(Pos.y), &Speed));
+			Q.Vec(Speed);
 
 			fprintf(f, "%d %d %d %d %d %d %d %08x %08x %08x %08x %08x", Ax, Jump, Boost, Bx, By, AngleDeg, Len,
 				FloatBits(Pos.x), FloatBits(Pos.y), FloatBits(Vel.x), FloatBits(Vel.y), Q.Crc());
