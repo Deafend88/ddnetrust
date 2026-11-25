@@ -755,6 +755,9 @@ Built before the editor (the user chose this order) so the editor drags a real w
   18dc668d2 again.
 - The user plays with the HUD for a while before more polish.
 
+- Watermark container corner default 35 % -> 40 % of its height (user review: a bit
+  rounder, closer to the old shape than to the pill); the logo keeps radius 8.
+
 #### Exact next actions (next session starts here)
 1. Read CLAUDE.md, PLAN §10.3, this section, `git log`.
 2. Apply the user's review of the chips and their final watermark slider values.

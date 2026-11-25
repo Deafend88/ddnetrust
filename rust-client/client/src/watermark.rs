@@ -49,7 +49,7 @@ pub struct Look {
 impl Default for Look {
     fn default() -> Self {
         Self {
-            corner: 35.0,
+            corner: 40.0,
             logo_radius: 8.0,
             // the earlier, larger logo: the mark and 12 above and below
             logo_height: size::ICON + 2.0 * space::M,
