@@ -14,13 +14,9 @@
 # -Kills (M7.8): the C++ client plays instead (client 1); the states are kill messages
 # (kill_pl 1, kill_pl 0, kill_pl 1) and the top right corners (killfeeds) are compared.
 #
-# -Island (M7.9): both top centres (C++ timer, pause and broadcast texts vs. our island)
-# in the states 0 timer, 1 our tee moved to the spectators (C++ shows "Free-View" in its
-# spectator box, bottom right), 2 pause_game, 3 rcon broadcast.
-#
 # Needs: build-rs\DDNet-Server.exe, build-rs-client\DDNet.exe, a debug ddnet-rs build.
 # Usage (repo root): rust-client\scripts\statusbar_check.ps1 [-Kills]
-param([string]$OutDir = "$env:TEMP\ddnet-rs-status", [switch]$Kills, [switch]$Island)
+param([string]$OutDir = "$env:TEMP\ddnet-rs-status", [switch]$Kills)
 $ErrorActionPreference = "Stop"
 $repo = Resolve-Path "$PSScriptRoot\..\.."
 $srvDir = "$OutDir\server"; $cDir = "$OutDir\cpp-client"
@@ -69,16 +65,6 @@ function Save-Pair([string]$Cpp, [string]$Rust, [string]$Out) {
     $a = [System.Drawing.Image]::FromFile($Cpp); $b = [System.Drawing.Image]::FromFile($Rust)
     $img = New-Object System.Drawing.Bitmap 1000, 200
     $g = [System.Drawing.Graphics]::FromImage($img)
-    if ($Island) {   # the top 160 px, C++ above ours
-        $g.Dispose(); $img.Dispose()
-        $img = New-Object System.Drawing.Bitmap 800, 320
-        $g = [System.Drawing.Graphics]::FromImage($img)
-        $src = New-Object System.Drawing.Rectangle 0, 0, 800, 160
-        $g.DrawImage($a, (New-Object System.Drawing.Rectangle 0, 0, 800, 160), $src, [System.Drawing.GraphicsUnit]::Pixel)
-        $g.DrawImage($b, (New-Object System.Drawing.Rectangle 0, 160, 800, 160), $src, [System.Drawing.GraphicsUnit]::Pixel)
-        $g.Dispose(); $a.Dispose(); $b.Dispose(); $img.Save($Out, [System.Drawing.Imaging.ImageFormat]::Png); $img.Dispose()
-        return
-    }
     # the C++ HUD at 2x; with -Kills the right halves (killfeeds) instead of the left
     $cx = if ($Kills) { 600 } else { 0 }; $rx = if ($Kills) { 200 } else { 0 }
     $g.DrawImage($a, (New-Object System.Drawing.Rectangle 0, 0, 400, 200), (New-Object System.Drawing.Rectangle $cx, 0, 200, 100), [System.Drawing.GraphicsUnit]::Pixel)
@@ -96,9 +82,6 @@ $binds = @(
 )
 if ($Kills) {
     $binds = 'player_name "subject"', 'bind f9 "rcon_auth test"', 'bind f5 "rcon kill_pl 1"', 'bind f7 "rcon kill_pl 0"', 'bind f8 "rcon kill_pl 1"'
-}
-if ($Island) {
-    $binds = 'player_name "subject"', 'bind f9 "rcon_auth test"', 'bind f5 "rcon set_team 0 -1"', 'bind f7 "rcon pause_game"', 'bind f8 "rcon broadcast Hello from rcon"'
 }
 Set-Content -Path "$OutDir\settings_ddnet.cfg" -Value $binds -Encoding ascii
 $sargs = '"sv_register 0"', '"bindaddr 127.0.0.1"', '"sv_port 8303"', '"sv_map dm1"', '"sv_rcon_password test"', '"sv_test_cmds 1"'

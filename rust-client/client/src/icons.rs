@@ -86,12 +86,12 @@ pub const LOCK: &str = "\u{e2fa}";
 pub const BARBELL: &str = "\u{e0b6}";
 /// Phosphor `users` (fill).
 pub const USERS: &str = "\u{e4d6}";
+/// Phosphor `info` (fill).
+pub const INFO: &str = "\u{e2ce}";
 /// Phosphor `caret-up` (fill).
 pub const CARET_UP: &str = "\u{e13c}";
 /// Phosphor `caret-down` (fill).
 pub const CARET_DOWN: &str = "\u{e136}";
-/// Phosphor `chat-circle-text` (fill).
-pub const CHAT: &str = "\u{e16e}";
 
 /// Every icon above, in order (the gallery shows them all).
 pub const ALL: [&str; 45] = [
@@ -137,7 +137,7 @@ pub const ALL: [&str; 45] = [
     LOCK,
     BARBELL,
     USERS,
+    INFO,
     CARET_UP,
     CARET_DOWN,
-    CHAT,
 ];

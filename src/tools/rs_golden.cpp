@@ -1060,45 +1060,6 @@ static void GenStrTime(FILE *f)
 	}
 }
 
-static void Hex(FILE *f, const std::string &s)
-{
-	if(s.empty())
-		fputc('-', f);
-	for(unsigned char c : s)
-		fprintf(f, "%02x", c);
-}
-
-// str_utf8_find_nocase (the chat mention match, CChat::LineShouldHighlight) on random
-// strings of mixed-case ASCII, Latin, Cyrillic and Greek letters, the separators the
-// highlight checks, and malformed UTF-8; searched from every byte offset, mid-character
-// ones included. Lines: "<haystack hex> <needle hex> <from> <offset or -1>", "-" = empty.
-static void GenFindNocase(FILE *f)
-{
-	const char *apPieces[] = {"a", "A", "e", "E", "t", "T", " ", ".", "!", ":", "?", ",", ";", "-",
-		"\xc3\xa4", "\xc3\x84", "\xc3\xb6", "\xc3\x96", "\xc3\x9f", "\xe1\xba\x9e", "\xd0\xbf", "\xd0\x9f",
-		"\xd0\xb8", "\xd0\x98", "\xcf\x83", "\xce\xa3", "\xcf\x82", "\xc4\xb0", "\xc4\xb1", "i", "I",
-		"\xff", "\x80", "\xe0\x80", "\xf0\x9f\x98\x80"};
-	const int NumPieces = std::size(apPieces);
-	for(int i = 0; i < 1500; i++)
-	{
-		std::string Haystack, Needle;
-		const int HayLen = Rand() % 13;
-		for(int j = 0; j < HayLen; j++)
-			Haystack += apPieces[Rand() % NumPieces];
-		const int NeedleLen = Rand() % 4;
-		for(int j = 0; j < NeedleLen; j++)
-			Needle += apPieces[Rand() % (NumPieces - 4)]; // valid UTF-8 like a player name
-		for(size_t From = 0; From <= Haystack.size(); From++)
-		{
-			const char *pHit = str_utf8_find_nocase(Haystack.c_str() + From, Needle.c_str());
-			Hex(f, Haystack);
-			fputc(' ', f);
-			Hex(f, Needle);
-			fprintf(f, " %d %d\n", (int)From, pHit ? (int)(pHit - Haystack.c_str()) : -1);
-		}
-	}
-}
-
 int main(int argc, const char **argv)
 {
 	CCmdlineFix CmdlineFix(&argc, &argv);
@@ -1125,7 +1086,6 @@ int main(int argc, const char **argv)
 		{"snapshot.txt", GenSnapshot},
 		{"conn.txt", GenConn},
 		{"str_time.txt", GenStrTime},
-		{"find_nocase.txt", GenFindNocase},
 	};
 	for(const SGen &Gen : aGens)
 	{

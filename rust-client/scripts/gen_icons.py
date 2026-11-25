@@ -59,9 +59,9 @@ ICONS = [
 	("lock", "LOCK"),  # lock mode
 	("barbell", "BARBELL"),  # practice mode
 	("users", "USERS"),  # team (team 0 mode)
+	("info", "INFO"),  # information
 	("caret-up", "CARET_UP"),  # move up
 	("caret-down", "CARET_DOWN"),  # move down
-	("chat-circle-text", "CHAT"),  # chat mention
 ]
 
 

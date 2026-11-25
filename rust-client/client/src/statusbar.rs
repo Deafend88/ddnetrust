@@ -332,11 +332,11 @@ impl Widget for StatusBar {
     }
 
     fn default_placement(&self) -> Placement {
-        // top left (the watermark that was above it is the island now)
+        // under the watermark (16 + its 57 pt + 15)
         Placement {
             anchor: Anchor::TopLeft,
             x: 16,
-            y: 16,
+            y: 88,
             enabled: true,
         }
     }

@@ -179,45 +179,6 @@ impl HudConfig {
             .unwrap_or(default)
     }
 
-    /// 7.9: the watermark became the Dynamic Island: its settings move to the island's
-    /// id (the island's own win), its on/off too; its place only if it was moved (the
-    /// island's default is top centre, the watermark's was top left 16, 16). Runs once:
-    /// the watermark's lines are gone afterwards.
-    pub fn migrate_watermark(&mut self) {
-        let old: Vec<_> = (self.values.keys())
-            .filter(|(id, _)| id == "watermark")
-            .cloned()
-            .collect();
-        for key in old {
-            let v = self.values.remove(&key).unwrap_or_default();
-            self.values.entry(("island".into(), key.1)).or_insert(v);
-        }
-        // the race status sat under the watermark (16, 88): up into the free corner
-        let had_watermark = self.placements.contains_key("watermark");
-        if let Some(p) = self.placements.get_mut("status")
-            && (p.anchor, p.x, p.y) == (Anchor::TopLeft, 16, 88)
-            && had_watermark
-        {
-            p.y = 16;
-        }
-        if let Some(p) = self.placements.remove("watermark") {
-            let moved = (p.anchor, p.x, p.y) != (Anchor::TopLeft, 16, 16);
-            if moved {
-                self.placements.entry("island".into()).or_insert(p);
-            } else if let Some(island) = self.placements.get_mut("island") {
-                island.enabled &= p.enabled;
-            } else if !p.enabled {
-                let off = Placement {
-                    anchor: Anchor::Top,
-                    x: 0,
-                    y: 16,
-                    enabled: false,
-                };
-                self.placements.insert("island".into(), off);
-            }
-        }
-    }
-
     /// The C++ HUD settings as first values, for what our settings.cfg does not set yet
     /// (DDNet behaviour: an item that is off is not shown; a widget with no item on is
     /// hidden). `cpp` reads a C++ variable as on/off; `default` is a widget's default
@@ -234,10 +195,6 @@ impl HudConfig {
             ("status", "jumps", "cl_showhud_jumps_indicator"),
             ("killfeed", "kills", "cl_showkillmessages"),
             ("killfeed", "finishes", "cl_show_finish_messages"),
-            ("island", "timer", "cl_showhud_timer"),
-            ("island", "checkpoint", "cl_showhud_time_cp_diff"),
-            ("island", "broadcasts", "cl_show_broadcasts"),
-            ("island", "spectator", "cl_showhud_spectator"),
         ] {
             if self.value(id, key).is_none() {
                 self.set(id, key, cpp(var) as i32);
@@ -288,8 +245,6 @@ pub struct HudData<'a> {
     /// The followed tee (the local one, or the one followed with `--follow`); the
     /// spectator camera is not ported yet, so spectating keeps the local id.
     pub tee: Option<&'a Rendered>,
-    /// The track the OS media session plays (7.10; none until then).
-    pub now_playing: Option<&'a crate::island::NowPlaying>,
     /// Game messages received since the last frame (broadcasts, kill and finish
     /// messages, records), oldest first.
     pub events: &'a [GameMsg],

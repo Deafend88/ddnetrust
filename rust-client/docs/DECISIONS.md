@@ -190,30 +190,3 @@ only matters for names so long that neither file can exist.
   `m_GrenadeHitDisabled && m_HasTelegunGun` (and draws the laser indicator's quad), so it
   follows the grenade flag, not `m_GunHitDisabled` (which the core does not even have).
   Suspected C++ bug; the status bar (7.7) keeps the same decision.
-
-## 2026-11-25 — Dynamic Island (M7.9), merged with the watermark
-
-- User decision: the watermark and the island are ONE element (`island.rs`, id
-  `island`, default top centre 0, 16). Idle it is the watermark (logo, stats, all its
-  settings) plus the race timer, a pause/spectator status and the mini player; events
-  expand it and it collapses back. The separate watermark widget is gone;
-  `HudConfig::migrate_watermark` moves its saved `hud_set` lines to `island` (the
-  island's own values win), its on/off, and its place only if it was moved; a race
-  status still at its old default (16, 88) moves up to (16, 16).
-- Timer, finish/checkpoint texts, broadcast lifetime, pause and spectator texts are
-  ported from C++ (`RenderGameTimer`, `OnMessage`/`RenderDDRaceEffects`, `CBroadcast`,
-  `RenderPauseNotification`, `RenderSpectatorHud`); C++'s own fades (finish 4-6 s,
-  broadcast last 1 s) are replaced by the island's transition, the lifetimes are kept.
-- Events by priority: finish > chat mention > broadcast > track change; one shows at a
-  time, a lower one may expire unseen. While a broadcast shows, the timer stays at its
-  end, but a pause or spectator status is hidden until it collapses (C++ shows all).
-- Broadcasts are trimmed (servers pad them with blank lines and spaces to place them
-  on screen) and wrap at 480 pt.
-- Chat mentions: `CChat::AddLine` (trim, 256 code points, repeat rule) and
-  `LineShouldHighlight` ported with the C++ lowercase table (`scripts/gen_tolower.py`);
-  `str_utf8_find_nocase` golden-tested. Not ported: friends/foes/ignore filters (no
-  friends list yet), the dummy's name. Mentions and track changes have no C++ notice:
-  they show 4 s and 3 s (the concept's 3 s).
-- `Sv_RecordLegacy` (`m_DDRaceRecordMessage`, old DDRace servers) is not ported.
-- Size springs are slightly underdamped (`Spring::update_damped`, zeta 0.75, ~3 %
-  overshoot, settled in `motion::SPRING`); fades stay critically damped.
