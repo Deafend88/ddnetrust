@@ -189,6 +189,9 @@ pub struct HudData<'a> {
     pub frame_time_average: f32,
     /// The glass strength panels are drawn with.
     pub glass: Glass,
+    /// The HUD editor is open: widgets with nothing to show draw a sample, so they can
+    /// be placed.
+    pub editing: bool,
     pub predictor: Option<&'a Predictor>,
     /// The followed tee (the local one, or the one followed with `--follow`); the
     /// spectator camera is not ported yet, so spectating keeps the local id.

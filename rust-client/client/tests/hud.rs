@@ -93,6 +93,7 @@ fn place(placement: Placement, ppp: f32, screen: egui::Vec2) -> Rect {
         player_name: "",
         frame_time_average: 0.0001,
         glass: Glass::Subtle,
+        editing: false,
         predictor: None,
         tee: None,
         events: &[],
@@ -210,6 +211,7 @@ fn watermark_fps_rounds_like_cpp() {
         player_name: "brainless tee",
         frame_time_average: avg,
         glass: Glass::Off,
+        editing: false,
         predictor: None,
         tee: None,
         events: &[],
@@ -301,6 +303,7 @@ fn editor_drags_a_widget_into_the_config() {
         player_name: "",
         frame_time_average: 0.01,
         glass: Glass::Off,
+        editing: false,
         predictor: None,
         tee: None,
         events: &[],
@@ -424,6 +427,7 @@ fn watermark_layout_measurements() {
         player_name: "brainless tee",
         frame_time_average: 0.01,
         glass: Glass::Off,
+        editing: false,
         predictor: None,
         tee: None,
         events: &[],
@@ -774,4 +778,144 @@ fn status_bar_follows_render_player_state() {
     let mut no_telegun = quirk.clone();
     no_telegun.has_telegun_gun = false;
     assert_eq!(only(&no_telegun), [I::GrenadeHitDisabled]);
+}
+
+/// 7.8/7.9: `str_time` in every format and `str_time_float` against the real C++
+/// (`rs_golden` str_time.txt: unit boundaries, extremes, random values).
+#[test]
+fn str_time_matches_cpp() {
+    use ddnet_rs::timefmt::{TimeFormat, str_time, str_time_float};
+    let path = format!(
+        "{}/../tests/golden/str_time.txt",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let text = std::fs::read_to_string(path).unwrap();
+    let mut n = 0;
+    for line in text.lines() {
+        let f: Vec<&str> = line.splitn(4, ' ').collect();
+        let format = TimeFormat::ALL[f[1].parse::<usize>().unwrap()];
+        let got = match f[0] {
+            "t" => str_time(f[2].parse().unwrap(), format),
+            _ => str_time_float(
+                f32::from_bits(u32::from_str_radix(f[2], 16).unwrap()),
+                format,
+            ),
+        };
+        assert_eq!(got, f[3], "{line}");
+        n += 1;
+    }
+    assert_eq!(n, 6 * (19 + 300 + 300));
+}
+
+/// 7.8: `CInfoMessages`' rules: five entries at most (a new one overwrites the oldest),
+/// oldest first, gone 500 ticks after arriving, kills that would be empty skipped,
+/// inactive clients unnamed, finishes only for active clients, C++'s time texts.
+#[test]
+fn killfeed_follows_info_messages() {
+    use ddnet::protocol::generated::{GameMsg, MsgSvKillMsg, MsgSvKillMsgTeam, MsgSvRaceFinish};
+    use ddnet_rs::killfeed::{Feed, Kind, LIFETIME_TICKS};
+
+    // clients 0..3 are active, named "p0".."p3"
+    let name = |id: i32| (0..4).contains(&id).then(|| format!("p{id}"));
+    let kill = |killer, victim, weapon| {
+        GameMsg::SvKillMsg(MsgSvKillMsg {
+            killer,
+            victim,
+            weapon,
+            mode_special: 0,
+        })
+    };
+    let mut feed = Feed::default();
+    for (n, tick) in (0..7).zip(100..) {
+        feed.on_message(&kill(1, 2, n % 6), name, tick);
+    }
+    // seven arrived, the last five show, oldest first
+    let ticks: Vec<i32> = feed.entries(106).iter().map(|e| e.tick).collect();
+    assert_eq!(ticks, [102, 103, 104, 105, 106]);
+    // an entry lives through tick + 500 and is gone after
+    assert_eq!(feed.entries(102 + LIFETIME_TICKS).len(), 5);
+    assert_eq!(feed.entries(103 + LIFETIME_TICKS).len(), 4);
+    assert_eq!(feed.entries(107 + LIFETIME_TICKS).len(), 0);
+
+    let mut feed = Feed::default();
+    // inactive killer and victim with a world kill (weapon -2): empty, skipped
+    feed.on_message(&kill(40, 41, -2), name, 0);
+    assert!(feed.entries(0).is_empty());
+    // inactive victim, active killer: kept, the killer named
+    feed.on_message(&kill(3, 41, 1), name, 0);
+    // self kill: same id for both
+    feed.on_message(&kill(2, 2, -1), name, 0);
+    let kinds: Vec<Kind> = feed
+        .entries(0)
+        .into_iter()
+        .map(|e| e.kind.clone())
+        .collect();
+    assert_eq!(
+        kinds[0],
+        Kind::Kill {
+            victim: None,
+            killer: Some((3, "p3".into())),
+            weapon: 1
+        }
+    );
+    assert_eq!(
+        kinds[1],
+        Kind::Kill {
+            victim: Some((2, "p2".into())),
+            killer: Some((2, "p2".into())),
+            weapon: -1
+        }
+    );
+
+    // team kills always add an entry; finishes need an active client
+    let mut feed = Feed::default();
+    feed.on_message(
+        &GameMsg::SvKillMsgTeam(MsgSvKillMsgTeam { team: 3, first: -1 }),
+        name,
+        0,
+    );
+    let finish = |client_id, time, diff, record_personal| {
+        GameMsg::SvRaceFinish(MsgSvRaceFinish {
+            client_id,
+            time,
+            diff,
+            record_personal,
+            record_server: 0,
+        })
+    };
+    feed.on_message(&finish(40, 1000, 0, 0), name, 0);
+    feed.on_message(&finish(1, 3_723_450, -1_500, 1), name, 0);
+    feed.on_message(&finish(2, 42_100, 360, 0), name, 0);
+    feed.on_message(&finish(3, 5, 0, 0), name, 0);
+    let kinds: Vec<Kind> = feed
+        .entries(0)
+        .into_iter()
+        .map(|e| e.kind.clone())
+        .collect();
+    assert_eq!(kinds.len(), 4);
+    assert_eq!(kinds[0], Kind::TeamKill { team: 3 });
+    // C++ str_time_float(.., HOURS_CENTISECS) of time / 1000 and |diff| / 1000
+    assert_eq!(
+        kinds[1],
+        Kind::Finish {
+            name: "p1".into(),
+            // 3723.45 as f32 is 3723.4499..: C++ rounds it to the even 03.44
+            time: "01:02:03.44".into(),
+            diff: Some("(-01.50)".into()),
+            faster: true,
+            record: true
+        }
+    );
+    assert_eq!(
+        kinds[2],
+        Kind::Finish {
+            name: "p2".into(),
+            time: "42.10".into(),
+            diff: Some("(+00.36)".into()),
+            faster: false,
+            record: false
+        }
+    );
+    // 5 ms rounds to an even centisecond: 0
+    assert!(matches!(&kinds[3], Kind::Finish { time, diff: None, .. } if time == "00.00"));
 }

@@ -10,7 +10,9 @@
 #include <base/mem.h>
 #include <base/net.h>
 #include <base/os.h>
+#include <base/math.h>
 #include <base/str.h>
+#include <base/time.h>
 
 #include <engine/shared/compression.h>
 #include <engine/shared/huffman.h>
@@ -1021,6 +1023,43 @@ static void GenConn(FILE *f)
 	net_udp_close(ServerSock);
 }
 
+// str_time for every format at the unit boundaries and random values, and str_time_float
+// for times in milliseconds / 1000 as the finish and record messages use it. Lines:
+// "t <format> <centisecs> <text>" and "f <format> <float bits> <text>".
+static void GenStrTime(FILE *f)
+{
+	const int64_t aEdges[] = {-1, 0, 1, 99, 100, 101, 5999, 6000, 6001, 359999, 360000, 360001,
+		8639999, 8640000, 8640001, 999999999, 2147483647, 214748364700, 9223372036854775807};
+	char aBuf[64];
+	for(int Format = 0; Format <= (int)ETimeFormat::SECS_CENTISECS; Format++)
+	{
+		for(int64_t Centisecs : aEdges)
+		{
+			str_time(Centisecs, (ETimeFormat)Format, aBuf, sizeof(aBuf));
+			fprintf(f, "t %d %lld %s\n", Format, (long long)Centisecs, aBuf);
+		}
+		for(int i = 0; i < 300; i++)
+		{
+			const int64_t Centisecs = (int64_t)(Rand() % 4 == 0 ? Rand() % 1000000000u : Rand() % 1000000u);
+			str_time(Centisecs, (ETimeFormat)Format, aBuf, sizeof(aBuf));
+			fprintf(f, "t %d %lld %s\n", Format, (long long)Centisecs, aBuf);
+		}
+		for(int i = 0; i < 300; i++)
+		{
+			// a network int in milliseconds, as Sv_RaceFinish m_Time / 1000.0f (incl.
+			// negative diffs and the extremes)
+			int Ms = (int)(Rand() % 10 == 0 ? (Rand() << 8) ^ Rand() : Rand() % 4000000u);
+			if(i < 4)
+				Ms = i == 0 ? INT32_MIN : i == 1 ? INT32_MAX : i == 2 ? -1 : 5;
+			const float Secs = (i % 2 ? absolute(Ms) : Ms) / 1000.0f;
+			unsigned Bits;
+			mem_copy(&Bits, &Secs, sizeof(Bits));
+			str_time_float(Secs, (ETimeFormat)Format, aBuf, sizeof(aBuf));
+			fprintf(f, "f %d %08x %s\n", Format, Bits, aBuf);
+		}
+	}
+}
+
 int main(int argc, const char **argv)
 {
 	CCmdlineFix CmdlineFix(&argc, &argv);
@@ -1046,6 +1085,7 @@ int main(int argc, const char **argv)
 		{"protocol.txt", GenProtocol},
 		{"snapshot.txt", GenSnapshot},
 		{"conn.txt", GenConn},
+		{"str_time.txt", GenStrTime},
 	};
 	for(const SGen &Gen : aGens)
 	{

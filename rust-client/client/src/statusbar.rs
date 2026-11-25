@@ -274,12 +274,13 @@ fn weapon_images(storage: &Storage) -> Vec<Option<ColorImage>> {
         .collect()
 }
 
-pub struct StatusBar {
+/// The six weapons' pickup sprites as egui images (the status bar, the killfeed).
+pub struct WeaponIcons {
     images: Vec<Option<ColorImage>>,
     textures: Vec<Option<TextureHandle>>,
 }
 
-impl StatusBar {
+impl WeaponIcons {
     pub fn new(storage: &Storage) -> Self {
         Self {
             images: weapon_images(storage),
@@ -287,8 +288,8 @@ impl StatusBar {
         }
     }
 
-    /// A weapon sprite, `size::ICON` tall, at `alpha` (C++: 0.4 for weapons not held).
-    fn weapon(&mut self, ui: &mut Ui, weapon: usize, alpha: f32) {
+    /// A weapon sprite, `size::ICON` tall, at `alpha`; nothing for an unknown weapon.
+    pub fn draw(&mut self, ui: &mut Ui, weapon: usize, alpha: f32) {
         if self.textures.is_empty() {
             let ctx = ui.ctx().clone();
             self.textures = (self.images.iter().enumerate())
@@ -305,6 +306,14 @@ impl StatusBar {
         let h = size::ICON;
         let tint = Color32::WHITE.gamma_multiply(alpha);
         ui.add(egui::Image::new((t.id(), egui::vec2(h * tw / th, h))).tint(tint));
+    }
+}
+
+pub struct StatusBar(WeaponIcons);
+
+impl StatusBar {
+    pub fn new(storage: &Storage) -> Self {
+        Self(WeaponIcons::new(storage))
     }
 }
 
@@ -406,7 +415,8 @@ impl Widget for StatusBar {
             if !s.weapons.is_empty() {
                 group(ui);
                 for &(weapon, active) in &s.weapons {
-                    self.weapon(ui, weapon, if active { 1.0 } else { 0.4 });
+                    // C++: 0.4 for weapons not held
+                    self.0.draw(ui, weapon, if active { 1.0 } else { 0.4 });
                     if weapon == WEAPON_NINJA
                         && let Some(p) = s.ninja
                     {
@@ -422,7 +432,7 @@ impl Widget for StatusBar {
                 for &ind in row {
                     w::icon(ui, icon_of(ind), size::ICON, color::TEXT);
                     if let Some(weapon) = weapon_of(ind) {
-                        self.weapon(ui, weapon, 1.0);
+                        self.0.draw(ui, weapon, 1.0);
                     }
                 }
             }

@@ -11,9 +11,12 @@
 #   0 spawn, 1 all weapons + jetpack + endless jump + endless hook + 5 jumps,
 #   2 ninja + solo, 3 deep freeze + live freeze
 #
+# -Kills (M7.8): the C++ client plays instead (client 1); the states are kill messages
+# (kill_pl 1, kill_pl 0, kill_pl 1) and the top right corners (killfeeds) are compared.
+#
 # Needs: build-rs\DDNet-Server.exe, build-rs-client\DDNet.exe, a debug ddnet-rs build.
-# Usage (repo root): rust-client\scripts\statusbar_check.ps1
-param([string]$OutDir = "$env:TEMP\ddnet-rs-status")
+# Usage (repo root): rust-client\scripts\statusbar_check.ps1 [-Kills]
+param([string]$OutDir = "$env:TEMP\ddnet-rs-status", [switch]$Kills)
 $ErrorActionPreference = "Stop"
 $repo = Resolve-Path "$PSScriptRoot\..\.."
 $srvDir = "$OutDir\server"; $cDir = "$OutDir\cpp-client"
@@ -62,8 +65,10 @@ function Save-Pair([string]$Cpp, [string]$Rust, [string]$Out) {
     $a = [System.Drawing.Image]::FromFile($Cpp); $b = [System.Drawing.Image]::FromFile($Rust)
     $img = New-Object System.Drawing.Bitmap 1000, 200
     $g = [System.Drawing.Graphics]::FromImage($img)
-    $g.DrawImage($a, (New-Object System.Drawing.Rectangle 0, 0, 400, 200), (New-Object System.Drawing.Rectangle 0, 0, 200, 100), [System.Drawing.GraphicsUnit]::Pixel)
-    $g.DrawImage($b, (New-Object System.Drawing.Rectangle 400, 0, 600, 200), (New-Object System.Drawing.Rectangle 0, 0, 600, 200), [System.Drawing.GraphicsUnit]::Pixel)
+    # the C++ HUD at 2x; with -Kills the right halves (killfeeds) instead of the left
+    $cx = if ($Kills) { 500 } else { 0 }; $rx = if ($Kills) { 200 } else { 0 }
+    $g.DrawImage($a, (New-Object System.Drawing.Rectangle 0, 0, 400, 200), (New-Object System.Drawing.Rectangle ($cx + 100), 0, 200, 100), [System.Drawing.GraphicsUnit]::Pixel)
+    $g.DrawImage($b, (New-Object System.Drawing.Rectangle 400, 0, 600, 200), (New-Object System.Drawing.Rectangle $rx, 0, 600, 200), [System.Drawing.GraphicsUnit]::Pixel)
     $g.Dispose(); $a.Dispose(); $b.Dispose(); $img.Save($Out, [System.Drawing.Imaging.ImageFormat]::Png); $img.Dispose()
 }
 
@@ -75,6 +80,9 @@ $binds = @(
     'bind f7 "rcon unweapons; rcon unjetpack; rcon uninfinite_jump; rcon unendless_hook; rcon setjumps 2; rcon ninja; rcon solo"',
     'bind f8 "rcon unninja; rcon unsolo; rcon deep; rcon livefreeze"'
 )
+if ($Kills) {
+    $binds = 'player_name "subject"', 'bind f9 "rcon_auth test"', 'bind f5 "rcon kill_pl 1"', 'bind f7 "rcon kill_pl 0"', 'bind f8 "rcon kill_pl 1"'
+}
 Set-Content -Path "$OutDir\settings_ddnet.cfg" -Value $binds -Encoding ascii
 $sargs = '"sv_register 0"', '"bindaddr 127.0.0.1"', '"sv_port 8303"', '"sv_map dm1"', '"sv_rcon_password test"', '"sv_test_cmds 1"'
 $srv = Start-Process -FilePath "$repo\build-rs\DDNet-Server.exe" -ArgumentList $sargs -WorkingDirectory $srvDir -RedirectStandardOutput "$srvDir\server.log" -RedirectStandardError "$srvDir\server.err" -PassThru
@@ -84,7 +92,8 @@ try {
     $r = Start-Process -FilePath "$repo\rust-client\target\debug\ddnet-rs.exe" -ArgumentList "127.0.0.1:8303", "--size", "800x600", "--no-grab" -WorkingDirectory $OutDir -RedirectStandardOutput "$OutDir\rust.log" -PassThru
     Start-Sleep -Seconds 4
     $env:ALL_PROXY = "http://127.0.0.1:9"; $env:HTTPS_PROXY = "http://127.0.0.1:9"; $env:HTTP_PROXY = "http://127.0.0.1:9"
-    $cargs = '"gfx_fullscreen 0"', '"gfx_borderless 0"', '"gfx_screen_width 800"', '"gfx_screen_height 600"', '"cl_showchat 0"', '"cl_motd_time 0"', '"cl_show_welcome 1"', '"snd_enable 0"', '"logfile cpp.log"', '"cl_run_on_join spec subject"', '"connect 127.0.0.1:8303"'
+    $cargs = '"gfx_fullscreen 0"', '"gfx_borderless 0"', '"gfx_screen_width 800"', '"gfx_screen_height 600"', '"cl_showchat 0"', '"cl_motd_time 0"', '"cl_show_welcome 1"', '"snd_enable 0"', '"logfile cpp.log"', '"connect 127.0.0.1:8303"'
+    if (-not $Kills) { $cargs = @('"cl_run_on_join spec subject"') + $cargs }
     $c = Start-Process -FilePath "$repo\build-rs-client\DDNet.exe" -ArgumentList $cargs -WorkingDirectory $cDir -PassThru
     Start-Sleep -Seconds 6
     $r.Refresh(); $h = $r.MainWindowHandle

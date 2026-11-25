@@ -29,6 +29,7 @@ use ddnet_rs::gfx::batch::Batch;
 use ddnet_rs::gfx::{self, Gfx, Size, block_on};
 use ddnet_rs::hud::{self, HudData, Widget};
 use ddnet_rs::hud_editor::Editor;
+use ddnet_rs::killfeed::Killfeed;
 use ddnet_rs::movement::Movement;
 use ddnet_rs::render::items::{self, Items};
 use ddnet_rs::render::map::{MapRender, View, hsl_packed_to_rgb};
@@ -553,6 +554,7 @@ impl App {
                     player_name: &player_name,
                     frame_time_average: self.frame_time_average,
                     glass: Glass::from_setting(self.settings.config.rs_glass),
+                    editing: self.editor.open,
                     predictor: s.predictor.as_ref(),
                     tee: rendered.iter().find(|t| Some(t.id) == id),
                     events: &events,
@@ -885,6 +887,7 @@ fn main() {
             Box::new(Watermark),
             Box::new(StatusBar::new(&storage)),
             Box::new(Movement),
+            Box::new(Killfeed::new(&storage)),
         ],
         editor: Editor::default(),
         frame_time_average: 0.0001,

@@ -100,7 +100,8 @@ pub fn hud_bar<R>(
         .corner_radius(CornerRadius::same(radius))
         .inner_margin(margin);
     glass_frame(ui, glass, false, frame, |ui| {
-        // egui centres a horizontal row's items on interact_size.y
+        // egui centres a horizontal row's items on interact_size.y (the row runs right
+        // to left in a right-aligned parent, like the killfeed's)
         ui.spacing_mut().interact_size.y = row_height;
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 0.0;
