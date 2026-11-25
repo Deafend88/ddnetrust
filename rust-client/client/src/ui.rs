@@ -162,12 +162,14 @@ impl Ui {
 const MENU_WIDTH: f32 = 320.0;
 
 /// The bindable controls shown in the settings, as (label, command).
-const CONTROLS: [(&str, &str); 5] = [
+const CONTROLS: [(&str, &str); 7] = [
     ("Move left", "+left"),
     ("Move right", "+right"),
     ("Jump", "+jump"),
     ("Hook", "+hook"),
     ("Fire", "+fire"),
+    ("HUD editor", "hud_editor"),
+    ("Open media player", "media_player"),
 ];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -346,6 +348,7 @@ impl Menu {
                         ),
                         ("Dynamic camera", "cl_dyncam", c.cl_dyncam),
                         ("Vsync", "gfx_vsync", c.gfx_vsync),
+                        ("Media player", "rs_media", c.rs_media),
                     ] {
                         ui.label(label);
                         let mut on = value != 0;

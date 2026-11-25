@@ -436,7 +436,7 @@ for scenes that do not stay still, or `-RustSubject` to check what the server se
 `examples/maprender.rs` renders a map at a given
 center for fixed-view checks; mask pickups (they bob on each client's own clock).
 
-### M7 — visual identity and HUD (in progress: 7.1-7.10 done and accepted; next 7.11)
+### M7 — visual identity and HUD (done: 7.1-7.11; 7.11 waiting for the user's review)
 
 Pushed and verified: the plan and its review answers (PLAN §10, §10.6), the collision
 leak fix, and 7.1 (fonts + icons, design system, menus + gallery, the review tweaks,
@@ -946,12 +946,38 @@ are final unless the user changes them:
 - Verified: gates, review renders (`examples/media_review.rs`, which also clicks the
   speaker once so the slider shows).
 
+#### 7.10 polish (2026-11-25)
+- The volume slider uses the player card's glass (`island::card_glass`, shared with the
+  island: same shadow, blur / Liquid Glass, tint), not an opaque box.
+
+#### 7.11 status (2026-11-25): settings and finish
+- Settings page: glass (Off/Subtle/Full) and UI scale were there since 7.1; new: a
+  "Media player" toggle (`rs_media`, default 1: 0 drops the media thread, so no SMTC
+  polling, lyrics or volume; the HUD gets `media: None` and F7 does nothing) and bind
+  rows for "HUD editor" (`hud_editor`, F6) and "Open media player" (`media_player`, F7).
+  The HUD editor itself stays in the Esc menu ("Edit HUD").
+- Default HUD layout: unchanged (watermark, status bar, killfeed, island on; movement
+  and Now playing off; C++ HUD switches imported once).
+- Frame time (`scripts/frame_time.ps1`; `--screenshot-after` now prints the mean frame
+  time since the map showed): 2560x1440, vsync off, release, local server, dm1, RTX 4060
+  Ti, 2 runs x 15 s each: HUD off 0.59 / 0.70 ms, everything on (every widget and
+  watermark item, full glass, media on) 0.90 / 0.77 ms: about +0.2 ms (target < 1 ms).
+  A live capture showed every enabled widget drawn.
+- M6 screenshot comparisons with the HUD off: `compare_screenshots.ps1` now gives
+  DDNet-rs a scratch APPDATA (all widgets off). Before, it read the real
+  `%APPDATA%\DDNet-rs\settings.cfg`, whose name overrode "subject" (the C++ spectate
+  failed) and whose HUD showed in the capture. Results: dm1 `-RustSubject` 99.39 %
+  (M6: 99.34), ctf1 `-RustSubject` 99.74 % (99.74), dm1 follow mode with
+  `-ServerArgs 'sv_show_all_default 1'` 99.42 % (99.06). Follow mode without it gets
+  no snapshot of the far tee (0.08 %), as the script's header says.
+- Verified: gates (103 tests).
+
 #### Exact next actions (next session starts here)
-1. Read CLAUDE.md, PLAN §10.3 7.11, this section, `git log`.
-2. Next: 7.11 (settings page entries: glass strength, UI scale, HUD editor, media on/off;
-   the default HUD layout; the frame time check with everything on, target M6 frame time
-   + under 1 ms at 1440p; docs). Then M7 is done; after it: antiping (PLAN §11).
-3. Before each commit: gates, `/ponytail-review`, UI rules review; update this file.
+M7 done, next: antiping (PLAN §11), after the user's review of 7.11.
+1. Read CLAUDE.md, PLAN §11, this file, `git log`.
+2. Plan antiping in PLAN.md (a §12 like §10) for the user's approval before coding:
+   `cl_antiping` and sub-settings, smoothing, weapon/projectile prediction, margins,
+   verified with `rs_parity` worlds at 100 %.
 
 #### Decisions and gotchas from 7.1
 - egui 0.37 panics in debug if a frame's `TexturesDelta` is dropped unapplied: drain

@@ -189,7 +189,16 @@ rust-client\scripts\compare_screenshots.ps1 -Map dm1
 It starts a local server, the C++ client (scratch folder, never your DDNet folder, its
 web requests blocked by a dead local proxy) and DDNet-rs following the C++ player,
 captures both windows and prints the share of matching pixels; the pictures and a diff
-image land in `%TEMP%\ddnet-rs-compare\`. Two windows open for a few seconds.
+image land in `%TEMP%\ddnet-rs-compare\`. Two windows open for a few seconds. DDNet-rs
+gets a scratch APPDATA with every HUD widget off. Follow mode needs
+`-ServerArgs 'sv_show_all_default 1'` (else the server sends no far tees); `-RustSubject`
+does not.
+
+Frame time with the HUD off vs. everything on, 2560x1440 (needs a release build):
+
+```powershell
+rust-client\scripts\frame_time.ps1 -Map dm1
+```
 
 The GPU test (`cargo test -p ddnet-rs --test gfx`) checks a renderer test pattern pixel by
 pixel; it reports itself skipped when no graphics adapter is available.

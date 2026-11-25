@@ -288,6 +288,8 @@ pub struct Config {
     pub rs_data_dir: String,
     /// The media player's chosen source (an SMTC app id; empty: automatic).
     pub rs_media_source: String,
+    /// Ours: the media player (now playing, lyrics, volume) on or off.
+    pub rs_media: i32,
     /// Ours: glass strength, 0 off, 1 subtle, 2 full (PLAN §10.2).
     pub rs_glass: i32,
     /// Ours: UI scale in percent on top of the window's DPI.
@@ -333,6 +335,7 @@ impl Default for Config {
             cl_showhud_spectator: 1,
             rs_data_dir: String::new(),
             rs_media_source: String::new(),
+            rs_media: 1,
             rs_glass: 1,
             rs_ui_scale: 100,
         }
@@ -395,6 +398,7 @@ impl Config {
             "cl_showhud_spectator" => Int(&mut self.cl_showhud_spectator, 0, 1),
             "rs_data_dir" => Str(&mut self.rs_data_dir, 512),
             "rs_media_source" => Str(&mut self.rs_media_source, 512),
+            "rs_media" => Int(&mut self.rs_media, 0, 1),
             "rs_glass" => Int(&mut self.rs_glass, 0, 2),
             "rs_ui_scale" => Int(&mut self.rs_ui_scale, 50, 200),
             _ => return None,
@@ -457,7 +461,7 @@ impl Config {
 }
 
 /// Every variable name `Config::var` knows.
-pub const VAR_NAMES: [&str; 38] = [
+pub const VAR_NAMES: [&str; 39] = [
     "player_name",
     "player_skin",
     "player_use_custom_color",
@@ -494,6 +498,7 @@ pub const VAR_NAMES: [&str; 38] = [
     "cl_showhud_spectator",
     "rs_data_dir",
     "rs_media_source",
+    "rs_media",
     "rs_glass",
     "rs_ui_scale",
 ];

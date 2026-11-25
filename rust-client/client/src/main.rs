@@ -173,14 +173,16 @@ struct App {
     /// The HUD widgets.
     hud: Vec<Box<dyn Widget>>,
     editor: Editor,
-    /// The media thread (now playing, 7.10).
-    media: Media,
+    /// The media thread (now playing, 7.10); `None` while `rs_media` is 0.
+    media: Option<Media>,
     /// The island is expanded into the media player (F7).
     player_open: bool,
     /// The lyrics switch as last sent to the media thread.
     lyrics_on: Option<bool>,
     /// C++ `CClient::m_FrameTimeAverage`.
     frame_time_average: f32,
+    /// Frames since the map showed (`--screenshot-after` prints the mean frame time).
+    shown_frames: u32,
     /// C++ `m_aCurrentKeyStates`.
     pressed: Vec<bool>,
     /// Raw mouse motion since the last frame (C++ `SDL_GetRelativeMouseState`).
@@ -360,9 +362,11 @@ impl App {
                 match command.as_str() {
                     "hud_editor" => edit_hud = true,
                     "media_player" => player = true,
-                    "media_play_pause" => self.media.send(media::Command::PlayPause),
-                    "media_next" => self.media.send(media::Command::Next),
-                    "media_prev" => self.media.send(media::Command::Prev),
+                    "media_play_pause" => {
+                        media_send(self.media.as_ref(), media::Command::PlayPause)
+                    }
+                    "media_next" => media_send(self.media.as_ref(), media::Command::Next),
+                    "media_prev" => media_send(self.media.as_ref(), media::Command::Prev),
                     // C++: CClient::Con_Rcon, Con_RconAuth
                     "rcon" => s.client.rcon(&args, net::now(self.start)),
                     "rcon_auth" => s.client.rcon_auth(&args, net::now(self.start)),
@@ -374,7 +378,7 @@ impl App {
             self.open_editor();
         }
         // F7: the island expands into the media player, like a menu
-        if player && !self.editor.open {
+        if player && !self.editor.open && self.media.is_some() {
             self.player_open = !self.player_open;
             self.menu.open = false;
         }
@@ -469,15 +473,30 @@ impl App {
             self.end_session();
             self.menu.error = Some(e);
         }
+        // the media thread runs while `rs_media` is on (started on the first frame, with
+        // the saved source); dropping it ends the thread
+        let media_on = self.settings.config.rs_media != 0;
+        if media_on != self.media.is_some() {
+            let source = &self.settings.config.rs_media_source;
+            self.media =
+                media_on.then(|| Media::start(Some(source.clone()).filter(|s| !s.is_empty())));
+            self.lyrics_on = None;
+            self.player_open &= media_on;
+        }
         // lyrics are fetched unless their place is "off" (island settings)
         let lyrics = ddnet_rs::island::lyrics_place(&self.settings.hud) != "off";
         if self.lyrics_on != Some(lyrics) {
-            self.media.send(media::Command::Lyrics(lyrics));
+            media_send(self.media.as_ref(), media::Command::Lyrics(lyrics));
             self.lyrics_on = Some(lyrics);
         }
         // the player's source choice lasts across restarts
-        let chosen = self.media.state().chosen.unwrap_or_default();
-        if chosen != self.settings.config.rs_media_source {
+        let chosen = self
+            .media
+            .as_ref()
+            .map(|m| m.state().chosen.unwrap_or_default());
+        if let Some(chosen) = chosen
+            && chosen != self.settings.config.rs_media_source
+        {
             self.settings.config.rs_media_source = chosen;
             self.save_settings();
         }
@@ -515,6 +534,7 @@ impl App {
                 _ => None,
             };
             map_shown_at = s.map_shown_at;
+            self.shown_frames += map_shown_at.is_some() as u32;
             let size = size_of(&r.config);
             if let (Some((map, collision)), Some(center)) = (&s.map, center) {
                 let view = View {
@@ -590,7 +610,7 @@ impl App {
                     frame_time_average: self.frame_time_average,
                     glass: Glass::from_setting(self.settings.config.rs_glass),
                     editing: self.editor.open,
-                    media: Some(&self.media),
+                    media: self.media.as_ref(),
                     player_open: self.player_open,
                     predictor: s.predictor.as_ref(),
                     tee: rendered.iter().find(|t| Some(t.id) == id),
@@ -622,6 +642,12 @@ impl App {
         if let (Some(after), Some(shown)) = (self.options.screenshot_after, map_shown_at)
             && shown.elapsed().as_secs_f64() >= after
         {
+            let secs = shown.elapsed().as_secs_f64();
+            println!(
+                "frame time {:.3} ms (mean of {} frames)",
+                secs * 1000.0 / f64::from(self.shown_frames.max(1)),
+                self.shown_frames
+            );
             // for reproducing the view with --view
             if let Some((x, y)) = center {
                 println!("camera center {x} {y}");
@@ -941,12 +967,11 @@ fn main() {
         menu: Menu::new(options.server, &storage),
         hud,
         editor: Editor::default(),
-        media: Media::start(
-            Some(settings.config.rs_media_source.clone()).filter(|s| !s.is_empty()),
-        ),
+        media: None,
         player_open: false,
         lyrics_on: None,
         frame_time_average: 0.0001,
+        shown_frames: 0,
         options,
         storage,
         settings,
@@ -982,5 +1007,11 @@ fn main() {
     if let Some(e) = app.error {
         eprintln!("{e}");
         std::process::exit(1);
+    }
+}
+
+fn media_send(media: Option<&Media>, command: media::Command) {
+    if let Some(m) = media {
+        m.send(command);
     }
 }

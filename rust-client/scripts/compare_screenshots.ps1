@@ -36,6 +36,14 @@ foreach ($d in $srvDir, $cDir, $OutDir) {
     New-Item -ItemType Directory -Force $d | Out-Null
     Set-Content -Path "$d\storage.cfg" -Value "add_path `$CURRENTDIR`nadd_path `$DATADIR" -Encoding ascii
 }
+# DDNet-rs's own settings (%APPDATA%\DDNet-rs\settings.cfg) come from a scratch APPDATA:
+# your name and binds stay out, and the HUD is off (the comparison is map, tees and
+# entities only)
+$appData = $env:APPDATA
+$env:APPDATA = "$OutDir\appdata"
+New-Item -ItemType Directory -Force "$OutDir\appdata\DDNet-rs" | Out-Null
+$hudOff = "watermark", "status", "movement", "killfeed", "island", "nowplaying" | ForEach-Object { "hud_widget $_ top_left 0 0 0" }
+Set-Content -Path "$OutDir\appdata\DDNet-rs\settings.cfg" -Value $hudOff -Encoding ascii
 
 Add-Type -AssemblyName System.Drawing
 Add-Type @"
@@ -97,6 +105,7 @@ try {
     Save-ClientArea $r.Id "$OutDir\${name}_rust.png"
 } finally {
     foreach ($p in $c, $r, $subj, $srv) { if ($p) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue } }
+    $env:APPDATA = $appData
 }
 $maskArgs = foreach ($m in $Mask) { "--mask"; $m }
 & "$repo\rust-client\target\debug\examples\shotdiff.exe" "$OutDir\${name}_cpp.png" "$OutDir\${name}_rust.png" "$OutDir\${name}_diff.png" @maskArgs
