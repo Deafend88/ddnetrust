@@ -88,6 +88,14 @@ pub const LOGO_GLOW: egui::Shadow = egui::Shadow {
     color: Color32::from_rgba_premultiplied(150, 150, 150, 150),
 };
 
+/// The soft dark glow around the watermark's container (user review, 7.5).
+pub const HUD_SHADOW: egui::Shadow = egui::Shadow {
+    offset: [0, 2],
+    blur: 24,
+    spread: 2,
+    color: Color32::from_rgba_premultiplied(0, 0, 0, 140),
+};
+
 /// Font weights (egui font families).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Weight {
@@ -142,12 +150,12 @@ impl Glass {
 
     /// A HUD bar's fill: opaque when glass is off; else a translucent black that blends
     /// into dark scenes and keeps white text readable on light ones (the watermark
-    /// reference: 45% black: about 65 grey over the light reference's 118).
+    /// reference: 55% black (user review: a bit darker than the reference)).
     pub fn hud_fill(self) -> Color32 {
         match self {
             Self::Off => color::SURFACE,
-            Self::Subtle => Color32::from_black_alpha(115),
-            Self::Full => Color32::from_black_alpha(90),
+            Self::Subtle => Color32::from_black_alpha(140),
+            Self::Full => Color32::from_black_alpha(115),
         }
     }
 

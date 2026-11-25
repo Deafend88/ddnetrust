@@ -90,6 +90,10 @@ pub const LINK_BREAK: &str = "\u{e2e4}";
 pub const LOCK: &str = "\u{e2fa}";
 /// Phosphor `barbell` (fill).
 pub const BARBELL: &str = "\u{e0b6}";
+/// Phosphor `hammer` (fill).
+pub const HAMMER: &str = "\u{e80e}";
+/// Phosphor `sword` (fill).
+pub const SWORD: &str = "\u{e5ba}";
 /// Phosphor `prohibit` (fill).
 pub const PROHIBIT: &str = "\u{e3de}";
 /// Phosphor `users` (fill).
@@ -102,7 +106,7 @@ pub const CARET_UP: &str = "\u{e13c}";
 pub const CARET_DOWN: &str = "\u{e136}";
 
 /// Every icon above, in order (the gallery shows them all).
-pub const ALL: [&str; 49] = [
+pub const ALL: [&str; 51] = [
     USER,
     FINGERPRINT,
     MONITOR,
@@ -147,6 +151,8 @@ pub const ALL: [&str; 49] = [
     LINK_BREAK,
     LOCK,
     BARBELL,
+    HAMMER,
+    SWORD,
     PROHIBIT,
     USERS,
     INFO,

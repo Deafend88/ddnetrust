@@ -6,7 +6,7 @@
 use ddnet::physics::core::{CharacterCore, PHYSICAL_SIZE, read_ddnet};
 use ddnet::physics::vmath::vec2;
 use ddnet::protocol::generated::{self as g, ObjCharacter, ObjDDNetCharacter};
-use egui::{Color32, ColorImage, CornerRadius, Margin, Sense, TextureHandle, Ui};
+use egui::{Color32, ColorImage, TextureHandle, Ui};
 
 use crate::assets;
 use crate::hud::{Anchor, HudConfig, HudData, Placement, Widget, item_toggles};
@@ -14,13 +14,12 @@ use crate::icons;
 use crate::image::Format;
 use crate::render::content::{SPRITES, SPRITESETS};
 use crate::skin::sprite_image;
+use crate::statusview;
 use crate::storage::Storage;
-use crate::style::{color, radius, size, space};
 use crate::widgets as w;
 
 /// C++ `NUM_WEAPONS` and the weapon ids.
 const NUM_WEAPONS: usize = 6;
-const WEAPON_HAMMER: usize = 0;
 const WEAPON_GUN: usize = 1;
 const WEAPON_SHOTGUN: usize = 2;
 const WEAPON_GRENADE: usize = 3;
@@ -205,40 +204,6 @@ pub fn status(i: &Input) -> Status {
     s
 }
 
-/// The weapon an indicator is about, if any (drawn with its sprite).
-fn weapon_of(ind: Indicator) -> Option<usize> {
-    use Indicator::*;
-    Some(match ind {
-        TeleGun | GunHitDisabled => WEAPON_GUN,
-        TeleGrenade | GrenadeHitDisabled => WEAPON_GRENADE,
-        TeleLaser | LaserHitDisabled => WEAPON_LASER,
-        ShotgunHitDisabled => WEAPON_SHOTGUN,
-        HammerHitDisabled => WEAPON_HAMMER,
-        _ => return None,
-    })
-}
-
-/// An indicator's icon.
-fn icon_of(ind: Indicator) -> &'static str {
-    use Indicator::*;
-    match ind {
-        EndlessJump => icons::ARROW_FAT_LINES_UP,
-        EndlessHook => icons::LINK,
-        Jetpack => icons::ROCKET,
-        TeleGun | TeleGrenade | TeleLaser => icons::SPARKLE,
-        Solo => icons::PERSON,
-        CollisionDisabled => icons::GHOST,
-        HookHitDisabled => icons::LINK_BREAK,
-        HammerHitDisabled | GunHitDisabled | ShotgunHitDisabled | GrenadeHitDisabled
-        | LaserHitDisabled => icons::PROHIBIT,
-        LockMode => icons::LOCK,
-        PracticeMode => icons::BARBELL,
-        Team0Mode => icons::USERS,
-        DeepFrozen => icons::SNOWFLAKE,
-        LiveFrozen => icons::PAUSE_CIRCLE,
-    }
-}
-
 /// The game skin's pickup sprites of the six weapons (C++
 /// `m_GameSkin.m_aSpritePickupWeapons`), cut from `game.png` in the data dir.
 fn weapon_images(storage: &Storage) -> Vec<Option<ColorImage>> {
@@ -274,10 +239,12 @@ fn weapon_images(storage: &Storage) -> Vec<Option<ColorImage>> {
         .collect()
 }
 
-/// The six weapons' pickup sprites as egui images (the status bar, the killfeed).
+/// The six weapons' pickup sprites as egui images (the status bar, the killfeed), and
+/// their white silhouettes (the status icons).
 pub struct WeaponIcons {
     images: Vec<Option<ColorImage>>,
     textures: Vec<Option<TextureHandle>>,
+    silhouettes: Vec<Option<TextureHandle>>,
 }
 
 impl WeaponIcons {
@@ -285,7 +252,41 @@ impl WeaponIcons {
         Self {
             images: weapon_images(storage),
             textures: Vec::new(),
+            silhouettes: Vec::new(),
         }
+    }
+
+    /// A weapon's white silhouette (the sprite's alpha) and its size in pixels.
+    pub fn silhouette(
+        &mut self,
+        ctx: &egui::Context,
+        weapon: usize,
+    ) -> Option<(egui::TextureId, [f32; 2])> {
+        if self.silhouettes.is_empty() {
+            self.silhouettes = (self.images.iter().enumerate())
+                .map(|(n, i)| {
+                    let i = i.as_ref()?;
+                    // cropped to the opaque part: pickup sprites carry wide margins
+                    let [w, h] = i.size;
+                    let opaque = |x: usize, y: usize| i.pixels[y * w + x].a() > 0;
+                    let xs: Vec<usize> = (0..w).filter(|&x| (0..h).any(|y| opaque(x, y))).collect();
+                    let ys: Vec<usize> = (0..h).filter(|&y| (0..w).any(|x| opaque(x, y))).collect();
+                    let (&x0, &x1, &y0, &y1) = (xs.first()?, xs.last()?, ys.first()?, ys.last()?);
+                    let white: Vec<Color32> = (y0..=y1)
+                        .flat_map(|y| (x0..=x1).map(move |x| (x, y)))
+                        .map(|(x, y)| Color32::from_white_alpha(i.pixels[y * w + x].a()))
+                        .collect();
+                    let image = ColorImage::new([x1 - x0 + 1, y1 - y0 + 1], white);
+                    Some(ctx.load_texture(
+                        format!("hud_weapon_silhouette_{n}"),
+                        image,
+                        Default::default(),
+                    ))
+                })
+                .collect();
+        }
+        let t = self.silhouettes.get(weapon)?.as_ref()?;
+        Some((t.id(), t.size().map(|v| v as f32)))
     }
 
     /// A weapon sprite, `height` tall, at `alpha`; nothing for an unknown weapon.
@@ -317,37 +318,13 @@ impl StatusBar {
     }
 }
 
-/// Jumps as pips: available ones white, used ones faint.
-fn pips(ui: &mut Ui, (available, total): (i32, i32)) {
-    let r = 5.0;
-    let width = total as f32 * (2.0 * r + space::XS) - space::XS;
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(width.max(0.0), ICON), Sense::hover());
-    for n in 0..total {
-        let x = rect.left() + r + n as f32 * (2.0 * r + space::XS);
-        let fill = if n < available {
-            color::TEXT
-        } else {
-            color::TEXT.gamma_multiply(0.25)
-        };
-        ui.painter()
-            .circle_filled(egui::pos2(x, rect.center().y), r, fill);
-    }
+/// The chosen design direction (`hud_set status layout 0|1|2`).
+fn layout(config: &HudConfig) -> statusview::Layout {
+    let n = config.number("status", "layout", 0.0) as usize;
+    statusview::Layout::ALL
+        .get(n)
+        .map_or(statusview::Layout::Block, |l| l.0)
 }
-
-/// The ninja timer: a short bar, white on a faint track.
-fn timer(ui: &mut Ui, progress: f32) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(space::XL, ICON), Sense::hover());
-    let track = egui::Rect::from_center_size(rect.center(), egui::vec2(space::XL, space::XS));
-    let p = ui.painter();
-    let round = CornerRadius::same(radius::PILL);
-    p.rect_filled(track, round, color::TEXT.gamma_multiply(0.25));
-    let mut fill = track;
-    fill.set_width(track.width() * progress);
-    p.rect_filled(fill, round, color::TEXT);
-}
-
-/// The block's icon and sprite size.
-const ICON: f32 = size::ICON_HUD;
 
 impl Widget for StatusBar {
     fn id(&self) -> &'static str {
@@ -402,62 +379,37 @@ impl Widget for StatusBar {
             display_info: ext.jumped_total != -1,
             game_tick: data.client.game_tick().unwrap_or(0),
         });
-        // rows: weapons, jumps, active effects (only when something is on); an item
-        // that is off is not drawn, every item off hides the widget
+        // an item that is off is not drawn; every item off hides the widget
         let on = |key| config.on("status", key, true);
-        let effects: Vec<Indicator> = (s.capabilities.iter())
-            .chain(&s.prohibited)
-            .chain(&s.modes)
-            .copied()
-            .collect();
-        let rows = [
-            on("weapons") && !s.weapons.is_empty(),
-            on("jumps") && s.jumps.1 > 0,
-            on("effects") && !effects.is_empty(),
-        ];
-        if !rows.contains(&true) {
+        let mut s = s;
+        if !on("weapons") {
+            (s.weapons, s.ninja) = (Vec::new(), None);
+        }
+        if !on("jumps") {
+            s.jumps = (0, 0);
+        }
+        if !on("effects") {
+            (s.capabilities, s.prohibited, s.modes) = (Vec::new(), Vec::new(), Vec::new());
+        }
+        let empty = s.weapons.is_empty()
+            && s.jumps.1 == 0
+            && s.capabilities.is_empty()
+            && s.prohibited.is_empty()
+            && s.modes.is_empty();
+        if empty {
             if data.editing {
                 w::placeholder(ui, data.glass, self.icon(), self.name());
             }
             return;
         }
-        // several rows: a rounded rectangle (CLAUDE.md shape rule), tight spacing
-        let n = rows.iter().filter(|&&r| r).count();
-        let corner = if n > 1 { radius::CARD } else { radius::PILL };
-        let margin = Margin::same(space::M as i8);
-        w::hud_bar(ui, data.glass, corner, margin, ICON, |ui| {
-            ui.vertical(|ui| {
-                ui.spacing_mut().item_spacing = egui::vec2(space::XS, space::XS);
-                ui.spacing_mut().interact_size.y = ICON;
-                if rows[0] {
-                    ui.horizontal(|ui| {
-                        for &(weapon, active) in &s.weapons {
-                            // C++: 0.4 for weapons not held
-                            self.0
-                                .draw(ui, weapon, ICON, if active { 1.0 } else { 0.4 });
-                            if weapon == WEAPON_NINJA
-                                && let Some(p) = s.ninja
-                            {
-                                timer(ui, p);
-                            }
-                        }
-                    });
-                }
-                if rows[1] {
-                    ui.horizontal(|ui| pips(ui, s.jumps));
-                }
-                if rows[2] {
-                    ui.horizontal(|ui| {
-                        for &ind in &effects {
-                            w::icon(ui, icon_of(ind), ICON, color::TEXT);
-                            if let Some(weapon) = weapon_of(ind) {
-                                self.0.draw(ui, weapon, ICON, 1.0);
-                            }
-                        }
-                    });
-                }
-            });
-        });
+        statusview::draw(
+            ui,
+            data.glass,
+            layout(config),
+            &s,
+            &mut self.0,
+            data.editing,
+        );
     }
 
     fn settings(&mut self, ui: &mut Ui, config: &mut HudConfig) {
@@ -468,5 +420,14 @@ impl Widget for StatusBar {
             ("effects", "Active effects", true),
         ];
         item_toggles(ui, config, "status", &items);
+        // the look, until the user picks one of the three directions
+        let mut n = statusview::Layout::ALL
+            .iter()
+            .position(|l| l.0 == layout(config))
+            .unwrap_or(0);
+        let names = statusview::Layout::ALL.map(|l| l.1);
+        if w::segmented(ui, &mut n, &names).changed() {
+            config.set("status", "layout", n);
+        }
     }
 }

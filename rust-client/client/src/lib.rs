@@ -18,6 +18,7 @@ pub mod movement;
 pub mod render;
 pub mod skin;
 pub mod statusbar;
+pub mod statusview;
 pub mod storage;
 pub mod style;
 pub mod teehead;

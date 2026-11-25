@@ -436,7 +436,7 @@ for scenes that do not stay still, or `-RustSubject` to check what the server se
 `examples/maprender.rs` renders a map at a given
 center for fixed-view checks; mask pickups (they bob on each client's own clock).
 
-### M7 — visual identity and HUD (in progress: 7.1-7.3 approved; 7.4-7.8 done, awaiting review)
+### M7 — visual identity and HUD (in progress: 7.1-7.3 approved; 7.4-7.8 done, status bar direction to pick)
 
 Pushed and verified: the plan and its review answers (PLAN §10, §10.6), the collision
 leak fix, and 7.1 (fonts + icons, design system, menus + gallery, the review tweaks,
@@ -710,11 +710,36 @@ Built before the editor (the user chose this order) so the editor drags a real w
   run: every teleport test command marks the run cheated, so a scripted finish needs a
   real route (unit tests cover the finish texts).
 
+#### Review round 3 (2026-11-25, commits 2e2176888 and the next): awaiting the user's pick
+- 2e2176888: killfeed tee heads (`teehead.rs`, real skins, custom colours), compact
+  status block, watermark sliders (`hud_set watermark corner|logo_radius|logo_height|glow`,
+  defaults 35 % / 8 / 41 / 100 until the user sends final values), DDNet visibility (off
+  items not drawn, all off = hidden, editor placeholder), C++ HUD switches imported.
+- Status icons (`statusview.rs`): one grammar, a filled base (Phosphor fill glyph or the
+  weapon's silhouette cut from game.png, cropped to its opaque part) plus at most one
+  mark: slash (off), "∞" badge (endless, Inter's sign), sparkle badge (teleport),
+  snowflake badge (live freeze on a standing figure), ring (deep freeze). Every icon is
+  labelled on the second gallery page and named on hover in the HUD editor (tooltip:
+  not checked live yet).
+- Three status bar directions (`statusview::Layout`, `hud_set status layout 0|1|2`,
+  segmented control in the widget's editor popover; default Block): Block (card of
+  rows: weapons, segmented jump meter, effects), Rail (narrow vertical card: held
+  weapon, jump number, stacked effects), Chips (one pill for weapon + "2/2", one round
+  chip per effect, ninja timer as a ring). Review page: `cargo run -p ddnet-rs --example
+  gallery -- tests/golden/gallery.png docs/review/7.7/directions.png`.
+- Watermark: HUD fill darker (black 55 % subtle / 45 % full, all HUD bars) and a soft
+  dark glow around the watermark container (`style::HUD_SHADOW`, `w::hud_bar_with`);
+  the white logo glow is kept.
+- Verified: gates (88 tests), the live C++ comparison of the status states (Block,
+  docs/review/7.7/cpp-vs-rust-states.png).
+
 #### Exact next actions (next session starts here)
-1. Read CLAUDE.md, PLAN §10.3 7.9+, this section, `git log`.
-2. The user reviews 7.7/7.8 (docs/review/7.7, 7.8) and the 7.5/7.6 changes; apply.
-3. 7.9 Dynamic Island (PLAN 10.3): stop and ask the user before starting it (they asked
-   to stop before 7.9). `timefmt` and the live scripts are ready for it.
+1. Read CLAUDE.md, PLAN §10.3, this section, `git log`.
+2. The user picks a status bar direction (docs/review/7.7/directions.png) and sends final
+   watermark slider values; make them the defaults, drop the other directions and the
+   sliders they no longer need.
+3. Do not start 7.9 (Dynamic Island) until the user says so; they start it in a fresh
+   session.
 4. Before each commit: gates, `/ponytail-review`, UI rules review; update this file.
 
 #### Decisions and gotchas from 7.1

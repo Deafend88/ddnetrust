@@ -9,7 +9,7 @@ use egui::{CornerRadius, Frame, Margin, Ui};
 
 use crate::hud::{Anchor, HudConfig, HudData, Placement, Widget};
 use crate::icons;
-use crate::style::{Glass, LOGO_GLOW, Weight, color, size, space};
+use crate::style::{Glass, HUD_SHADOW, LOGO_GLOW, Weight, color, size, space};
 use crate::widgets as w;
 
 /// Stat keys in their default order, whether each shows by default (SPEC §1, except the
@@ -105,7 +105,7 @@ pub fn draw(ui: &mut Ui, glass: Glass, compact: bool, stats: &[Stat], look: Look
         color: LOGO_GLOW.color.gamma_multiply(look.glow / 100.0),
         ..LOGO_GLOW
     };
-    w::hud_bar(ui, glass, corner, margin, row_height, |ui| {
+    w::hud_bar_with(ui, glass, corner, margin, row_height, HUD_SHADOW, |ui| {
         Frame::new()
             .fill(color::LOGO)
             .corner_radius(CornerRadius::same(look.logo_radius.round() as u8))

@@ -61,6 +61,8 @@ ICONS = [
 	("link-break", "LINK_BREAK"),  # hooking others off
 	("lock", "LOCK"),  # lock mode
 	("barbell", "BARBELL"),  # practice mode
+	("hammer", "HAMMER"),  # hammer (hitting others off: with a slash)
+	("sword", "SWORD"),  # ninja
 	("prohibit", "PROHIBIT"),  # hitting others with a weapon off
 	("users", "USERS"),  # team (team 0 mode)
 	("info", "INFO"),  # information

@@ -91,8 +91,30 @@ pub fn hud_bar<R>(
     row_height: f32,
     add: impl FnOnce(&mut Ui) -> R,
 ) -> InnerResponse<R> {
+    hud_bar_with(
+        ui,
+        glass,
+        corner_radius,
+        margin,
+        row_height,
+        Shadow::NONE,
+        add,
+    )
+}
+
+/// `hud_bar` with a shadow around it (the watermark's dark glow).
+pub fn hud_bar_with<R>(
+    ui: &mut Ui,
+    glass: Glass,
+    corner_radius: u8,
+    margin: Margin,
+    row_height: f32,
+    shadow: Shadow,
+    add: impl FnOnce(&mut Ui) -> R,
+) -> InnerResponse<R> {
     let frame = Frame::new()
         .fill(glass.hud_fill())
+        .shadow(shadow)
         .corner_radius(CornerRadius::same(corner_radius))
         .inner_margin(margin);
     glass_frame(ui, glass, false, frame, |ui| {

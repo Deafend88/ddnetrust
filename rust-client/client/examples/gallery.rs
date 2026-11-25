@@ -1,15 +1,28 @@
-//! Draws the design-system gallery (M7.1) headless and saves it as a PNG.
+//! Draws the design-system gallery (M7.1) headless and saves it as a PNG; with a second
+//! path, also the race status review page (7.7, needs the DDNet data dir for weapons).
 //!
-//! Usage: cargo run -p ddnet-rs --example gallery -- [out.png]
+//! Usage: cargo run -p ddnet-rs --example gallery -- [out.png] [status.png]
 
 fn main() {
-    let out = std::env::args().nth(1).unwrap_or("gallery.png".into());
+    let mut args = std::env::args().skip(1);
+    let out = args.next().unwrap_or("gallery.png".into());
     let Some(mut gfx) = ddnet_rs::gfx::Gfx::headless(ddnet_rs::gallery::SIZE) else {
         eprintln!("no graphics adapter");
         std::process::exit(1);
     };
     ddnet_rs::gallery::render(&mut gfx);
-    match gfx.screenshot(std::path::Path::new(&out)) {
+    save(&gfx, &out);
+    if let Some(status) = args.next() {
+        let storage = ddnet_rs::storage::Storage::new(None).expect("storage");
+        let mut gfx =
+            ddnet_rs::gfx::Gfx::headless(ddnet_rs::gallery::STATUS_SIZE).expect("graphics adapter");
+        ddnet_rs::gallery::render_status(&mut gfx, &storage);
+        save(&gfx, &status);
+    }
+}
+
+fn save(gfx: &ddnet_rs::gfx::Gfx, out: &str) {
+    match gfx.screenshot(std::path::Path::new(out)) {
         Ok(()) => println!("saved {out}"),
         Err(e) => eprintln!("saving {out} failed: {e}"),
     }
