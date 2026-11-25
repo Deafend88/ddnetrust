@@ -973,11 +973,20 @@ are final unless the user changes them:
 - Verified: gates (103 tests).
 
 #### Exact next actions (next session starts here)
-M7 done, next: antiping (PLAN §11), after the user's review of 7.11.
-1. Read CLAUDE.md, PLAN §11, this file, `git log`.
-2. Plan antiping in PLAN.md (a §12 like §10) for the user's approval before coding:
-   `cl_antiping` and sub-settings, smoothing, weapon/projectile prediction, margins,
-   verified with `rs_parity` worlds at 100 %.
+State (2026-11-25, commit 89a3b16b2, pushed): M7 done, next: antiping. Done and
+waiting for the user's review: the volume popover in the player card's glass style
+(d04d4040a) and 7.11 (89a3b16b2). Working tree clean.
+1. Read CLAUDE.md, PLAN §10-11, this file, `git log`.
+2. If the review asks for changes to the volume popover or 7.11, do those first.
+3. Watermark width cap (user request, 2026-11-25): keep the defaults (logo, clock,
+   ping, fps). When the enabled items do not fit in ~40 % of the screen width, wrap
+   them into a second row; the container then becomes a rounded rectangle
+   (`radius::CARD`, CLAUDE.md shape rule) instead of a pill. Code: `watermark.rs`
+   (`draw`, items in `ITEMS`), container `widgets::hud_bar`. Test the wrap point and
+   the shape switch as unit tests; review render with every item on at 1280 and 2560.
+4. Then antiping: plan it in PLAN.md (a §12 like §10) for the user's approval before
+   coding: `cl_antiping` and sub-settings, smoothing, weapon/projectile prediction,
+   margins, verified with `rs_parity` worlds at 100 %.
 
 #### Decisions and gotchas from 7.1
 - egui 0.37 panics in debug if a frame's `TexturesDelta` is dropped unapplied: drain
