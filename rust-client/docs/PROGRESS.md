@@ -436,7 +436,7 @@ for scenes that do not stay still, or `-RustSubject` to check what the server se
 `examples/maprender.rs` renders a map at a given
 center for fixed-view checks; mask pickups (they bob on each client's own clock).
 
-### M7 — visual identity and HUD (in progress: 7.1-7.3 approved; 7.4 fixes, 7.5, 7.6 done, awaiting review)
+### M7 — visual identity and HUD (in progress: 7.1-7.3 approved; 7.4-7.8 done, awaiting review)
 
 Pushed and verified: the plan and its review answers (PLAN §10, §10.6), the collision
 leak fix, and 7.1 (fonts + icons, design system, menus + gallery, the review tweaks,
@@ -655,21 +655,67 @@ Built before the editor (the user chose this order) so the editor drags a real w
   the speed colours (green/red on increase/decrease; one-accent rule); the server's
   tuning (not received yet, so default velramp, as for prediction).
 
-#### Exact next actions (next session starts here)
-1. Read CLAUDE.md, PLAN §10.3 7.7+, this section, `git log`.
-2. Wait for/apply the user's review of 7.4 fixes, 7.5 (side-by-sides: glow, filled
-   icons, gaps) and 7.6 (layout of the movement pill, deviations above).
-3. 7.7 DDRace status bar (PLAN 10.3): port `CHud::RenderPlayerState` decision logic as
-   a pure function; parity like 7.6 if CHud can run it (the harness now links hud.cpp).
-4. Before each commit: gates, `/ponytail-review`, UI rules review; update this file.
+#### User review of 7.5/7.6 (2026-11-25), applied in commit 889b0bd7a
+- Icons: Phosphor Fill 2.1.2 (`assets/fonts/Phosphor-Fill.ttf`, same npm package and MIT
+  licence as the regular font it replaces) everywhere; `gen_icons.py` lists one meaning
+  per icon in a comment (ping wifi, fps monitor, speed gauge, position map pin, aim
+  crosshair, time clock, connect plugs, back to game controller, ...). The logo is a
+  drawn tee mark (`widgets::tee_mark`), not a glyph.
+- Watermark like the reference: pill container with `Glass::hud_fill` (black 45% subtle
+  / 35% full, opaque SURFACE when glass is off), compact logo (rounded rect `radius::SMALL`,
+  padding 12 x 8) with a soft white glow (`style::LOGO_GLOW`), barely visible dots
+  (`color::SEPARATOR`), gaps measured from the reference at the scale where its digits
+  match body 15: logo-stat 12+32 (ref 33), stat-stat 48 (ref 48), icon-value 8 (ink 11 vs
+  ref 13). Name item off by default (it shows above the tee); defaults ping and fps.
+- Shape rule (CLAUDE.md): one line = full pill, several = rounded rectangle (`CARD`);
+  `widgets::hud_bar(ui, glass, multi_line, margin, row_height, ..)`; reference-image
+  effects count as asked for (CLAUDE.md).
+- Movement widget: "X 57.53  Y 15.53", "X 0.00  Y 0.91t/s", "aim 0.00°", labels and units
+  grey; `hud_set movement stacked 1` = values in two rows (rounded rect), single-line
+  items centred. The watermark speed unit is "t/s" too.
+- Editor: a popover taller than the room opens beside its widget
+  (`tall_popover_opens_beside_the_widget`).
+- egui gotcha: `ui.horizontal` centres items on a row `interact_size.y` tall (our style
+  sets 32), and in a right-aligned column it runs right to left (the killfeed adds its
+  parts reversed).
 
-The menu capture scripts (not in the repo) start `build-rs/DDNet-Server.exe` on port
-8305 from `%TEMP%\ddnet-rs-menu\server` with its own storage.cfg, run
-`target/debug/ddnet-rs.exe --size 800x600 --no-grab` from `%TEMP%\ddnet-rs-menu`, send
-keys with `SendKeys` (Esc, Tab x2 + Enter = Disconnect/Connect, Tab x3 + Enter on the
-start screen = Settings, Esc + Tab x4 + Enter in game = Quit) and capture the window
-with `PrintWindow`. Run each script in its own PowerShell call (`Add-Type` of the same
-type twice in one session fails).
+#### 7.7 status (2026-11-25, commit 8d0aa10cd): done, awaiting review
+- `statusbar.rs`: `status()` = `CHud::RenderPlayerState` decisions line by line (jumps
+  with every branch/quirk, weapons + active, ninja timer, capabilities, disabled
+  interactions with the C++ gun quirk in DECISIONS.md, lock/practice/team0 modes,
+  deep/live freeze); widget `status` top left under the watermark (16, 88): jump pips,
+  the game skin's pickup weapon sprites (`WeaponIcons`, from game.png in the data dir,
+  40% when not held), ninja timer bar, Phosphor fill state icons.
+- Shown when C++ would: DDNetCharacter present and the server's `m_HudDDRace`
+  (`Predictor::hud_ddrace`). Core: the predicted local core (`Predictor::predicted_core`),
+  else one read from the DDNetCharacter (C++ also overwrites other tees' cores from the
+  predicted world; flags are the same). Not shown: freeze progress (C++ draws it above
+  the tee, not here).
+- Verified: `status_bar_follows_render_player_state` (cases worked out from C++);
+  live `scripts/statusbar_check.ps1`: DDNet-rs plays "subject", switches 4 states with
+  rcon test commands (binds), the C++ client spectates it; indicator sets equal in all
+  four (docs/review/7.7). For that the client got `rcon_auth`/`rcon` (C++ wire format;
+  `ponytail:` no auth-status tracking yet).
+
+#### 7.8 status (2026-11-25, commit 036591a4a): done, awaiting review
+- `killfeed.rs`: `Feed` = `CInfoMessages` rules (ring of 5, oldest first, 500-tick
+  lifetime, empty kills skipped, active-client names, finishes need an active client,
+  C++ time/diff texts); capsules top right (-16, 16), slide in and fade out
+  (`motion::NORMAL`); sample capsule in the editor (`HudData::editing`).
+- `timefmt.rs`: `str_time`/`str_time_float`; `rs_golden` str_time.txt (11,142 vectors)
+  all equal; 7.9 uses it for the race timer and finish texts.
+- Not ported: team kill members (need `Sv_TeamsState`), DDTeam name colours, CTF flags.
+- Verified: `killfeed_follows_info_messages`; live `statusbar_check.ps1 -Kills`: the same
+  entries in the same order in both clients (docs/review/7.8). A live finish was not
+  run: every teleport test command marks the run cheated, so a scripted finish needs a
+  real route (unit tests cover the finish texts).
+
+#### Exact next actions (next session starts here)
+1. Read CLAUDE.md, PLAN §10.3 7.9+, this section, `git log`.
+2. The user reviews 7.7/7.8 (docs/review/7.7, 7.8) and the 7.5/7.6 changes; apply.
+3. 7.9 Dynamic Island (PLAN 10.3): stop and ask the user before starting it (they asked
+   to stop before 7.9). `timefmt` and the live scripts are ready for it.
+4. Before each commit: gates, `/ponytail-review`, UI rules review; update this file.
 
 #### Decisions and gotchas from 7.1
 - egui 0.37 panics in debug if a frame's `TexturesDelta` is dropped unapplied: drain
