@@ -201,9 +201,7 @@ impl Editor {
     ) -> bool {
         let screen = ctx.content_rect();
         let free = ctx.input(|i| i.modifiers.shift);
-        let placements: Vec<Placement> = (widgets.iter())
-            .map(|w| config.placement(w.id(), w.default_placement()))
-            .collect();
+        let placements = crate::hud::placements(ctx, widgets, config);
         // last frame's rectangles of the shown widgets, for snapping to each other
         let rects: Vec<(&str, Rect)> = (widgets.iter().zip(&placements))
             .filter(|(_, p)| p.enabled)

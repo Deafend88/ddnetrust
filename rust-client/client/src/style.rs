@@ -8,16 +8,12 @@ use egui::{Color32, FontData, FontDefinitions, FontFamily, FontId};
 
 /// The window height the UI is laid out for: one point is one pixel there.
 pub const REFERENCE_HEIGHT: f32 = 1080.0;
-/// The smallest height scale, so text stays readable (body 15 -> 11 px, captions 12 ->
-/// 9 px); below it the layout gets tighter instead (the watermark wraps).
-pub const MIN_SCALE: f32 = 0.75;
-
 /// Pixels per point: the window height against 1080p (DDNet's HUD scales with the
-/// height too, so the layout looks the same at every resolution), at least `MIN_SCALE`,
-/// times the user's `rs_ui_scale` percent. Widget offsets are points, so saved
-/// positions are in 1080p reference units.
+/// height too: the HUD scales like a picture, so 800x600 looks like 1080p, only
+/// smaller), times the user's `rs_ui_scale` percent. Widget offsets are points, so
+/// saved positions are in 1080p reference units.
 pub fn ui_scale(height: u32, user_percent: i32) -> f32 {
-    (height as f32 / REFERENCE_HEIGHT).max(MIN_SCALE) * (user_percent as f32 / 100.0)
+    height as f32 / REFERENCE_HEIGHT * (user_percent as f32 / 100.0)
 }
 
 /// Colours: dark surfaces, high-contrast text, one accent (blue).
@@ -362,6 +358,6 @@ mod tests {
         assert_eq!(ui_scale(1080, 100), 1.0);
         assert_eq!(ui_scale(1440, 100), 1440.0 / 1080.0);
         assert_eq!(ui_scale(2160, 50), 1.0); // the user's scale on top
-        assert_eq!(ui_scale(600, 100), 0.75); // clamped: readable at 800x600
+        assert_eq!(ui_scale(540, 100), 0.5); // no floor: the same picture, smaller
     }
 }

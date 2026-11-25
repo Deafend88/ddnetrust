@@ -332,13 +332,18 @@ impl Widget for StatusBar {
     }
 
     fn default_placement(&self) -> Placement {
-        // under the watermark (16 + its 49 pt + 7, on the 8 pt grid)
+        // under the default watermark (16 + its 49 pt + 8); it follows the watermark's
+        // actual height (`below`)
         Placement {
             anchor: Anchor::TopLeft,
             x: 16,
-            y: 72,
+            y: 73,
             enabled: true,
         }
+    }
+
+    fn below(&self) -> Option<&'static str> {
+        Some("watermark")
     }
 
     fn show(&mut self, ui: &mut Ui, data: &HudData, config: &HudConfig) {

@@ -268,6 +268,11 @@ pub trait Widget {
     fn name(&self) -> &'static str;
     fn icon(&self) -> &'static str;
     fn default_placement(&self) -> Placement;
+    /// The widget this one stacks under (`STACK_GAP` below its actual bottom) while both
+    /// sit at their default places.
+    fn below(&self) -> Option<&'static str> {
+        None
+    }
     /// Draws the widget; `data` and `config` are all it reads.
     fn show(&mut self, ui: &mut egui::Ui, data: &HudData, config: &HudConfig);
     /// Whether the widget takes clicks now (the HUD is click-through otherwise).
@@ -365,6 +370,44 @@ pub fn area_id(id: &str) -> egui::Id {
     egui::Id::unique(("hud", id))
 }
 
+/// The gap between a stacked widget and the one above it.
+pub const STACK_GAP: f32 = crate::style::space::S;
+
+/// Whether `p` is `w`'s default place (shown or not).
+fn at_default(w: &dyn Widget, p: Placement) -> bool {
+    let d = w.default_placement();
+    (p.anchor, p.x, p.y) == (d.anchor, d.x, d.y)
+}
+
+/// Every widget's placement as drawn: its saved or default one, except that a widget
+/// at its default place stacks under its `below` widget's actual bottom (last frame's
+/// rect) while that one is shown at its default place too.
+pub fn placements(
+    ctx: &egui::Context,
+    widgets: &[Box<dyn Widget>],
+    config: &HudConfig,
+) -> Vec<Placement> {
+    let top = ctx.content_rect().top();
+    let placement = |w: &dyn Widget| config.placement(w.id(), w.default_placement());
+    (widgets.iter())
+        .map(|w| {
+            let mut p = placement(w.as_ref());
+            let above = w
+                .below()
+                .and_then(|id| widgets.iter().find(|o| o.id() == id));
+            if let Some(above) = above
+                && at_default(w.as_ref(), p)
+                && at_default(above.as_ref(), placement(above.as_ref()))
+                && placement(above.as_ref()).enabled
+                && let Some(r) = ctx.memory(|m| m.area_rect(area_id(above.id())))
+            {
+                p.y = (r.bottom() - top + STACK_GAP).round() as i32;
+            }
+            p
+        })
+        .collect()
+}
+
 /// Draws every enabled widget at its placement.
 pub fn show(
     ctx: &egui::Context,
@@ -372,8 +415,8 @@ pub fn show(
     data: &HudData,
     config: &HudConfig,
 ) {
-    for w in widgets {
-        let p = config.placement(w.id(), w.default_placement());
+    let placements = placements(ctx, widgets, config);
+    for (w, p) in widgets.iter_mut().zip(placements) {
         if !p.enabled {
             continue;
         }
