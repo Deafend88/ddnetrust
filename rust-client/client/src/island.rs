@@ -298,6 +298,8 @@ pub struct Player {
     pub source: Option<String>,
     /// Synced lyrics while they are on.
     pub lyrics: Option<Lyrics>,
+    /// The app's volume (0..1), when it has an audio session.
+    pub volume: Option<f32>,
 }
 
 /// The first active event (they come in priority order), else the idle row if it has
@@ -320,9 +322,23 @@ pub const ITEMS: [hud::Item; 7] = [
     ("track", true, "Track change"),
 ];
 
-/// The lyrics switch (`hud_set island lyrics 0|1`, off by default): the playing track's
-/// title, artist and duration are sent to lrclib.net when it is on.
-pub const LYRICS_SETTING: &str = "Synced lyrics (from lrclib.net)";
+/// Where synced lyrics show (`hud_set island lyrics_place island|card|off`): as subtitles
+/// under the island (default), in the "Now playing" card, or nowhere (then nothing is
+/// fetched; otherwise the playing track's title and artist go to lrclib.net).
+pub const LYRICS_PLACES: [(&str, &str); 3] = [
+    ("island", "Under the island"),
+    ("card", "In the card"),
+    ("off", "Off"),
+];
+
+/// The configured lyrics place (one of `LYRICS_PLACES`' keys).
+pub fn lyrics_place(config: &HudConfig) -> &'static str {
+    let v = config.value("island", "lyrics_place").unwrap_or("island");
+    LYRICS_PLACES
+        .iter()
+        .find(|p| p.0 == v.trim())
+        .map_or("island", |p| p.0)
+}
 
 /// How long a track change shows (the concept's 3 s; C++ has no such notice).
 pub const TRACK_TICKS: i32 = TICK_SPEED * 3;
@@ -337,6 +353,9 @@ pub struct Island {
     track_until: i32,
     cover: CoverCache,
     anim: Anim,
+    subtitles: Subtitles,
+    /// The last frame's time (seconds).
+    last: Option<f64>,
 }
 
 /// The animation state: the size and corner springs, the content shown and its fade.
@@ -354,6 +373,12 @@ pub struct Anim {
     seeking: Option<f32>,
     /// The player's content height as last drawn (its size follows its content).
     player_h: Option<f32>,
+    /// The player's lyrics view is open (its "Lyrics" button).
+    player_lyrics: bool,
+    /// The volume slider's value while it is dragged.
+    volume: Option<f32>,
+    /// The island's rect as last drawn (the subtitles go under it).
+    pub rect: Option<Rect>,
     last: Option<f64>,
 }
 
@@ -646,6 +671,7 @@ impl Anim {
             self.corner.update_damped(r, motion::SPRING, ZETA, dt);
         } else if hidden {
             self.shown = None;
+            self.rect = None;
             return None;
         }
         let on = view.is_some() as i32 as f32;
@@ -655,6 +681,7 @@ impl Anim {
 
         let size = vec2(self.width.value.max(0.0), self.height.value.max(0.0));
         let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+        self.rect = Some(rect);
         let opacity = self.opacity.value.clamp(0.0, 1.0);
         let radius = self.corner.value.clamp(0.0, rect.height() / 2.0);
         let p = ui.painter().clone();
@@ -683,7 +710,13 @@ impl Anim {
                 child.set_clip_rect(rect.intersect(ui.clip_rect()));
                 child.set_opacity(alpha);
                 let player = player.clone();
-                let command = player_ui(&mut child, &player, true, 3, &mut self.seeking, weak);
+                let mut controls = Controls {
+                    seeking: &mut self.seeking,
+                    lyrics_open: &mut self.player_lyrics,
+                    volume: &mut self.volume,
+                };
+                let lines = if *controls.lyrics_open { 3 } else { 0 };
+                let command = player_ui(&mut child, &player, Some(&mut controls), lines, weak);
                 self.player_h = Some(child.min_rect().height());
                 return command;
             }
@@ -824,22 +857,33 @@ pub fn source_name(id: &str) -> &str {
 /// The expanded player (SPEC §2, iOS style): cover, title and artist with the "⋯" source
 /// menu; elapsed, progress bar (click or drag to seek), remaining; previous, play/pause,
 /// next. Without a track: a hint and the source menu.
-/// `controls`: the interactive F7 player (source menu, seeking, buttons); without them
-/// a display-only card (the "Now playing" widget). `lyric_lines`: how many lyrics lines
-/// show around the current one (0: none, 1: the current line, 3: previous, current,
+/// The F7 player's interactive state.
+pub struct Controls<'a> {
+    /// The progress bar's position while it is dragged.
+    pub seeking: &'a mut Option<f32>,
+    /// The lyrics view is open.
+    pub lyrics_open: &'a mut bool,
+    /// The volume slider's value while it is dragged.
+    pub volume: &'a mut Option<f32>,
+}
+
+/// `controls`: the interactive F7 player (source menu, lyrics button, seeking, buttons,
+/// volume); without them a display-only card (the "Now playing" widget). `lyric_lines`:
+/// how many lyrics lines show (0: none, 1: the current line, 3: previous, current,
 /// next).
 pub fn player_ui(
     ui: &mut Ui,
     p: &Player,
-    controls: bool,
+    mut controls: Option<&mut Controls>,
     lyric_lines: usize,
-    seeking: &mut Option<f32>,
     weak: Color32,
 ) -> Option<Command> {
     let mut command = None;
+    let interactive = controls.is_some();
+    let seeking = controls.as_ref().and_then(|c| *c.seeking);
     // the source menu, top right
     let menu = |ui: &mut Ui, command: &mut Option<Command>| {
-        if !controls {
+        if !interactive {
             return;
         }
         let r = dots_button(ui).on_hover_text("Source");
@@ -892,8 +936,22 @@ pub fn player_ui(
         let (rect, _) =
             ui.allocate_exact_size(egui::Vec2::splat(size::COVER_PLAYER), Sense::hover());
         paint_cover(ui.painter(), rect, track.cover, ui.opacity());
+        let lyrics_open = controls.as_mut().map(|c| &mut *c.lyrics_open);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
             menu(ui, &mut command);
+            // the lyrics view, when lyrics are on
+            if let Some(open) = lyrics_open.filter(|_| p.lyrics.is_some()) {
+                let c = if *open { color::ACCENT } else { color::TEXT };
+                let t = egui::RichText::new(icons::LYRICS)
+                    .font(icon_font(size::ICON))
+                    .color(c);
+                let b = egui::Button::new(t)
+                    .frame(false)
+                    .min_size(egui::Vec2::splat(size::CONTROL));
+                if ui.add(b).on_hover_text("Lyrics").clicked() {
+                    *open = !*open;
+                }
+            }
             ui.vertical(|ui| {
                 ui.spacing_mut().item_spacing.y = space::XS;
                 ui.add_space(space::S);
@@ -953,25 +1011,25 @@ pub fn player_ui(
             vec2(track_rect.width() * frac, track_rect.height()),
         );
         painter.rect_filled(filled, pill, color::TEXT.gamma_multiply(ui.opacity()));
-        if controls && *can_seek {
+        if let Some(c) = controls.as_mut().filter(|_| *can_seek) {
             let r = ui.interact(bar, ui.scope_id().with("seek"), Sense::click_and_drag());
             let at = |r: &egui::Response| {
                 r.interact_pointer_pos()
                     .map(|p| ((p.x - bar.left()) / bar.width().max(1.0)).clamp(0.0, 1.0))
             };
             if r.dragged() {
-                *seeking = at(&r);
+                *c.seeking = at(&r);
             }
             if (r.drag_stopped() || r.clicked())
-                && let Some(f) = at(&r).or(*seeking)
+                && let Some(f) = at(&r).or(*c.seeking)
             {
                 command = Some(Command::Seek(f as f64 * dur));
-                *seeking = None;
+                *c.seeking = None;
             }
         }
     }
     // previous, play/pause (larger), next, centred
-    if controls {
+    if interactive {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = space::XL;
             let control = |ui: &mut Ui, glyph: &str, size: f32, enabled: bool, tip: &str| {
@@ -1006,6 +1064,47 @@ pub fn player_ui(
             }
         });
     }
+    // the app's volume (the Volume Mixer's, not the game's)
+    if let (Some(c), Some(level)) = (controls.as_mut(), p.volume) {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = space::S;
+            let icon = |ui: &mut Ui, g: &str| w::icon(ui, g, size::ICON, weak);
+            icon(ui, icons::VOLUME_DOWN);
+            let mut v = c.volume.unwrap_or(level);
+            ui.spacing_mut().slider_width = ui.available_width() - size::ICON - space::S;
+            let r = ui
+                .scope(|ui| {
+                    // a thin white rail and a small white knob, like the progress bar
+                    let vis = ui.visuals_mut();
+                    vis.selection.bg_fill = color::TEXT;
+                    let ws = &mut vis.widgets;
+                    for w in [&mut ws.inactive, &mut ws.hovered, &mut ws.active] {
+                        w.bg_fill = color::TEXT;
+                        w.weak_bg_fill = color::TEXT;
+                        w.fg_stroke.color = color::TEXT;
+                        w.bg_stroke = egui::Stroke::NONE;
+                        w.expansion = 0.0;
+                    }
+                    ws.inactive.bg_fill = color::TEXT.gamma_multiply(0.25);
+                    ui.spacing_mut().slider_rail_height = space::XS;
+                    ui.spacing_mut().interact_size.y = space::M;
+                    let s = egui::Slider::new(&mut v, 0.0..=1.0)
+                        .show_value(false)
+                        .trailing_fill(true);
+                    ui.add(s)
+                })
+                .inner;
+            icon(ui, icons::VOLUME_UP);
+            if r.dragged() {
+                *c.volume = Some(v);
+            }
+            // one command per change of mind, not one per pixel dragged
+            if r.drag_stopped() || (r.changed() && !r.dragged()) {
+                command = Some(Command::Volume(v));
+                *c.volume = None;
+            }
+        });
+    }
     if lyric_lines > 0
         && let Some(l) = &p.lyrics
     {
@@ -1013,6 +1112,47 @@ pub fn player_ui(
     }
     command
 }
+
+/// The subtitles under the island: the current lyrics line, small, translucent, no box
+/// (a faint shadow keeps it legible on bright maps); a new line crossfades in.
+#[derive(Default)]
+pub struct Subtitles {
+    line: String,
+    previous: String,
+    fade: Spring,
+}
+
+impl Subtitles {
+    /// Paints `line` centred under `below` (nothing: fades out); `dt` in seconds.
+    pub fn show(&mut self, ui: &Ui, below: Rect, line: Option<&str>, dt: f32) {
+        let line = line.unwrap_or("");
+        if line != self.line {
+            self.previous = std::mem::replace(&mut self.line, line.to_string());
+            self.fade = Spring::new(0.0);
+        }
+        let f = self.fade.update(1.0, motion::NORMAL, dt).clamp(0.0, 1.0);
+        let at = below.center_bottom() + vec2(0.0, space::S);
+        for (text, alpha) in [(&self.previous, 1.0 - f), (&self.line, f)] {
+            if text.is_empty() || alpha <= 0.01 {
+                continue;
+            }
+            let g = ui.ctx().fonts_mut(|fonts| {
+                let font = font(size::BODY, Weight::Medium);
+                fonts.layout(text.clone(), font, color::TEXT, WRAP)
+            });
+            let rect = Rect::from_min_size(at - vec2(g.size().x / 2.0, 0.0), g.size());
+            let mut shadow = HUD_SHADOW;
+            shadow.color = shadow.color.gamma_multiply(alpha);
+            let p = ui.painter();
+            p.add(shadow.as_shape(rect.expand(space::XS), CornerRadius::same(radius::PILL)));
+            let shape = TextShape::new(rect.min, g, Color32::TRANSPARENT);
+            p.add(shape.with_opacity_factor(alpha * SUBTITLE_ALPHA));
+        }
+    }
+}
+
+/// The subtitles' opacity: present, never in the way.
+const SUBTITLE_ALPHA: f32 = 0.8;
 
 /// Synced lyrics at `position`: the current line in Inter Display, with the previous and
 /// next ones dimmed when `lines` is 3; a short note while loading or without lyrics.
@@ -1199,17 +1339,49 @@ impl Widget for Island {
                     sessions: state.sessions.clone(),
                     source: state.source.clone(),
                     lyrics: state.lyrics.clone(),
+                    volume: state.volume,
                 }))
             } else {
                 view(events, idle)
             };
+        let dt = self.last.map_or(0.0, |l| (now - l).clamp(0.0, 0.1) as f32);
+        self.last = Some(now);
         if let (Some(c), Some(m)) = (self.anim.show(ui, data.glass, v, now), data.media) {
             m.send(c);
+        }
+        // the lyrics as subtitles (not while the player shows them itself)
+        let line = match (&state.lyrics, state.track.as_ref()) {
+            (Some(Lyrics::Lines(all)), Some(t)) if lyrics_place(config) == "island" => t
+                .position(std::time::Instant::now())
+                .and_then(|(pos, _)| lyrics::current(all, pos))
+                .map(|i| all[i].1.as_str()),
+            _ => None,
+        };
+        let line = line.filter(|_| !data.player_open);
+        if let Some(rect) = self.anim.rect {
+            self.subtitles.show(ui, rect, line, dt);
         }
     }
 
     fn settings(&mut self, ui: &mut Ui, config: &mut HudConfig) {
-        hud::item_toggles(ui, config, "island", &[("lyrics", LYRICS_SETTING, false)]);
+        // where the lyrics show (one place)
+        ui.label("Lyrics");
+        let mut i = (LYRICS_PLACES.iter())
+            .position(|p| p.0 == lyrics_place(config))
+            .unwrap_or(0);
+        let labels = LYRICS_PLACES.map(|p| p.1);
+        if w::segmented(ui, &mut i, &labels).changed() {
+            config.set("island", "lyrics_place", LYRICS_PLACES[i].0);
+        }
+        let weak = ui.visuals().weak_text_color();
+        w::text(
+            ui,
+            "From lrclib.net (title and artist are sent)",
+            size::CAPTION,
+            Weight::Regular,
+            weak,
+        );
+        ui.add_space(space::S);
         hud::item_list(ui, config, "island", &ITEMS);
     }
 }

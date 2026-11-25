@@ -33,7 +33,7 @@ use ddnet_rs::island::Island;
 use ddnet_rs::killfeed::Killfeed;
 use ddnet_rs::media::{self, Media};
 use ddnet_rs::movement::Movement;
-use ddnet_rs::nowplaying::{LyricsLine, NowPlayingCard};
+use ddnet_rs::nowplaying::NowPlayingCard;
 use ddnet_rs::render::items::{self, Items};
 use ddnet_rs::render::map::{MapRender, View, hsl_packed_to_rgb};
 use ddnet_rs::render::players::Players;
@@ -469,8 +469,8 @@ impl App {
             self.end_session();
             self.menu.error = Some(e);
         }
-        // the lyrics switch (island settings) goes to the media thread
-        let lyrics = self.settings.hud.on("island", "lyrics", false);
+        // lyrics are fetched unless their place is "off" (island settings)
+        let lyrics = ddnet_rs::island::lyrics_place(&self.settings.hud) != "off";
         if self.lyrics_on != Some(lyrics) {
             self.media.send(media::Command::Lyrics(lyrics));
             self.lyrics_on = Some(lyrics);
@@ -925,7 +925,6 @@ fn main() {
         Box::new(Killfeed::new(&storage)),
         Box::new(Island::default()),
         Box::new(NowPlayingCard::default()),
-        Box::new(LyricsLine::default()),
     ];
     // the C++ HUD switches are the first values of our HUD items
     let mut settings = settings;

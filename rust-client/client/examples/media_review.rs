@@ -1,6 +1,7 @@
-//! 7.10 review: the F7 player with synced lyrics, the "Now playing" card (display only,
-//! with its lyrics line) and the lyrics line widget, over a real map, as one PNG. The
-//! track is a stand-in (covers come from the OS media session).
+//! 7.10 review: the compact F7 player with its volume slider, the player with its lyrics
+//! view open, the idle island with the lyrics as subtitles under it, and the "Now
+//! playing" card, over a real map, as one PNG. The track is a stand-in (covers come from
+//! the OS media session).
 //!
 //! Usage: cargo run -p ddnet-rs --example media_review -- <map> <x> <y> <glass 0-2> <out.png>
 
@@ -10,7 +11,9 @@ use ddnet::map::Map;
 use ddnet_rs::assets;
 use ddnet_rs::gfx::batch::Batch;
 use ddnet_rs::gfx::{Gfx, Size};
-use ddnet_rs::island::{Anim, NowPlaying, PLAYER_WIDTH, Player, View, lyrics_ui, player_ui};
+use ddnet_rs::island::{
+    Anim, Controls, NowPlaying, PLAYER_WIDTH, Part, Player, Subtitles, Timer, View, player_ui,
+};
 use ddnet_rs::lyrics::Lyrics;
 use ddnet_rs::render::map::{MapRender, View as MapView, hsl_packed_to_rgb};
 use ddnet_rs::storage::Storage;
@@ -41,6 +44,7 @@ fn player(controls: bool) -> Player {
         lyrics: Some(Lyrics::Lines(Arc::new(
             lines.iter().map(|(t, s)| (*t, s.to_string())).collect(),
         ))),
+        volume: controls.then_some(0.7),
     }
 }
 
@@ -58,7 +62,9 @@ fn main() {
     let mut gfx = Gfx::headless(size).expect("graphics adapter");
     let render = MapRender::new(&mut gfx, &map, &images);
     let mut painter = Painter::new(&gfx, gfx.format, glass);
-    let mut anim = Anim::default();
+    let (mut anim, mut idle, mut subtitles) =
+        (Anim::default(), Anim::default(), Subtitles::default());
+    let (mut seeking, mut volume, mut open) = (None, None, true);
     for i in 0..60 {
         let t = i as f64 / 30.0;
         let view = MapView {
@@ -86,11 +92,52 @@ fn main() {
         let world = gfx.world_view();
         let weak = glass.text_secondary();
         painter.paint(&gfx, &world, size, input, |ctx| {
-            egui::Area::new(egui::Id::unique("island"))
+            // the compact F7 player (top centre)
+            egui::Area::new(egui::Id::unique("player"))
                 .anchor(Align2::CENTER_TOP, [0.0, 16.0])
                 .show(ctx, |ui| {
                     anim.show(ui, glass, Some(View::Player(player(true))), t);
                 });
+            // the player with its lyrics view open (left)
+            egui::Area::new(egui::Id::unique("lyrics"))
+                .anchor(Align2::LEFT_TOP, [16.0, 16.0])
+                .show(ctx, |ui| {
+                    let margin = Margin::same(space::L as i8);
+                    w::hud_bar(ui, glass, radius::CARD, margin, 0.0, |ui| {
+                        ui.vertical(|ui| {
+                            ui.set_width(PLAYER_WIDTH - 2.0 * space::L);
+                            let mut c = Controls {
+                                seeking: &mut seeking,
+                                lyrics_open: &mut open,
+                                volume: &mut volume,
+                            };
+                            player_ui(ui, &player(true), Some(&mut c), 3, weak);
+                        });
+                    });
+                });
+            // the idle island with the subtitles (right)
+            egui::Area::new(egui::Id::unique("idle"))
+                .anchor(Align2::RIGHT_TOP, [-120.0, 16.0])
+                .show(ctx, |ui| {
+                    let timer = Timer::Clock {
+                        text: "16:07".into(),
+                        warn: false,
+                        blink: false,
+                    };
+                    let np = NowPlaying {
+                        title: "Night drive".into(),
+                        artist: "Ambient Tees".into(),
+                        playing: true,
+                        cover: None,
+                    };
+                    let v = View::Idle(vec![Part::Timer(timer), Part::Media(np)]);
+                    idle.show(ui, glass, Some(v), t);
+                    if let Some(rect) = idle.rect {
+                        let line = Some("Night drive, the city fades behind");
+                        subtitles.show(ui, rect, line, 1.0 / 30.0);
+                    }
+                });
+            // the "Now playing" card, no lyrics (bottom left)
             egui::Area::new(egui::Id::unique("card"))
                 .anchor(Align2::LEFT_BOTTOM, [16.0, -16.0])
                 .show(ctx, |ui| {
@@ -98,17 +145,8 @@ fn main() {
                     w::hud_bar(ui, glass, radius::CARD, margin, 0.0, |ui| {
                         ui.vertical(|ui| {
                             ui.set_width(PLAYER_WIDTH - 2.0 * space::L);
-                            player_ui(ui, &player(false), false, 1, &mut None, weak);
+                            player_ui(ui, &player(false), None, 0, weak);
                         });
-                    });
-                });
-            egui::Area::new(egui::Id::unique("line"))
-                .anchor(Align2::RIGHT_BOTTOM, [-16.0, -16.0])
-                .show(ctx, |ui| {
-                    let margin = Margin::symmetric(space::L as i8, space::S as i8);
-                    let p = player(false);
-                    w::hud_bar(ui, glass, radius::PILL, margin, 0.0, |ui| {
-                        lyrics_ui(ui, p.lyrics.as_ref().unwrap(), Some(128.0), 1, weak);
                     });
                 });
         });

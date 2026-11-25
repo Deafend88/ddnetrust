@@ -901,10 +901,38 @@ are final unless the user changes them:
   found), gates, live runs (local server: real cover in the island, soft shadow).
   Review images: `examples/media_review.rs`, `icon_compare.rs` (sent to the user).
 
+#### 7.10 review round 2 (2026-11-25)
+- Per-app volume: `audio.rs`, the one `unsafe` module (user-approved exception, noted
+  in CLAUDE.md and DECISIONS.md): Core Audio sessions on the default output device,
+  matched to the SMTC app id by the session identifier's executable path / package name
+  (`audio::matches`, tested); safe `volume` / `set_volume`, SAFETY comment on every
+  call. The media thread reads the shown app's volume each poll (`State::volume`),
+  `Command::Volume` sets it. F7 player: volume row (down icon, thin white slider, up
+  icon), one command per drag or click. Live: the playing app's session was found
+  (volume read 100 %, not changed).
+- Icons: Material Symbols Rounded filled everywhere (Apache 2.0, `MaterialSymbols-
+  LICENSE.txt`), except Phosphor's ghost (no collision) and barbell (practice).
+  `scripts/gen_icons.py <variable ttf> <codepoints> <Phosphor-Fill.ttf>` instances
+  (FILL 1, wght 400, GRAD 0, opsz 24) and subsets both fonts (10.6 KB + 1.7 KB);
+  `Phosphor-Fill.ttf` removed; unused DOTS_THREE, X, EYE_SLASH dropped; new
+  VOLUME_DOWN/UP, LYRICS. Material glyphs scaled 1.15 (`style::MATERIAL_SCALE`) to the
+  old optical size. `examples/icon_compare.rs` removed (choice made). Gallery reference
+  regenerated.
+- Lyrics in ONE place (`hud_set island lyrics_place island|card|off`, default island,
+  segmented control in the island's settings with the lrclib.net note; "off" = nothing
+  fetched): subtitles under the island (`island::Subtitles`: current line only, BODY
+  medium at 80 %, faint shadow, no box, crossfade over `motion::NORMAL`; hidden while
+  the F7 player is open); the card shows one line only when the place is "card"; the
+  F7 player is compact, its "Lyrics" button (accent when open) shows previous/current/
+  next inside it. The lyrics line widget is gone. Live: subtitles followed a real track.
+- Verified: unit tests (session matching), gates, live run (local server: Material
+  icons, subtitles, cache file written in the scratch save dir). Review image:
+  `examples/media_review.rs` (compact player with volume, player with lyrics, island
+  with subtitles, card).
+
 #### Exact next actions (next session starts here)
 1. Read CLAUDE.md, PLAN §10.3 7.10/7.11, this section, `git log`.
-2. The user's answers: icon set (Phosphor or Material), per-app volume (allow a small
-   documented `unsafe` block for Core Audio, a crate, or skip).
+2. Apply the user's review of round 2, if any.
 3. Then 7.11 (settings page entries, default HUD layout, frame time check, docs).
 4. Before each commit: gates, `/ponytail-review`, UI rules review; update this file.
 

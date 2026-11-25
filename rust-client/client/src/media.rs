@@ -57,6 +57,8 @@ pub struct State {
     pub track: Option<Track>,
     /// The track's synced lyrics while they are on (`Command::Lyrics`).
     pub lyrics: Option<Lyrics>,
+    /// The shown session's app volume (0..1), when it has an audio session.
+    pub volume: Option<f32>,
 }
 
 /// A user's command for the chosen session.
@@ -71,6 +73,8 @@ pub enum Command {
     Source(Option<String>),
     /// Fetch synced lyrics for the tracks (LRCLIB) or not.
     Lyrics(bool),
+    /// The shown session's app volume (0..1).
+    Volume(f32),
 }
 
 /// The handle the game holds.
@@ -191,12 +195,18 @@ fn run(shared: &Mutex<State>, rx: &Receiver<Command>, source: Option<String>) {
     loop {
         match rx.recv_timeout(Duration::from_millis(500)) {
             Ok(Command::Lyrics(on)) => lyrics.enabled = on,
+            Ok(Command::Volume(level)) => {
+                if let Some(app) = shared.lock().ok().and_then(|s| s.source.clone()) {
+                    crate::audio::set_volume(&app, level);
+                }
+            }
             Ok(command) => smtc.command(command),
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => return,
         }
         let mut state = smtc.poll();
         state.lyrics = lyrics.update(state.track.as_ref());
+        state.volume = state.source.as_deref().and_then(crate::audio::volume);
         if let Ok(mut s) = shared.lock() {
             *s = state;
         }
@@ -274,7 +284,7 @@ mod smtc {
                     let start = start.map_or(0, |t| t.Duration);
                     s.TryChangePlaybackPositionAsync(start + (secs.max(0.0) * 1e7) as i64)
                 }
-                Command::Source(_) | Command::Lyrics(_) => return,
+                Command::Source(_) | Command::Lyrics(_) | Command::Volume(_) => return,
             };
             let _ = op.and_then(|op| op.join());
         }
@@ -295,6 +305,7 @@ mod smtc {
                 chosen: self.chosen.clone(),
                 track,
                 lyrics: None,
+                volume: None,
             }
         }
 

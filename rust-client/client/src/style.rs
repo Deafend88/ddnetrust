@@ -147,7 +147,8 @@ pub fn display(size: f32, weight: Weight) -> FontId {
     FontId::new(size, FontFamily::Name(family.into()))
 }
 
-/// Phosphor icons (`icons.rs`) are drawn with this font.
+/// The icons (`icons.rs`: Material Symbols and two Phosphor glyphs) are drawn with this
+/// font.
 pub fn icon_font(size: f32) -> FontId {
     FontId::new(size, FontFamily::Name("icons".into()))
 }
@@ -205,7 +206,8 @@ impl Glass {
     }
 }
 
-/// Inter (regular, medium, semibold; SIL OFL) and Phosphor (MIT), embedded from
+/// Inter and Inter Display (SIL OFL), Material Symbols Rounded (Apache 2.0) and two
+/// Phosphor icons (MIT), embedded from
 /// `rust-client/assets/fonts` with their licences.
 pub fn fonts() -> FontDefinitions {
     let mut fonts = FontDefinitions::empty();
@@ -231,13 +233,21 @@ pub fn fonts() -> FontDefinitions {
             &include_bytes!("../../assets/fonts/InterDisplay-SemiBold.ttf")[..],
         ),
         (
+            "Material",
+            &include_bytes!("../../assets/fonts/MaterialSymbolsRounded-Fill.ttf")[..],
+        ),
+        (
             "Phosphor",
-            &include_bytes!("../../assets/fonts/Phosphor-Fill.ttf")[..],
+            &include_bytes!("../../assets/fonts/Phosphor-Extra.ttf")[..],
         ),
     ] {
-        fonts
-            .font_data
-            .insert(name.into(), Arc::new(FontData::from_static(data)));
+        let mut font = FontData::from_static(data);
+        if name == "Material" {
+            // Material draws its glyphs inside a 20/24 safe area; this scale gives them
+            // the optical size the icon tokens (and the Phosphor glyphs) had
+            font.tweak.scale = MATERIAL_SCALE;
+        }
+        fonts.font_data.insert(name.into(), Arc::new(font));
     }
     for (family, font) in [
         (FontFamily::Proportional, "Inter-Regular"),
@@ -252,13 +262,21 @@ pub fn fonts() -> FontDefinitions {
             FontFamily::Name("display-semibold".into()),
             "InterDisplay-SemiBold",
         ),
-        (FontFamily::Name("icons".into()), "Phosphor"),
     ] {
-        // no Phosphor fallback: Inter maps the same private-use codepoints itself
+        // no icon fallback: Inter maps private-use codepoints itself
         fonts.families.insert(family, vec![font.into()]);
     }
+    // Material Symbols, and the two Phosphor icons (gen_icons.py keeps their
+    // codepoints apart)
+    let icons = vec!["Material".into(), "Phosphor".into()];
+    fonts
+        .families
+        .insert(FontFamily::Name("icons".into()), icons);
     fonts
 }
+
+/// Material Symbols' glyph scale (see `fonts`).
+const MATERIAL_SCALE: f32 = 1.15;
 
 /// Installs the fonts and the egui style made from the tokens.
 pub fn install(ctx: &egui::Context, glass: Glass) {

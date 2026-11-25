@@ -236,3 +236,15 @@ only matters for names so long that neither file can exist.
   carries the track's title and artist and a plain client name, nothing else. WinRT's
   HTTP client and JSON parser are used (no new crate). "None found" is cached.
 - Large text uses Inter Display (Apple's SF fonts and symbols may not be embedded).
+- `unsafe` exception (user decision 2026-11-25): per-app volume needs Windows Core Audio
+  COM (`IAudioSessionManager2`, `IAudioSessionControl2`, `ISimpleAudioVolume`); no
+  maintained crate wraps session volume safely (`wasapi` lists sessions only,
+  `volumecontrol-windows` is device-wide). It lives in `client/src/audio.rs` alone,
+  behind a safe API, with a SAFETY comment on every call. Rule: FFI to OS APIs only,
+  when no safe crate exists.
+- Icons: Material Symbols Rounded (filled) by the user's choice, with Phosphor's ghost
+  and barbell where Material reads worse. Material glyphs are scaled 1.15 so the icon
+  size tokens keep their optical size.
+- Lyrics show in one place (subtitles under the island by default, the card, or off);
+  the default fetches lyrics for the playing track (the user chose "under the island"
+  as the default).

@@ -241,7 +241,7 @@ pub fn dot(ui: &mut Ui) {
 }
 
 /// A button with an optional icon before the label. The icon is its own atom in the
-/// icon font: Inter maps Phosphor's private-use codepoints to glyphs of its own.
+/// icon font: Inter maps private-use codepoints to glyphs of its own.
 fn labelled(
     glyph: Option<&str>,
     label: &str,

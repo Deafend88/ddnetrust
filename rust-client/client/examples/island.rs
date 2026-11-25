@@ -82,6 +82,7 @@ fn script(t: f64) -> Option<View> {
             sessions: vec!["Spotify.exe".into()],
             source: None,
             lyrics: None,
+            volume: Some(0.7),
         })),
         t if t < 22.4 => idle(None, None),
         _ => None,

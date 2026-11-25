@@ -2,6 +2,7 @@
 
 pub mod anim;
 pub mod assets;
+pub mod audio;
 pub mod camera;
 pub mod config;
 pub mod controls;

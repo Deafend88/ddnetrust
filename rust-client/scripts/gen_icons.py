@@ -1,80 +1,90 @@
-"""Generates rust-client/client/src/icons.rs: codepoints of the Phosphor icons DDNet-rs
-uses, read from the ligatures of rust-client/assets/fonts/Phosphor-Fill.ttf (Phosphor 2.1.2,
-fill style; `<name>-fill` is a ligature to each glyph). Needs fontTools.
+"""Generates the icon fonts and rust-client/client/src/icons.rs.
 
-Usage: python rust-client/scripts/gen_icons.py
-Add icon names to ICONS and run it again when a widget needs another icon.
+Icons are Material Symbols Rounded, filled (Apache 2.0), except two where Phosphor Fill
+(MIT) reads better: the ghost (no collision) and the horizontal barbell (practice).
+- assets/fonts/MaterialSymbolsRounded-Fill.ttf: a static instance of Google's variable
+  font (FILL 1, wght 400, GRAD 0, opsz 24), subset to the icons below.
+- assets/fonts/Phosphor-Extra.ttf: Phosphor 2.1.2 fill subset to its two icons.
+Both are in the `icons` font family (style.rs); their codepoints must not overlap.
+
+Usage (needs fontTools):
+  python rust-client/scripts/gen_icons.py <MaterialSymbolsRounded[FILL,GRAD,opsz,wght].ttf>
+      <its .codepoints file> <Phosphor-Fill.ttf>
+The Material files are from github.com/google/material-design-icons (variablefont/),
+Phosphor-Fill.ttf from the npm package @phosphor-icons/web 2.1.2 (src/fill/).
+Add icons to ICONS and run it again when a widget needs another icon.
 """
 
 import os
+import sys
 
+from fontTools import subset
 from fontTools.ttLib import TTFont
+from fontTools.varLib import instancer
 
 ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", ".."))
 OUT = os.path.join(ROOT, "rust-client", "client", "src", "icons.rs")
-FONT = os.path.join(ROOT, "rust-client", "assets", "fonts", "Phosphor-Fill.ttf")
+FONTS = os.path.join(ROOT, "rust-client", "assets", "fonts")
 
-# Phosphor name (the fill style's ligature is "<name>-fill") -> Rust constant. One
-# meaning per icon: the comment says what it stands for.
+# (Rust constant, "material" or "phosphor", icon name). One meaning per icon: the
+# comment says what it stands for.
 ICONS = [
-	("user", "USER"),  # player name
-	("fingerprint", "FINGERPRINT"),  # client id
-	("monitor", "MONITOR"),  # framerate
-	("wifi-high", "WIFI"),  # ping
-	("globe", "GLOBE"),  # server address
-	("clock", "CLOCK"),  # local time
-	("gauge", "GAUGE"),  # speed
-	("map-pin", "MAP_PIN"),  # position
-	("crosshair", "CROSSHAIR"),  # aim angle
-	("timer", "TIMER"),  # race time
-	("pulse", "PULSE"),  # server tick rate
-	("check-circle", "CHECK_CIRCLE"),  # finish
-	("trophy", "TROPHY"),  # record
-	("flag-checkered", "FLAG_CHECKERED"),  # race start/finish line
-	("skull", "SKULL"),  # kill
-	("megaphone", "MEGAPHONE"),  # server broadcast
-	("music-notes", "MUSIC_NOTES"),  # now playing
-	("play", "PLAY"),  # media play
-	("pause", "PAUSE"),  # media pause
-	("skip-back", "SKIP_BACK"),  # previous track
-	("skip-forward", "SKIP_FORWARD"),  # next track
-	("dots-three", "DOTS_THREE"),  # more options
-	("gear", "GEAR"),  # settings
-	("x", "X"),  # close
-	("check", "CHECK"),  # done
-	("eye", "EYE"),  # show
-	("eye-slash", "EYE_SLASH"),  # hide
-	("arrows-out-cardinal", "MOVE"),  # edit the HUD layout
-	("arrow-counter-clockwise", "RESET"),  # reset to defaults
-	("plugs-connected", "CONNECT"),  # connect
-	("game-controller", "GAME"),  # back to the game
-	("sign-out", "DISCONNECT"),  # disconnect
-	("power", "POWER"),  # quit
-	("snowflake", "SNOWFLAKE"),  # deep freeze
-	("flame", "FLAME"),  # jetpack (a mark on the gun)
-	("arrow-fat-lines-up", "ARROW_FAT_LINES_UP"),  # endless jump
-	("sparkle", "SPARKLE"),  # teleport weapon
-	("person-simple", "PERSON"),  # solo
-	("ghost", "GHOST"),  # collision with others off
-	("lock", "LOCK"),  # lock mode
-	("barbell", "BARBELL"),  # practice mode
-	("users", "USERS"),  # team (team 0 mode)
-	("info", "INFO"),  # information
-	("caret-up", "CARET_UP"),  # move up
-	("caret-down", "CARET_DOWN"),  # move down
+	("USER", "material", "person"),  # player name
+	("FINGERPRINT", "material", "fingerprint"),  # client id
+	("MONITOR", "material", "desktop_windows"),  # framerate
+	("WIFI", "material", "wifi"),  # ping
+	("GLOBE", "material", "public"),  # server address
+	("CLOCK", "material", "schedule"),  # local time
+	("GAUGE", "material", "speed"),  # speed
+	("MAP_PIN", "material", "location_on"),  # position
+	("CROSSHAIR", "material", "my_location"),  # aim angle
+	("TIMER", "material", "timer"),  # race time
+	("PULSE", "material", "monitor_heart"),  # server tick rate
+	("CHECK_CIRCLE", "material", "check_circle"),  # finish
+	("TROPHY", "material", "trophy"),  # record
+	("FLAG_CHECKERED", "material", "sports_score"),  # race start/finish line
+	("SKULL", "material", "skull"),  # kill
+	("MEGAPHONE", "material", "campaign"),  # server broadcast
+	("MUSIC_NOTES", "material", "music_note"),  # now playing
+	("PLAY", "material", "play_arrow"),  # media play
+	("PAUSE", "material", "pause"),  # media pause
+	("SKIP_BACK", "material", "skip_previous"),  # previous track
+	("SKIP_FORWARD", "material", "skip_next"),  # next track
+	("VOLUME_DOWN", "material", "volume_down"),  # quieter
+	("VOLUME_UP", "material", "volume_up"),  # louder
+	("LYRICS", "material", "lyrics"),  # synced lyrics
+	("GEAR", "material", "settings"),  # settings
+	("CHECK", "material", "check"),  # done
+	("EYE", "material", "visibility"),  # show / spectating
+	("MOVE", "material", "open_with"),  # edit the HUD layout
+	("RESET", "material", "restart_alt"),  # reset to defaults
+	("CONNECT", "material", "cable"),  # connect
+	("GAME", "material", "sports_esports"),  # back to the game
+	("DISCONNECT", "material", "logout"),  # disconnect
+	("POWER", "material", "power_settings_new"),  # quit
+	("SNOWFLAKE", "material", "ac_unit"),  # deep freeze
+	("FLAME", "material", "local_fire_department"),  # jetpack (a mark on the gun)
+	("ARROW_FAT_LINES_UP", "material", "keyboard_double_arrow_up"),  # endless jump
+	("SPARKLE", "material", "auto_awesome"),  # teleport weapon
+	("PERSON", "material", "accessibility_new"),  # solo
+	("GHOST", "phosphor", "ghost"),  # collision with others off
+	("LOCK", "material", "lock"),  # lock mode
+	("BARBELL", "phosphor", "barbell"),  # practice mode
+	("USERS", "material", "group"),  # team (team 0 mode)
+	("INFO", "material", "info"),  # information
+	("CARET_UP", "material", "keyboard_arrow_up"),  # move up
+	("CARET_DOWN", "material", "keyboard_arrow_down"),  # move down
 ]
 
 
-def codepoints():
-	"""Icon name -> codepoint (hex), from the font's ligature substitutions."""
-	font = TTFont(FONT)
+def phosphor_codes(font):
+	"""Phosphor icon name -> codepoint, from the fill font's `<name>-fill` ligatures."""
 	cmap = font.getBestCmap()
 	glyph_cp = {}
 	for cp, glyph in cmap.items():
 		glyph_cp.setdefault(glyph, cp)
 	char = {glyph: chr(cp) for cp, glyph in cmap.items() if cp < 128}
-	# one-letter names are not ligatures (from Phosphor's style.css)
-	codes = {"x": "e4f6"}
+	codes = {}
 	for lookup in font["GSUB"].table.LookupList.Lookup:
 		for sub in lookup.SubTable:
 			sub = getattr(sub, "ExtSubTable", sub)
@@ -82,21 +92,56 @@ def codepoints():
 				for lig in ligatures:
 					name = "".join(char.get(g, "?") for g in [first] + lig.Component)
 					if lig.LigGlyph in glyph_cp:
-						codes[name] = format(glyph_cp[lig.LigGlyph], "x")
+						codes[name.removesuffix("-fill")] = glyph_cp[lig.LigGlyph]
 	return codes
 
 
+def subset_font(font, unicodes, out):
+	"""Keeps only `unicodes` (no ligatures or layout), saved to `out`."""
+	options = subset.Options()
+	options.layout_features = []
+	options.name_IDs = ["*"]
+	options.notdef_outline = True
+	sub = subset.Subsetter(options)
+	sub.populate(unicodes=unicodes)
+	sub.subset(font)
+	font.save(out)
+
+
 def main():
-	codes = codepoints()
+	material_ttf, material_points, phosphor_ttf = sys.argv[1:4]
+	with open(material_points, encoding="utf-8") as f:
+		material = {name: int(cp, 16) for name, cp in (line.split() for line in f if line.strip())}
+	phosphor_font = TTFont(phosphor_ttf)
+	phosphor = phosphor_codes(phosphor_font)
+	codes = {
+		const: (material if src == "material" else phosphor)[name] for const, src, name in ICONS
+	}
+	by_src = {
+		src: sorted({codes[c] for c, s, _ in ICONS if s == src}) for src in ("material", "phosphor")
+	}
+	assert not set(by_src["material"]) & set(by_src["phosphor"]), "codepoints overlap"
+
+	static = instancer.instantiateVariableFont(
+		TTFont(material_ttf), {"FILL": 1, "wght": 400, "GRAD": 0, "opsz": 24}
+	)
+	subset_font(static, by_src["material"], os.path.join(FONTS, "MaterialSymbolsRounded-Fill.ttf"))
+	subset_font(phosphor_font, by_src["phosphor"], os.path.join(FONTS, "Phosphor-Extra.ttf"))
+
 	with open(OUT, "w", encoding="utf-8", newline="\n") as f:
-		f.write("// Generated by rust-client/scripts/gen_icons.py from Phosphor 2.1.2 fill (MIT). Do not edit.\n\n")
-		f.write("//! Phosphor icon glyphs (draw with the `icons` font family, see `style.rs`).\n\n")
-		for name, const in ICONS:
-			f.write(f'/// Phosphor `{name}` (fill).\npub const {const}: &str = "\\u{{{codes[name + "-fill"]}}}";\n')
+		f.write("// Generated by rust-client/scripts/gen_icons.py. Do not edit.\n\n")
+		f.write(
+			"//! Icon glyphs: Material Symbols Rounded, filled (Apache 2.0), and two Phosphor fill\n"
+			"//! icons (MIT); draw them with the `icons` font family (`style.rs`).\n\n"
+		)
+		for const, src, name in ICONS:
+			label = "Material Symbols" if src == "material" else "Phosphor"
+			f.write(f'/// {label} `{name}`.\npub const {const}: &str = "\\u{{{codes[const]:x}}}";\n')
 		f.write(f"\n/// Every icon above, in order (the gallery shows them all).\npub const ALL: [&str; {len(ICONS)}] = [\n")
-		for _, const in ICONS:
+		for const, _, _ in ICONS:
 			f.write(f"    {const},\n")
 		f.write("];\n")
+	print(len(ICONS), "icons")
 
 
 if __name__ == "__main__":

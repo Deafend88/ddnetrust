@@ -166,7 +166,7 @@ fn ring(ui: &Ui, rect: Rect, progress: f32) {
     }
 }
 
-/// A bold hook: eye, shaft and the curve with its point, drawn (Phosphor has none).
+/// A bold hook: eye, shaft and the curve with its point, drawn (no icon set has one).
 fn hook(ui: &Ui, rect: Rect) {
     let (w, h) = (rect.width(), rect.height());
     let s = Stroke::new(h * 0.14, color::TEXT);

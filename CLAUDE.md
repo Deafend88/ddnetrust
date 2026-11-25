@@ -15,7 +15,10 @@ Read `rust-client/docs/PLAN.md`, `rust-client/docs/PROGRESS.md` and `git log` fi
 - Verify against the real C++ code: golden vectors (`src/tools/rs_golden.cpp`) and parity
   data (`src/tools/rs_parity.cpp` -> `rust-client/tests/golden/`). A step is done only at
   100% identical.
-- Fix code, never weaken tests. Network code must not panic on malformed input. No `unsafe`.
+- Fix code, never weaken tests. Network code must not panic on malformed input. No `unsafe`,
+  with one exception: FFI to OS APIs when no safe crate exists, kept in a single module
+  behind a safe API with a SAFETY comment on every unsafe call (today only
+  `client/src/audio.rs`, Windows Core Audio per-app volume; see DECISIONS.md).
 - Load assets from the user's DDNet data dir at runtime; don't copy them.
 
 ## Style

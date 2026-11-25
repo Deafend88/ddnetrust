@@ -30,7 +30,10 @@ fn main() {
     for _ in 0..secs {
         std::thread::sleep(std::time::Duration::from_secs(1));
         let s = media.state();
-        print!("sessions {:?}, source {:?}", s.sessions, s.source);
+        print!(
+            "sessions {:?}, source {:?}, volume {:?}",
+            s.sessions, s.source, s.volume
+        );
         if let Some(t) = &s.track {
             let pos = t.position(std::time::Instant::now());
             let pos = pos.map(|(p, d)| format!("{} / {}", time(p), time(d)));
