@@ -27,8 +27,9 @@ fn glass_frame<R>(
     let backdrop_at = ui.painter().add(Shape::Noop);
     let r = frame.show(ui, add);
     let rect = r.response.rect;
+    let radius = frame.corner_radius.nw as f32;
     ui.painter()
-        .set(shadow_at, shadow.as_shape(rect, frame.corner_radius));
+        .set(shadow_at, soft_shadow(shadow, rect, radius));
     if glass != Glass::Off {
         // the blur's edge (0.5 px each side) matches the fill's, so no ring of unblurred
         // game shows between them
@@ -38,6 +39,26 @@ fn glass_frame<R>(
             .set(backdrop_at, glass::shape(rect, radius, liquid));
     }
     r
+}
+
+/// `shadow` around a rounded rect as `STEPS` rounded rects, each wider and as faint as
+/// the shadow over `STEPS`: egui's blurred shadow mesh folds into dark streaks off the
+/// corners of small capsules (32 pt tall, blur 40).
+pub fn soft_shadow(shadow: Shadow, rect: egui::Rect, radius: f32) -> Shape {
+    const STEPS: usize = 10;
+    let rect = rect.translate(vec2(shadow.offset[0] as f32, shadow.offset[1] as f32));
+    let reach = shadow.blur as f32 / 2.0 + shadow.spread as f32;
+    let color = shadow.color.gamma_multiply(1.0 / STEPS as f32);
+    Shape::Vec(
+        (1..=STEPS)
+            .map(|i| {
+                let grow = reach * i as f32 / STEPS as f32;
+                let r = rect.expand(grow);
+                let corner = (radius + grow).min(r.size().min_elem() / 2.0);
+                Shape::rect_filled(r, CornerRadius::same(corner.round() as u8), color)
+            })
+            .collect(),
+    )
 }
 
 /// A card: rounded glass panel with a hairline border.

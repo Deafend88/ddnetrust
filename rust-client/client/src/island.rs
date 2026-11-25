@@ -1183,7 +1183,7 @@ fn card_glass(p: &egui::Painter, rect: Rect, radius: f32, glass: Glass, opacity:
     let cr = CornerRadius::same(radius.round() as u8);
     let mut shadow = HUD_SHADOW;
     shadow.color = shadow.color.gamma_multiply(opacity);
-    p.add(shadow.as_shape(rect, cr));
+    p.add(crate::widgets::soft_shadow(shadow, rect, radius));
     // the blur cannot fade, so it goes with the shape's first and last frames
     if glass != Glass::Off && opacity > 0.5 {
         let liquid = glass == Glass::Full;
