@@ -10,7 +10,7 @@ fn main() {
         .nth(1)
         .and_then(|a| a.parse().ok())
         .unwrap_or(5);
-    let media = Media::start();
+    let media = Media::start(None);
     for _ in 0..secs {
         std::thread::sleep(std::time::Duration::from_secs(1));
         let s = media.state();

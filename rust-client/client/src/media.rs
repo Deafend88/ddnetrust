@@ -50,6 +50,8 @@ pub struct State {
     pub sessions: Vec<String>,
     /// The session shown (the chosen one, else the system's current one).
     pub source: Option<String>,
+    /// The session the user chose (`None`: automatic).
+    pub chosen: Option<String>,
     pub track: Option<Track>,
 }
 
@@ -72,14 +74,19 @@ pub struct Media {
 }
 
 impl Media {
-    /// Starts the background thread (on Windows).
-    pub fn start() -> Self {
-        let state = Arc::new(Mutex::new(State::default()));
+    /// Starts the background thread (on Windows) with the saved source (`None`:
+    /// automatic).
+    pub fn start(source: Option<String>) -> Self {
+        let state = State {
+            chosen: source.clone(),
+            ..State::default()
+        };
+        let state = Arc::new(Mutex::new(state));
         let (commands, rx) = channel();
         let shared = state.clone();
         let _ = std::thread::Builder::new()
             .name("media".into())
-            .spawn(move || run(&shared, &rx));
+            .spawn(move || run(&shared, &rx, source));
         Self { state, commands }
     }
 
@@ -129,13 +136,14 @@ pub fn timeline(
 }
 
 #[cfg(not(windows))]
-fn run(_: &Mutex<State>, _: &Receiver<Command>) {}
+fn run(_: &Mutex<State>, _: &Receiver<Command>, _: Option<String>) {}
 
 #[cfg(windows)]
-fn run(shared: &Mutex<State>, rx: &Receiver<Command>) {
+fn run(shared: &Mutex<State>, rx: &Receiver<Command>, source: Option<String>) {
     use std::sync::mpsc::RecvTimeoutError;
     use std::time::Duration;
     let mut smtc = smtc::Smtc::default();
+    smtc.command(Command::Source(source));
     loop {
         match rx.recv_timeout(Duration::from_millis(500)) {
             Ok(command) => smtc.command(command),
@@ -238,6 +246,7 @@ mod smtc {
             State {
                 sessions,
                 source,
+                chosen: self.chosen.clone(),
                 track,
             }
         }

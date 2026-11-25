@@ -286,6 +286,8 @@ pub struct Config {
     /// Ours (not a C++ variable): the DDNet data dir, used when neither `--data-dir`
     /// nor `DDNET_DATA_DIR` is given.
     pub rs_data_dir: String,
+    /// The media player's chosen source (an SMTC app id; empty: automatic).
+    pub rs_media_source: String,
     /// Ours: glass strength, 0 off, 1 subtle, 2 full (PLAN §10.2).
     pub rs_glass: i32,
     /// Ours: UI scale in percent on top of the window's DPI.
@@ -330,6 +332,7 @@ impl Default for Config {
             cl_show_broadcasts: 1,
             cl_showhud_spectator: 1,
             rs_data_dir: String::new(),
+            rs_media_source: String::new(),
             rs_glass: 1,
             rs_ui_scale: 100,
         }
@@ -391,6 +394,7 @@ impl Config {
             "cl_show_broadcasts" => Int(&mut self.cl_show_broadcasts, 0, 1),
             "cl_showhud_spectator" => Int(&mut self.cl_showhud_spectator, 0, 1),
             "rs_data_dir" => Str(&mut self.rs_data_dir, 512),
+            "rs_media_source" => Str(&mut self.rs_media_source, 512),
             "rs_glass" => Int(&mut self.rs_glass, 0, 2),
             "rs_ui_scale" => Int(&mut self.rs_ui_scale, 50, 200),
             _ => return None,
@@ -453,7 +457,7 @@ impl Config {
 }
 
 /// Every variable name `Config::var` knows.
-pub const VAR_NAMES: [&str; 37] = [
+pub const VAR_NAMES: [&str; 38] = [
     "player_name",
     "player_skin",
     "player_use_custom_color",
@@ -489,6 +493,7 @@ pub const VAR_NAMES: [&str; 37] = [
     "cl_show_broadcasts",
     "cl_showhud_spectator",
     "rs_data_dir",
+    "rs_media_source",
     "rs_glass",
     "rs_ui_scale",
 ];

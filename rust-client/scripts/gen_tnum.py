@@ -14,7 +14,13 @@ from fontTools.ttLib import TTFont
 FONTS = os.path.join(os.path.dirname(__file__), "..", "assets", "fonts")
 DIGITS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"]
 
-for name in ["Inter-Regular.ttf", "Inter-Medium.ttf", "Inter-SemiBold.ttf"]:
+for name in [
+	"Inter-Regular.ttf",
+	"Inter-Medium.ttf",
+	"Inter-SemiBold.ttf",
+	"InterDisplay-Medium.ttf",
+	"InterDisplay-SemiBold.ttf",
+]:
 	path = os.path.join(FONTS, name)
 	font = TTFont(path)
 	glyphs = set(font.getGlyphOrder())

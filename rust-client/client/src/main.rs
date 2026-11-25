@@ -466,6 +466,12 @@ impl App {
             self.end_session();
             self.menu.error = Some(e);
         }
+        // the player's source choice lasts across restarts
+        let chosen = self.media.state().chosen.unwrap_or_default();
+        if chosen != self.settings.config.rs_media_source {
+            self.settings.config.rs_media_source = chosen;
+            self.save_settings();
+        }
         let Some(r) = &mut self.running else { return };
         let mut batch = Batch::default();
         let [cr, cg, cb] = hsl_packed_to_rgb(BACKGROUND_COLOR);
@@ -925,7 +931,9 @@ fn main() {
         menu: Menu::new(options.server, &storage),
         hud,
         editor: Editor::default(),
-        media: Media::start(),
+        media: Media::start(
+            Some(settings.config.rs_media_source.clone()).filter(|s| !s.is_empty()),
+        ),
         player_open: false,
         frame_time_average: 0.0001,
         options,

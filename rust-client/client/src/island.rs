@@ -19,7 +19,7 @@ use crate::hud::{self, Anchor, HudConfig, HudData, Placement, Widget};
 use crate::icons;
 use crate::media::{self, Command, Media, time};
 use crate::style::{
-    Glass, HUD_SHADOW, Weight, color, font, icon_font, motion, radius, size, space,
+    Glass, HUD_SHADOW, Weight, color, display, font, icon_font, motion, radius, size, space,
 };
 use crate::timefmt::{TimeFormat, str_time, str_time_float};
 use crate::widgets as w;
@@ -410,7 +410,13 @@ fn eq_width() -> f32 {
 fn job(spans: &[(&str, f32, Weight, Color32)], wrap: f32) -> LayoutJob {
     let mut job = LayoutJob::default();
     for &(text, size, weight, color) in spans {
-        job.append(text, 0.0, TextFormat::simple(font(size, weight), color));
+        // large text (timer, finish time, track title) in Inter Display
+        let f = if size >= size::LABEL && weight != Weight::Regular {
+            display(size, weight)
+        } else {
+            font(size, weight)
+        };
+        job.append(text, 0.0, TextFormat::simple(f, color));
     }
     job.wrap.max_width = wrap;
     job
@@ -782,6 +788,22 @@ fn paint_content(p: &egui::Painter, rect: Rect, l: &Laid, alpha: f32, now: f64) 
     }
 }
 
+/// Three plain dots (iOS "more"), no background, a `size::CONTROL` square to click.
+fn dots_button(ui: &mut Ui) -> egui::Response {
+    let (rect, r) = ui.allocate_exact_size(egui::Vec2::splat(size::CONTROL), Sense::click());
+    let c = if r.hovered() {
+        color::TEXT
+    } else {
+        color::TEXT.gamma_multiply(0.8)
+    };
+    for dx in [-1.0, 0.0, 1.0] {
+        let at = rect.center() + vec2(dx * 6.0, 0.0);
+        ui.painter()
+            .circle_filled(at, 2.0, c.gamma_multiply(ui.opacity()));
+    }
+    r
+}
+
 /// A source's app id as a name: "Spotify.exe" -> "Spotify", a packaged app's
 /// "Publisher.App_hash!App" -> "App".
 pub fn source_name(id: &str) -> &str {
@@ -800,7 +822,7 @@ fn player_ui(ui: &mut Ui, p: &Player, seeking: &mut Option<f32>, weak: Color32) 
     let mut command = None;
     // the source menu, top right
     let menu = |ui: &mut Ui, command: &mut Option<Command>| {
-        let r = w::icon_button(ui, icons::DOTS_THREE, "Source");
+        let r = dots_button(ui).on_hover_text("Source");
         egui::Popup::menu(&r).show(|ui| {
             w::text(ui, "Source", size::CAPTION, Weight::Regular, weak);
             if ui
@@ -856,7 +878,7 @@ fn player_ui(ui: &mut Ui, p: &Player, seeking: &mut Option<f32>, weak: Color32) 
                 ui.spacing_mut().item_spacing.y = space::XS;
                 ui.add_space(space::S);
                 let title = egui::RichText::new(&track.title)
-                    .font(font(size::LABEL, Weight::SemiBold))
+                    .font(display(size::LABEL, Weight::SemiBold))
                     .color(color::TEXT);
                 ui.add(egui::Label::new(title).truncate());
                 let artist = egui::RichText::new(&track.artist)
@@ -874,7 +896,7 @@ fn player_ui(ui: &mut Ui, p: &Player, seeking: &mut Option<f32>, weak: Color32) 
             Sense::hover(),
         );
         let caption = |s: String| {
-            ui.fonts_mut(|f| f.layout_no_wrap(s, font(size::CAPTION, Weight::Medium), weak))
+            ui.fonts_mut(|f| f.layout_no_wrap(s, display(size::CAPTION, Weight::Medium), weak))
         };
         let frac_now = if *dur > 0.0 { (pos / dur) as f32 } else { 0.0 };
         let frac = seeking.unwrap_or(frac_now).clamp(0.0, 1.0);

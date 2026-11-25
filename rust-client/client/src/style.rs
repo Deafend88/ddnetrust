@@ -107,12 +107,14 @@ pub const ICON_GLOW: egui::Shadow = egui::Shadow {
     color: Color32::from_rgba_premultiplied(60, 60, 60, 60),
 };
 
-/// The soft dark glow around the watermark's container (user review, 7.5).
+/// The soft dark glow around HUD widgets: wide and faint, no spread, so it only lifts
+/// the widget off the background and never reads as a border (user review 2026-11-25;
+/// the old 55 % shadow showed through the 1 px ring at the glass backdrop's edge).
 pub const HUD_SHADOW: egui::Shadow = egui::Shadow {
-    offset: [0, 2],
-    blur: 24,
-    spread: 2,
-    color: Color32::from_rgba_premultiplied(0, 0, 0, 140),
+    offset: [0, 4],
+    blur: 40,
+    spread: 0,
+    color: Color32::from_rgba_premultiplied(0, 0, 0, 36),
 };
 
 /// Font weights (egui font families).
@@ -132,6 +134,17 @@ pub fn font(size: f32, weight: Weight) -> FontId {
             Weight::SemiBold => FontFamily::Name("semibold".into()),
         },
     )
+}
+
+/// Inter Display (Inter's optical size for large text, closer to Apple's SF Display) for
+/// large text: the island timer, the track title, the player's times. Regular falls back
+/// to Medium (Display is only bundled in Medium and SemiBold).
+pub fn display(size: f32, weight: Weight) -> FontId {
+    let family = match weight {
+        Weight::SemiBold => "display-semibold",
+        _ => "display-medium",
+    };
+    FontId::new(size, FontFamily::Name(family.into()))
 }
 
 /// Phosphor icons (`icons.rs`) are drawn with this font.
@@ -210,6 +223,14 @@ pub fn fonts() -> FontDefinitions {
             &include_bytes!("../../assets/fonts/Inter-SemiBold.ttf")[..],
         ),
         (
+            "InterDisplay-Medium",
+            &include_bytes!("../../assets/fonts/InterDisplay-Medium.ttf")[..],
+        ),
+        (
+            "InterDisplay-SemiBold",
+            &include_bytes!("../../assets/fonts/InterDisplay-SemiBold.ttf")[..],
+        ),
+        (
             "Phosphor",
             &include_bytes!("../../assets/fonts/Phosphor-Fill.ttf")[..],
         ),
@@ -223,6 +244,14 @@ pub fn fonts() -> FontDefinitions {
         (FontFamily::Monospace, "Inter-Regular"),
         (FontFamily::Name("medium".into()), "Inter-Medium"),
         (FontFamily::Name("semibold".into()), "Inter-SemiBold"),
+        (
+            FontFamily::Name("display-medium".into()),
+            "InterDisplay-Medium",
+        ),
+        (
+            FontFamily::Name("display-semibold".into()),
+            "InterDisplay-SemiBold",
+        ),
         (FontFamily::Name("icons".into()), "Phosphor"),
     ] {
         // no Phosphor fallback: Inter maps the same private-use codepoints itself

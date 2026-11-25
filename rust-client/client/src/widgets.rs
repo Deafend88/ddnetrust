@@ -97,7 +97,7 @@ pub fn hud_bar<R>(
         corner_radius,
         margin,
         row_height,
-        Shadow::NONE,
+        crate::style::HUD_SHADOW,
         add,
     )
 }
