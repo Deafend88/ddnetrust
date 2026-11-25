@@ -9,7 +9,7 @@ use egui::{CornerRadius, Frame, Margin, Ui};
 
 use crate::hud::{Anchor, HudConfig, HudData, Placement, Widget};
 use crate::icons;
-use crate::style::{Glass, HUD_SHADOW, LOGO_GLOW, Weight, color, size, space};
+use crate::style::{Glass, HUD_SHADOW, ICON_GLOW, LOGO_GLOW, Weight, color, size, space};
 use crate::widgets as w;
 
 /// Stat keys in their default order, whether each shows by default and the name in the
@@ -57,7 +57,7 @@ impl Default for Look {
             corner: 40.0,
             logo_radius: 8.0,
             // the earlier, larger logo: the mark and 12 above and below
-            logo_height: size::ICON + 2.0 * space::M,
+            logo_height: size::ICON + 2.0 * space::S,
             glow: 100.0,
         }
     }
@@ -86,22 +86,19 @@ impl Look {
 
 /// Draws the watermark (also used by the gallery): a HUD bar with the logo (a light
 /// rounded rectangle with a soft glow: the tee mark and "DDNet-rs", the mark only in
-/// compact mode), then the stats. Spacing measured from the reference (PROGRESS 7.5).
+/// compact mode), then the stats. Compact spacing (user review 2026-11-25): 8 inside
+/// the edges and the logo, 16 after the last stat and the logo, 24 between stats.
 pub fn draw(ui: &mut Ui, glass: Glass, compact: bool, stats: &[Stat], look: Look) {
-    let right = if stats.is_empty() {
-        space::M
-    } else {
-        space::XL
-    };
+    let right = if stats.is_empty() { space::S } else { space::L };
     let margin = Margin {
-        left: space::M as i8,
+        left: space::S as i8,
         right: right as i8,
-        top: space::M as i8,
-        bottom: space::M as i8,
+        top: space::S as i8,
+        bottom: space::S as i8,
     };
     // the logo is the tallest item
     let row_height = look.logo_height;
-    let height = row_height + 2.0 * space::M;
+    let height = row_height + 2.0 * space::S;
     let corner = (look.corner / 100.0 * height).round() as u8;
     // padding from the height; at least 8 left and right
     let pad = ((look.logo_height - size::ICON) / 2.0).max(0.0);
@@ -133,19 +130,24 @@ pub fn draw(ui: &mut Ui, glass: Glass, compact: bool, stats: &[Stat], look: Look
                 });
             });
         if !stats.is_empty() {
-            ui.add_space(space::XXL);
+            ui.add_space(space::L);
         }
-        self::stats(ui, stats);
+        self::stats(ui, stats, look);
     });
 }
 
-/// Stats separated by dots.
-pub fn stats(ui: &mut Ui, stats: &[Stat]) {
+/// Stats 24 apart, no separators; each icon with a soft white glow (like the
+/// reference's, weaker than the logo's and scaled by the same glow setting).
+pub fn stats(ui: &mut Ui, stats: &[Stat], look: Look) {
+    let glow = egui::Shadow {
+        color: ICON_GLOW.color.gamma_multiply(look.glow / 100.0),
+        ..ICON_GLOW
+    };
     for (i, (glyph, value, template, unit)) in stats.iter().enumerate() {
         if i > 0 {
-            w::dot(ui);
+            ui.add_space(space::XL);
         }
-        w::stat(ui, glyph, value, template, *unit);
+        w::stat(ui, glyph, value, template, *unit, glow);
     }
 }
 

@@ -90,6 +90,15 @@ pub const LOGO_GLOW: egui::Shadow = egui::Shadow {
     color: Color32::from_rgba_premultiplied(150, 150, 150, 150),
 };
 
+/// The soft white glow behind the watermark's icons: the logo glow's style, weaker
+/// (the reference shows one; user review 2026-11-25).
+pub const ICON_GLOW: egui::Shadow = egui::Shadow {
+    offset: [0, 0],
+    blur: 12,
+    spread: 0,
+    color: Color32::from_rgba_premultiplied(60, 60, 60, 60),
+};
+
 /// The soft dark glow around the watermark's container (user review, 7.5).
 pub const HUD_SHADOW: egui::Shadow = egui::Shadow {
     offset: [0, 2],

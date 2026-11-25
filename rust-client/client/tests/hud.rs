@@ -557,13 +557,15 @@ fn watermark_layout_measurements() {
         .memory(|m| m.area_rect(hud::area_id("watermark")))
         .unwrap();
     assert_eq!(area.min, pos2(16.0, 16.0));
-    // the logo text: bar margin M, logo margin M, the tee mark (icon size), gap S
+    // compact (user review 2026-11-25): bar margin S, logo margin S, the tee mark
+    // (icon size), gap S; 49 tall (logo 33 + 2 x 8)
     let logo = find("DDNet-rs");
     assert_eq!(logo.1, size::CAPTION);
     assert_eq!(
         logo.2.left(),
-        16.0 + space::M + space::M + size::ICON + space::S
+        16.0 + space::S + space::S + size::ICON + space::S
     );
+    assert_eq!(area.height(), size::ICON + 4.0 * space::S);
     // stats: icon (icon size), 8 pt, value (body), unit right after it (body)
     let icon = |glyph: &str| find(glyph).2;
     let user = find("brainless tee");
@@ -577,19 +579,40 @@ fn watermark_layout_measurements() {
     let unit = find("fps");
     assert_eq!((fps.1, unit.1), (size::BODY, size::BODY));
     assert_eq!(unit.2.left(), fps.2.right());
-    // logo to first stat: the logo's margin and 32 (reference: 33); stat to stat: the
-    // dot slot, 48 (reference: 48; the ping is unknown offline, so user and fps are
-    // neighbours)
+    // logo to first stat: the logo's margin and 16; stat to stat: 24, no dots (the ping
+    // is unknown offline, so user and fps are neighbours)
     assert_eq!(
         icon(ddnet_rs::icons::CLOCK).left() - logo.2.right(),
-        space::M + space::XXL
+        space::S + space::L
     );
     assert_eq!(
         icon(ddnet_rs::icons::MONITOR).left() - user.2.right(),
-        2.0 * space::XL
+        space::XL
     );
-    // the bar ends 24 after the last unit
-    assert_eq!(area.right() - unit.2.right(), space::XL);
+    // (the separator dot is a 1.5 pt circle; the tee mark's body is a larger one)
+    let dots =
+        (shapes.iter()).filter(|c| matches!(&c.shape, egui::Shape::Circle(d) if d.radius < 2.0));
+    assert_eq!(dots.count(), 0);
+    // each icon has a soft glow centred behind it
+    let glows: Vec<Rect> = (shapes.iter())
+        .filter_map(|c| match &c.shape {
+            egui::Shape::Rect(r) if r.blur_width > 0.0 && r.rect.width() < 40.0 => Some(r.rect),
+            _ => None,
+        })
+        .collect();
+    for glyph in [
+        ddnet_rs::icons::CLOCK,
+        ddnet_rs::icons::USER,
+        ddnet_rs::icons::MONITOR,
+    ] {
+        let c = icon(glyph).center();
+        assert!(
+            glows.iter().any(|g| (g.center() - c).length() < 1.0),
+            "{glyph:?}"
+        );
+    }
+    // the bar ends 16 after the last unit
+    assert_eq!(area.right() - unit.2.right(), space::L);
 }
 
 /// 7.6: the movement information against the real `CHud::GetMovementInformation` and

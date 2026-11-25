@@ -203,12 +203,27 @@ pub fn number(
     response
 }
 
-/// A stat as in the watermark (SPEC §1): small white icon, white value (medium) in a field
-/// as wide as `template` at least, grey unit right after it.
-pub fn stat(ui: &mut Ui, glyph: &str, value: &str, template: &str, unit: Option<&str>) {
+/// A stat as in the watermark (SPEC §1): small white icon with `glow` behind it
+/// (`Shadow::NONE`: none), white value (medium) in a field as wide as `template` at
+/// least, grey unit right after it.
+pub fn stat(
+    ui: &mut Ui,
+    glyph: &str,
+    value: &str,
+    template: &str,
+    unit: Option<&str>,
+    glow: Shadow,
+) {
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 0.0;
-        icon(ui, glyph, size::ICON, color::TEXT);
+        let glow_at = ui.painter().add(Shape::Noop);
+        let r = icon(ui, glyph, size::ICON, color::TEXT);
+        // a round blur the icon's size, behind it
+        let behind = egui::Rect::from_center_size(r.rect.center(), vec2(size::ICON, size::ICON));
+        ui.painter().set(
+            glow_at,
+            glow.as_shape(behind, CornerRadius::same(radius::PILL)),
+        );
         ui.add_space(space::S);
         number(ui, value, template, size::BODY, Weight::Medium, color::TEXT);
         if let Some(unit) = unit {

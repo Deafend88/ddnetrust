@@ -769,9 +769,10 @@ are final unless the user changes them:
   (`watermark::Look`, default; the slider `hud_set watermark corner` remains).
 - Watermark: dark translucent container (`Glass::hud_fill`, black 55 % subtle / 45 %
   full), a soft dark glow around it (`style::HUD_SHADOW`), the white logo rounded
-  rectangle with radius 8, height 41 and the white glow (`style::LOGO_GLOW`), the drawn
-  tee mark + "DDNet-rs"; stats as icon, medium value, grey unit, barely visible dots;
-  defaults ping and fps (name off: it shows above the tee). Look sliders (corner, logo
+  rectangle with radius 8 and the white glow (`style::LOGO_GLOW`), the drawn tee mark +
+  "DDNet-rs"; stats as glowing icon, medium value, grey unit. Since 7.9: compact
+  spacing (logo height 33, bar 49, no dots, see the 7.9 status), defaults local time,
+  ping, fps (name off: it shows above the tee). Look sliders (corner, logo
   radius, logo height, glow) stay in its editor popover; the user may send final values.
 - Race status: the Chips look of commit 18dc668d2 is final, the only style, no setting
   (a flat vector redraw was reverted). Rule: a state that changes something already
@@ -825,8 +826,17 @@ are final unless the user changes them:
   Not live-checked: a real finish (needs a race route, like 7.8).
 - Review GIF: `cargo run -p ddnet-rs --example island -- data/maps/dm1.map 900 500 2
   <out dir>` (PNG frames, composed with PIL), sent to the user.
+- Watermark review (user, 2026-11-25): compact by default: 8 inside the container edges
+  and the logo (logo 33, bar 49 tall instead of 65), 16 from the logo to the first stat
+  and after the last, 24 between stats, no separator dots; logo text kept (compact
+  mode = tee mark only). Each stat icon has a soft white glow (`style::ICON_GLOW`, blur
+  12, weaker than `LOGO_GLOW`, scaled by the same glow setting), drawn by `w::stat`.
+  Race status default moved up to (16, 72) to keep its 7 pt gap under the shorter
+  watermark; a saved placement (e.g. 16, 88) is kept (Reset in the HUD editor moves it).
+  `watermark_layout_measurements` checks the new gaps, the height, no dots and a glow
+  behind each icon. Before/after/reference comparison sent to the user.
 - Known: at 800x600 the default watermark (with the clock) reaches under the island;
-  from about 1100 pt width they do not touch.
+  from about 1000 pt width they do not touch.
 
 #### Exact next actions (next session starts here)
 1. Read CLAUDE.md, PLAN §10.3 7.9/7.10, this section, `git log`.

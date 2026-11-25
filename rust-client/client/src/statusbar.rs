@@ -332,11 +332,11 @@ impl Widget for StatusBar {
     }
 
     fn default_placement(&self) -> Placement {
-        // under the watermark (16 + its 57 pt + 15)
+        // under the watermark (16 + its 49 pt + 7, on the 8 pt grid)
         Placement {
             anchor: Anchor::TopLeft,
             x: 16,
-            y: 88,
+            y: 72,
             enabled: true,
         }
     }
