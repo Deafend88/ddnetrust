@@ -710,6 +710,9 @@ Verify: all gates; the M6 screenshot comparisons still pass with the HUD disable
   support (master servers, server info) and HTTP map download.
 - **Lua scripting for visuals** (SPEC §7) after those: the 7.3 HUD API exposed to
   sandboxed scripts, read-only data in, drawing out, never input or commands.
+- **Vanilla and very old DDNet servers** (no `CNetObj_DDNetCharacter`): the vanilla
+  `CCharacter::Read` path, `DetectStrongHook`, guessing game info from the game type
+  string. Until then other characters are not predicted there (§12.7).
 
 The order between them is decided when M7 is done; antiping comes before any public
 server. Antiping is planned in §12.
@@ -1002,3 +1005,14 @@ the M5/M6 prediction tests still pass with `cl_antiping 0` (default path unchang
    alternative is building `rs_parity` against the full client sources with SDL etc.,
    a large CMake change): OK?
 4. **Settings layout** as in 8.8 (C++ structure, secondary options in a detail view): OK?
+
+### 12.7 Answers (2026-11-25; plan approved)
+
+1. **Default:** `cl_antiping` stays 0 like C++. The `cl_antiping*` and
+   `cl_prediction_margin` values are read once from `settings_ddnet.cfg`, like name,
+   skin and binds.
+2. **Vanilla / very old DDNet servers** (no `DDNetCharacter`): unsupported for now;
+   later work in §11.
+3. **Verbatim copies + textual check script:** approved.
+4. **Settings layout:** approved (master toggle -> players/weapons/grenades -> detail
+   view), in the design-system style.
