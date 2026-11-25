@@ -239,12 +239,10 @@ fn weapon_images(storage: &Storage) -> Vec<Option<ColorImage>> {
         .collect()
 }
 
-/// The six weapons' pickup sprites as egui images (the status bar, the killfeed), and
-/// their white silhouettes (the status icons).
+/// The six weapons' pickup sprites as egui images (the killfeed).
 pub struct WeaponIcons {
     images: Vec<Option<ColorImage>>,
     textures: Vec<Option<TextureHandle>>,
-    silhouettes: Vec<Option<TextureHandle>>,
 }
 
 impl WeaponIcons {
@@ -252,41 +250,7 @@ impl WeaponIcons {
         Self {
             images: weapon_images(storage),
             textures: Vec::new(),
-            silhouettes: Vec::new(),
         }
-    }
-
-    /// A weapon's white silhouette (the sprite's alpha) and its size in pixels.
-    pub fn silhouette(
-        &mut self,
-        ctx: &egui::Context,
-        weapon: usize,
-    ) -> Option<(egui::TextureId, [f32; 2])> {
-        if self.silhouettes.is_empty() {
-            self.silhouettes = (self.images.iter().enumerate())
-                .map(|(n, i)| {
-                    let i = i.as_ref()?;
-                    // cropped to the opaque part: pickup sprites carry wide margins
-                    let [w, h] = i.size;
-                    let opaque = |x: usize, y: usize| i.pixels[y * w + x].a() > 0;
-                    let xs: Vec<usize> = (0..w).filter(|&x| (0..h).any(|y| opaque(x, y))).collect();
-                    let ys: Vec<usize> = (0..h).filter(|&y| (0..w).any(|x| opaque(x, y))).collect();
-                    let (&x0, &x1, &y0, &y1) = (xs.first()?, xs.last()?, ys.first()?, ys.last()?);
-                    let white: Vec<Color32> = (y0..=y1)
-                        .flat_map(|y| (x0..=x1).map(move |x| (x, y)))
-                        .map(|(x, y)| Color32::from_white_alpha(i.pixels[y * w + x].a()))
-                        .collect();
-                    let image = ColorImage::new([x1 - x0 + 1, y1 - y0 + 1], white);
-                    Some(ctx.load_texture(
-                        format!("hud_weapon_silhouette_{n}"),
-                        image,
-                        Default::default(),
-                    ))
-                })
-                .collect();
-        }
-        let t = self.silhouettes.get(weapon)?.as_ref()?;
-        Some((t.id(), t.size().map(|v| v as f32)))
     }
 
     /// A weapon sprite, `height` tall, at `alpha`; nothing for an unknown weapon.
@@ -310,13 +274,7 @@ impl WeaponIcons {
     }
 }
 
-pub struct StatusBar(WeaponIcons);
-
-impl StatusBar {
-    pub fn new(storage: &Storage) -> Self {
-        Self(WeaponIcons::new(storage))
-    }
-}
+pub struct StatusBar;
 
 impl Widget for StatusBar {
     fn id(&self) -> &'static str {
@@ -397,7 +355,7 @@ impl Widget for StatusBar {
         // C++: frozen while m_FreezeEnd is ahead (the deep and live flags come first)
         let frozen = core.freeze_end > data.client.game_tick().unwrap_or(0);
         let freeze = statusview::freeze_of(&s, frozen);
-        statusview::draw(ui, data.glass, &s, freeze, &mut self.0, data.editing);
+        statusview::draw(ui, data.glass, &s, freeze, data.editing);
     }
 
     fn settings(&mut self, ui: &mut Ui, config: &mut HudConfig) {

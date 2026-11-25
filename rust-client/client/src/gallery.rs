@@ -6,9 +6,7 @@ use egui::Align2;
 use crate::gfx::batch::{Batch, QuadItem};
 use crate::gfx::{Gfx, Size};
 use crate::icons;
-use crate::statusbar::WeaponIcons;
 use crate::statusview;
-use crate::storage::Storage;
 use crate::style::{Glass, Weight, color, size, space};
 use crate::ui::Painter;
 use crate::watermark;
@@ -198,9 +196,8 @@ pub const STATUS_SIZE: Size = Size {
 };
 
 /// Draws the race status page into the world target of `gfx` (sized `STATUS_SIZE`).
-pub fn render_status(gfx: &mut Gfx, storage: &Storage) {
+pub fn render_status(gfx: &mut Gfx) {
     let glass = Glass::Subtle;
-    let mut icons = WeaponIcons::new(storage);
     let examples = statusview::examples();
     render_page(gfx, glass, stripes, |ctx| {
         egui::Area::new(egui::Id::unique("status_gallery"))
@@ -221,7 +218,7 @@ pub fn render_status(gfx: &mut Gfx, storage: &Storage) {
                                 ui.spacing_mut().item_spacing.y = space::XS;
                                 let weak = ui.visuals().weak_text_color();
                                 w::text(ui, label, size::CAPTION, Weight::Regular, weak);
-                                statusview::draw(ui, glass, status, *freeze, &mut icons, false);
+                                statusview::draw(ui, glass, status, *freeze, false);
                             });
                             if n % 2 == 1 {
                                 ui.end_row();

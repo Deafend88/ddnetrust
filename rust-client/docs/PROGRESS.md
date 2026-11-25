@@ -748,6 +748,15 @@ Built before the editor (the user chose this order) so the editor drags a real w
 - Gallery page: every state labelled (docs/review/7.7/states.png); live C++ comparison
   rerun (docs/review/7.7/cpp-vs-rust-states.png). Unused icons pruned.
 
+#### Review round 5 (2026-11-25): Chips kept by the user and a friend
+- Weapons are drawn as clean vector shapes (`statusview::weapon_shape`: hammer, gun,
+  shotgun, grenade launcher, laser, ninja sword; parts do not overlap), not silhouettes
+  of the game's pickup sprites (those read as blobs). Not held: the same shape in a flat
+  45 % grey (`color::WEAPON_DIM`). `WeaponIcons` (sprites) is now only the killfeed's.
+- The pill is ~25 % larger: `size::ICON_STATUS` 30, counter and "∞" in the title size,
+  padding a step up.
+- The user plays with the HUD for a while before more polish.
+
 #### Exact next actions (next session starts here)
 1. Read CLAUDE.md, PLAN §10.3, this section, `git log`.
 2. Apply the user's review of the chips and their final watermark slider values.
