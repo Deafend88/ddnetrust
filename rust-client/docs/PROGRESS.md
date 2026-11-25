@@ -436,7 +436,7 @@ for scenes that do not stay still, or `-RustSubject` to check what the server se
 `examples/maprender.rs` renders a map at a given
 center for fixed-view checks; mask pickups (they bob on each client's own clock).
 
-### M7 — visual identity and HUD (in progress: 7.1-7.8 done and reviewed, 7.9 done; next 7.10)
+### M7 — visual identity and HUD (in progress: 7.1-7.9 done and reviewed, 7.10 built, awaiting the user's live check)
 
 Pushed and verified: the plan and its review answers (PLAN §10, §10.6), the collision
 leak fix, and 7.1 (fonts + icons, design system, menus + gallery, the review tweaks,
@@ -845,13 +845,38 @@ are final unless the user changes them:
 - Known: at 800x600 the default watermark (with the clock) reaches under the island;
   from about 1000 pt width they do not touch.
 
+#### 7.10 status (2026-11-25): media player, built; live check by the user pending
+- `media.rs`: `Media::start()` spawns a thread that polls Windows SMTC every 0.5 s
+  (`windows` 0.62, features Foundation(+Collections), Media_Control, Graphics_Imaging,
+  Storage_Streams; WinRT `.join()` blocks on async calls) and takes `Command`s (play/
+  pause, next, previous, seek, source). Covers are decoded by Windows' `BitmapDecoder`
+  (JPEG/PNG, no image crate), once per track. Timeline: position moved on since
+  `LastUpdatedTime` while playing, clamped; none without a duration (the progress row
+  hides). Non-Windows: no thread, everything media hides. `examples/media.rs` prints
+  what the thread sees (no session was open on this machine, so not seen live yet).
+- Island: item "media" = mini cover (24) + accent equalizer in the idle row (any place
+  in the order); event "track" = cover (40), title, artist for 3 s on a new
+  title/artist; F7 (`media_player`, bound only while free) expands the island into the
+  player (SPEC §2): cover 56, title/artist (truncated), "⋯" source menu (Automatic +
+  each session, by app name; not saved), elapsed / bar (click or drag to seek) /
+  -remaining, previous / play-pause / next (disabled when the source says so); "Nothing
+  playing" without a track. Menu mode while open (cursor free), Esc or F7 closes. The
+  island's area takes clicks only while the player is open (`Widget::interactive`).
+  Binds `media_play_pause`, `media_next`, `media_prev` (no default keys).
+- Not done (deviations): the "⋯" menu has no "compact" (the idle mini player is the
+  compact form) and no "hide" (the HUD editor's item toggle does it); the chosen source
+  is not saved across restarts.
+- Verified: `media` unit tests (time format, timeline maths incl. hostile values, local
+  extrapolation), gates, a live run on the local server (client starts and plays with
+  the media thread). Review GIF sent (stand-in track, rendered by examples/island.rs).
+
 #### Exact next actions (next session starts here)
-1. Read CLAUDE.md, PLAN §10.3 7.9/7.10, this section, `git log`.
-2. Apply the user's review of the island GIF and the number fix, if any.
-3. Next: 7.10 Media player (SMTC on a background thread, `windows` crate): the mini
-   cover + equalizer in the island's idle state, the track change event (3 s), F7
-   expands the island into the full player (frees the cursor like a menu), compact
-   capsule, the "⋯" menu, binds `media_play_pause`, `media_next`, `media_prev`.
+1. Read CLAUDE.md, PLAN §10.3 7.10/7.11, this section, `git log`.
+2. The user's live checklist for 7.10 (their player: Spotify, Yandex Music or a
+   browser): title/artist/cover in the idle row and the track change; F7 player:
+   progress moves, seek, previous/play-pause/next act on the chosen source; "⋯"
+   switches sources; closing the source hides the media parts. Fix what fails.
+3. Then 7.11 (settings page entries, default HUD layout, frame time check, docs).
 4. Before each commit: gates, `/ponytail-review`, UI rules review; update this file.
 
 #### Decisions and gotchas from 7.1

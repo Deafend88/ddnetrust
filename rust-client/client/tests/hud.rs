@@ -97,6 +97,8 @@ fn place(placement: Placement, ppp: f32, screen: egui::Vec2) -> Rect {
         editing: false,
         predictor: None,
         tee: None,
+        media: None,
+        player_open: false,
         events: &[],
     };
     let rect = Rc::new(Cell::new(Rect::NOTHING));
@@ -266,6 +268,8 @@ fn hud_numbers_do_not_jitter() {
         editing: false,
         predictor: None,
         tee: None,
+        media: None,
+        player_open: false,
         events: &[],
     };
     let mut widgets: Vec<Box<dyn Widget>> = vec![Box::new(watermark::Watermark::default())];
@@ -305,6 +309,8 @@ fn watermark_fps_rounds_like_cpp() {
         editing: false,
         predictor: None,
         tee: None,
+        media: None,
+        player_open: false,
         events: &[],
     };
     let fps = |avg| watermark::stat("fps", &data(avg)).map(|s| s.1);
@@ -397,6 +403,8 @@ fn editor_drags_a_widget_into_the_config() {
         editing: false,
         predictor: None,
         tee: None,
+        media: None,
+        player_open: false,
         events: &[],
     };
     let rect = Rc::new(Cell::new(Rect::NOTHING));
@@ -521,6 +529,8 @@ fn watermark_layout_measurements() {
         editing: false,
         predictor: None,
         tee: None,
+        media: None,
+        player_open: false,
         events: &[],
     };
     let mut widgets: Vec<Box<dyn Widget>> = vec![Box::new(watermark::Watermark::default())];

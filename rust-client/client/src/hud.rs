@@ -3,7 +3,8 @@
 //! widget's settings are console lines in our settings.cfg:
 //! `hud_widget <id> <anchor> <x> <y> <enabled>` and `hud_set <id> <key> <value>`.
 //! Widgets only draw: they get `&HudData` and an egui `Ui`, never the client, the
-//! controls or the settings, so they cannot change what is sent to the server.
+//! controls or the settings, so they cannot change what is sent to the server. (The
+//! island's expanded player may send media commands to the OS media player, 7.10.)
 
 use std::collections::BTreeMap;
 
@@ -249,6 +250,11 @@ pub struct HudData<'a> {
     /// The followed tee (the local one, or the one followed with `--follow`); the
     /// spectator camera is not ported yet, so spectating keeps the local id.
     pub tee: Option<&'a Rendered>,
+    /// The media thread (7.10); widgets may send it the user's media commands (they act
+    /// on the OS media player, never on the game).
+    pub media: Option<&'a crate::media::Media>,
+    /// The expanded media player is open (F7): the island takes clicks.
+    pub player_open: bool,
     /// Game messages received since the last frame (broadcasts, kill and finish
     /// messages, records), oldest first.
     pub events: &'a [GameMsg],
@@ -264,6 +270,10 @@ pub trait Widget {
     fn default_placement(&self) -> Placement;
     /// Draws the widget; `data` and `config` are all it reads.
     fn show(&mut self, ui: &mut egui::Ui, data: &HudData, config: &HudConfig);
+    /// Whether the widget takes clicks now (the HUD is click-through otherwise).
+    fn interactive(&self, _data: &HudData) -> bool {
+        false
+    }
     /// The widget's own settings in its editor popover.
     fn settings(&mut self, _ui: &mut egui::Ui, _config: &mut HudConfig) {}
 }
@@ -369,8 +379,12 @@ pub fn show(
         }
         egui::Area::new(area_id(w.id()))
             .anchor(p.anchor.align(), [p.x as f32, p.y as f32])
-            .interactable(false)
-            .order(egui::Order::Background)
+            .interactable(w.interactive(data))
+            .order(if w.interactive(data) {
+                egui::Order::Foreground
+            } else {
+                egui::Order::Background
+            })
             .show(ctx, |ui| w.show(ui, data, config));
     }
 }

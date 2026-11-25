@@ -388,6 +388,7 @@ dependencies = [
  "flate2",
  "png",
  "wgpu",
+ "windows",
  "winit",
 ]
 

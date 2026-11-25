@@ -220,3 +220,15 @@ only matters for names so long that neither file can exist.
 - The watermark's fps changes at most every 0.5 s (C++ draws its average every frame).
   Position, speed and ping are not throttled (gameplay information, and the fields no
   longer jitter).
+
+## 2026-11-25 — Media player (M7.10)
+
+- SMTC is polled every 0.5 s on its own thread (no WinRT event handlers): simpler, and a
+  0.5 s delay is invisible for title/cover; the position moves on locally in between.
+- Covers through Windows' `BitmapDecoder` instead of an image crate (platform first).
+- The island's expanded player may send media commands (play/pause, next, previous,
+  seek, source) to the OS media session; it never touches game input. The island area
+  takes clicks only while the player is open (menu mode).
+- The "⋯" menu offers the source only; "compact" and "hide" from SPEC §2 are covered by
+  the idle mini player and the HUD editor's item toggle. The chosen source lasts for the
+  run.

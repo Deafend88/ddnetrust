@@ -8,7 +8,7 @@ use ddnet_rs::assets;
 use ddnet_rs::gfx::batch::Batch;
 use ddnet_rs::gfx::{Gfx, Size};
 use ddnet_rs::icons;
-use ddnet_rs::island::{Anim, Effect, Part, Record, Timer, View};
+use ddnet_rs::island::{Anim, Effect, NowPlaying, Part, Player, Record, Timer, View};
 use ddnet_rs::render::map::{MapRender, View as MapView, hsl_packed_to_rgb};
 use ddnet_rs::storage::Storage;
 use ddnet_rs::style::Glass;
@@ -25,6 +25,16 @@ fn clock(t: f64) -> Timer {
     }
 }
 
+/// A track without a cover (the backend has no test source; covers come from the OS).
+fn track() -> NowPlaying {
+    NowPlaying {
+        title: "Night drive".into(),
+        artist: "Ambient Tees".into(),
+        playing: true,
+        cover: None,
+    }
+}
+
 /// The scripted sequence by time.
 fn script(t: f64) -> Option<View> {
     let idle = |checkpoint: Option<Effect>, status: Option<(&'static str, String)>| {
@@ -32,6 +42,7 @@ fn script(t: f64) -> Option<View> {
         let parts = (status.into_iter())
             .chain([Part::Timer(clock(t))])
             .chain(checkpoint.map(Part::Checkpoint))
+            .chain((t >= 15.0).then(|| Part::Media(track())))
             .collect();
         Some(View::Idle(parts))
     };
@@ -63,7 +74,15 @@ fn script(t: f64) -> Option<View> {
         t if t < 10.6 => idle(None, None),
         t if t < 12.0 => idle(None, Some((icons::PAUSE, "Game paused".into()))),
         t if t < 13.4 => idle(None, Some((icons::EYE, "Following brainless".into()))),
-        t if t < 14.4 => idle(None, None),
+        t if t < 15.0 => idle(None, None),
+        t if t < 17.0 => Some(View::Track(track())),
+        t if t < 18.4 => idle(None, None),
+        t if t < 21.0 => Some(View::Player(Player {
+            track: Some((track(), Some((133.0 + (t - 18.4), 144.0)), [true; 3])),
+            sessions: vec!["Spotify.exe".into()],
+            source: None,
+        })),
+        t if t < 22.4 => idle(None, None),
         _ => None,
     }
 }
@@ -85,7 +104,7 @@ fn main() {
     let render = MapRender::new(&mut gfx, &map, &images);
     let mut painter = Painter::new(&gfx, gfx.format, glass);
     let mut anim = Anim::default();
-    let frames = (15.0 * FPS) as usize;
+    let frames = (23.0 * FPS) as usize;
     for i in 0..frames {
         let t = i as f64 / FPS;
         let view = MapView {
@@ -114,7 +133,9 @@ fn main() {
         painter.paint(&gfx, &world, size, input, |ctx| {
             egui::Area::new(egui::Id::unique("island"))
                 .anchor(egui::Align2::CENTER_TOP, [0.0, 16.0])
-                .show(ctx, |ui| anim.show(ui, glass, script(t), t));
+                .show(ctx, |ui| {
+                    anim.show(ui, glass, script(t), t);
+                });
         });
         gfx.screenshot(&out.join(format!("{i:04}.png"))).unwrap();
     }

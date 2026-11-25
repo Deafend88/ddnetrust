@@ -31,6 +31,7 @@ use ddnet_rs::hud::{self, HudData, Widget};
 use ddnet_rs::hud_editor::Editor;
 use ddnet_rs::island::Island;
 use ddnet_rs::killfeed::Killfeed;
+use ddnet_rs::media::{self, Media};
 use ddnet_rs::movement::Movement;
 use ddnet_rs::render::items::{self, Items};
 use ddnet_rs::render::map::{MapRender, View, hsl_packed_to_rgb};
@@ -171,6 +172,10 @@ struct App {
     /// The HUD widgets.
     hud: Vec<Box<dyn Widget>>,
     editor: Editor,
+    /// The media thread (now playing, 7.10).
+    media: Media,
+    /// The island is expanded into the media player (F7).
+    player_open: bool,
     /// C++ `CClient::m_FrameTimeAverage`.
     frame_time_average: f32,
     /// C++ `m_aCurrentKeyStates`.
@@ -260,13 +265,15 @@ impl App {
         self.session.is_none() || self.menu.open
     }
 
-    /// A menu or the HUD editor has the mouse and keyboard (C++ menu mode).
+    /// A menu, the HUD editor or the media player has the mouse and keyboard (C++ menu
+    /// mode).
     fn ui_active(&self) -> bool {
-        self.menu_visible() || self.editor.open
+        self.menu_visible() || self.editor.open || self.player_open
     }
 
     fn open_editor(&mut self) {
         self.menu.open = false;
+        self.player_open = false;
         self.editor.open = self.session.is_some();
     }
 
@@ -300,6 +307,7 @@ impl App {
             map.free(&mut r.gfx);
         }
         self.menu.open = false;
+        self.player_open = false;
         if self.editor.open {
             self.close_editor();
         }
@@ -318,6 +326,8 @@ impl App {
         if press && key == KEY_ESCAPE {
             if self.editor.open {
                 self.close_editor();
+            } else if self.player_open {
+                self.player_open = false;
             } else {
                 self.menu.open = !self.menu.open;
             }
@@ -338,7 +348,7 @@ impl App {
             frozen_input: (s.predictor.as_ref())
                 .is_some_and(|p| p.bug_ddrace_input() && p.spectating),
         };
-        let mut edit_hud = false;
+        let (mut edit_hud, mut player) = (false, false);
         for (stroke, line) in lines {
             let config = &self.settings.config;
             s.controls
@@ -346,6 +356,10 @@ impl App {
             for (command, args) in split_line(&line).into_iter().filter(|_| stroke) {
                 match command.as_str() {
                     "hud_editor" => edit_hud = true,
+                    "media_player" => player = true,
+                    "media_play_pause" => self.media.send(media::Command::PlayPause),
+                    "media_next" => self.media.send(media::Command::Next),
+                    "media_prev" => self.media.send(media::Command::Prev),
                     // C++: CClient::Con_Rcon, Con_RconAuth
                     "rcon" => s.client.rcon(&args, net::now(self.start)),
                     "rcon_auth" => s.client.rcon_auth(&args, net::now(self.start)),
@@ -355,6 +369,11 @@ impl App {
         }
         if edit_hud {
             self.open_editor();
+        }
+        // F7: the island expands into the media player, like a menu
+        if player && !self.editor.open {
+            self.player_open = !self.player_open;
+            self.menu.open = false;
         }
     }
 
@@ -556,6 +575,8 @@ impl App {
                     frame_time_average: self.frame_time_average,
                     glass: Glass::from_setting(self.settings.config.rs_glass),
                     editing: self.editor.open,
+                    media: Some(&self.media),
+                    player_open: self.player_open,
                     predictor: s.predictor.as_ref(),
                     tee: rendered.iter().find(|t| Some(t.id) == id),
                     events: &events,
@@ -578,7 +599,7 @@ impl App {
                 }
             });
         }
-        if !menu_visible && !self.editor.open {
+        if !menu_visible && !self.editor.open && !self.player_open {
             r.ui.hidden();
         }
         r.window.pre_present_notify();
@@ -904,6 +925,8 @@ fn main() {
         menu: Menu::new(options.server, &storage),
         hud,
         editor: Editor::default(),
+        media: Media::start(),
+        player_open: false,
         frame_time_average: 0.0001,
         options,
         storage,

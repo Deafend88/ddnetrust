@@ -15,6 +15,7 @@ pub mod image;
 pub mod island;
 pub mod keynames;
 pub mod killfeed;
+pub mod media;
 pub mod movement;
 pub mod render;
 pub mod skin;

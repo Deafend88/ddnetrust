@@ -855,6 +855,7 @@ impl Settings {
     /// while the key is free. Kept out of `load`, which mirrors C++.
     pub fn add_our_binds(&mut self) {
         self.binds.bind_name("f6", "hud_editor", true);
+        self.binds.bind_name("f7", "media_player", true);
     }
 
     /// Our settings file: every variable and every bind (it overrides the C++ file).

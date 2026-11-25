@@ -17,10 +17,12 @@ use egui::{Color32, CornerRadius, Galley, Rect, Sense, Ui, pos2, vec2};
 use crate::anim::Spring;
 use crate::hud::{self, Anchor, HudConfig, HudData, Placement, Widget};
 use crate::icons;
+use crate::media::{self, Command, Media, time};
 use crate::style::{
     Glass, HUD_SHADOW, Weight, color, font, icon_font, motion, radius, size, space,
 };
 use crate::timefmt::{TimeFormat, str_time, str_time_float};
+use crate::widgets as w;
 
 /// C++ `Client()->GameTickSpeed()`.
 const TICK_SPEED: i32 = 50;
@@ -255,6 +257,10 @@ pub enum View {
     Finish(Effect),
     /// A server broadcast; the timer stays at its end (C++ shows both).
     Broadcast { text: String, timer: Option<Timer> },
+    /// The track changed: cover, title, artist.
+    Track(NowPlaying),
+    /// The expanded media player (F7).
+    Player(Player),
 }
 
 /// An item of the idle row.
@@ -265,6 +271,30 @@ pub enum Part {
     Timer(Timer),
     /// The checkpoint difference (an `Effect::Checkpoint`).
     Checkpoint(Effect),
+    /// The mini player: cover and equalizer.
+    Media(NowPlaying),
+}
+
+/// A track as the island shows it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NowPlaying {
+    pub title: String,
+    pub artist: String,
+    pub playing: bool,
+    pub cover: Option<egui::TextureId>,
+}
+
+/// The player's track: the track, its timeline (position, duration in seconds) and
+/// whether previous, next and seek work.
+pub type PlayerTrack = (NowPlaying, Option<(f64, f64)>, [bool; 3]);
+
+/// The expanded player: the track (none: nothing plays) with its timeline in seconds
+/// and controls, and the sessions to choose from.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Player {
+    pub track: Option<PlayerTrack>,
+    pub sessions: Vec<String>,
+    pub source: Option<String>,
 }
 
 /// The first active event (they come in priority order), else the idle row if it has
@@ -276,8 +306,7 @@ pub fn view(events: Vec<View>, idle: Vec<Part>) -> Option<View> {
 
 /// The island's items (`hud_set island <key> 0|1`, `hud_set island order "<key>,..."`):
 /// the idle row's parts in their order, and the events, whose order is their priority.
-/// First values from C++ where it has a switch (`HudConfig::import_cpp`); "media" and
-/// "track" come with the media player (7.10).
+/// First values from C++ where it has a switch (`HudConfig::import_cpp`).
 pub const ITEMS: [hud::Item; 7] = [
     ("status", true, "Pause and spectator status"),
     ("timer", true, "Race timer"),
@@ -288,11 +317,19 @@ pub const ITEMS: [hud::Item; 7] = [
     ("track", true, "Track change"),
 ];
 
-/// The island widget: the race state, the broadcast and the springs.
+/// How long a track change shows (the concept's 3 s; C++ has no such notice).
+pub const TRACK_TICKS: i32 = TICK_SPEED * 3;
+
+/// The island widget: the race state, the broadcast, the track and the springs.
 #[derive(Default)]
 pub struct Island {
     race: Race,
     broadcast: Broadcast,
+    /// The last track (title, artist) and the tick its change shows until.
+    track: Option<(String, String)>,
+    track_until: i32,
+    /// The cover's texture, by the media thread's cover id.
+    cover: Option<(u64, egui::TextureHandle)>,
     anim: Anim,
 }
 
@@ -307,22 +344,67 @@ pub struct Anim {
     opacity: Spring,
     /// The idle size: events are at least this big (they expand the island).
     idle_size: egui::Vec2,
+    /// The progress bar's position while it is dragged (0..1).
+    seeking: Option<f32>,
+    /// The player's content height as last drawn (its size follows its content).
+    player_h: Option<f32>,
     last: Option<f64>,
 }
 
-/// The island's top offset, the broadcast's wrap width (points).
+/// The island's top offset, the broadcast's wrap width, the player's width (points).
 const TOP: i32 = 16;
 const WRAP: f32 = 480.0;
+const PLAYER_WIDTH: f32 = 360.0;
 /// Damping of the size springs: a small overshoot (about 3 %), the island's motion.
 const ZETA: f32 = 0.75;
+/// The equalizer: bars, their width and gap.
+const EQ_BARS: usize = 4;
+const EQ_BAR: f32 = 3.0;
+const EQ_GAP: f32 = space::XS;
 
-/// A laid-out view: an optional icon, one or more rows, an optional trailing timer.
+/// A laid-out view: a lead (icon or cover), one or more rows, an optional trailing timer;
+/// or (idle) a row of elements.
 struct Laid {
-    icon: Option<Arc<Galley>>,
+    lead: Option<Lead>,
     rows: Vec<Arc<Galley>>,
-    /// The width of the rows.
+    /// The width of the rows (or of the elements).
     width: f32,
     trail: Option<Arc<Galley>>,
+    elems: Vec<Elem>,
+}
+
+enum Lead {
+    Icon(Arc<Galley>),
+    Cover(Option<egui::TextureId>),
+}
+
+impl Lead {
+    fn size(&self) -> egui::Vec2 {
+        match self {
+            Lead::Icon(g) => g.size(),
+            Lead::Cover(_) => egui::Vec2::splat(size::COVER),
+        }
+    }
+}
+
+/// An element of the idle row.
+enum Elem {
+    Text(Arc<Galley>),
+    /// Mini cover and equalizer.
+    Media(Option<egui::TextureId>, bool),
+}
+
+impl Elem {
+    fn size(&self) -> egui::Vec2 {
+        match self {
+            Elem::Text(g) => g.size(),
+            Elem::Media(..) => vec2(size::ICON_HUD + space::S + eq_width(), size::ICON_HUD),
+        }
+    }
+}
+
+fn eq_width() -> f32 {
+    EQ_BARS as f32 * EQ_BAR + (EQ_BARS - 1) as f32 * EQ_GAP
 }
 
 fn job(spans: &[(&str, f32, Weight, Color32)], wrap: f32) -> LayoutJob {
@@ -351,13 +433,16 @@ fn lay_out(ui: &Ui, view: &View, weak: Color32) -> Laid {
     let ctx = ui.ctx();
     let galley = |j: LayoutJob| ctx.fonts_mut(|f| f.layout_job(j));
     let icon = |glyph: &str, size: f32, c: Color32| {
-        Some(ctx.fonts_mut(|f| f.layout_no_wrap(glyph.into(), icon_font(size), c)))
+        Some(Lead::Icon(ctx.fonts_mut(|f| {
+            f.layout_no_wrap(glyph.into(), icon_font(size), c)
+        })))
     };
-    let laid = |icon, rows: Vec<Arc<Galley>>, trail| Laid {
-        icon,
+    let laid = |lead, rows: Vec<Arc<Galley>>, trail| Laid {
+        lead,
         width: rows.iter().map(|r| r.size().x).fold(0.0, f32::max),
         rows,
         trail,
+        elems: Vec::new(),
     };
     let inf = f32::INFINITY;
     let timer_galley = |t: &Timer| {
@@ -366,39 +451,39 @@ fn lay_out(ui: &Ui, view: &View, weak: Color32) -> Laid {
     };
     match view {
         View::Idle(parts) => {
-            // one row in the configured order, 3 spaces apart; the status icon is a span
-            // in the icon font; digits are tabular, so the timer's width only changes
-            // with its class (like C++'s)
-            let mut j = LayoutJob::default();
-            for (n, part) in parts.iter().enumerate() {
-                let mut add = |t: &str, f: egui::FontId, c: Color32| {
-                    j.append(t, 0.0, TextFormat::simple(f, c));
-                };
-                if n > 0 {
-                    add("   ", font(size::BODY, Weight::Regular), weak);
-                }
-                match part {
+            // one row in the configured order; the status icon is a span in the icon
+            // font; digits are tabular, so the timer's width only changes with its
+            // class (like C++'s)
+            let elems: Vec<Elem> = (parts.iter())
+                .map(|part| match part {
                     Part::Status(glyph, text) => {
-                        add(glyph, icon_font(size::ICON), weak);
-                        add("  ", font(size::BODY, Weight::Regular), weak);
-                        add(text, font(size::BODY, Weight::Medium), weak);
+                        let mut j = LayoutJob::default();
+                        j.append(glyph, 0.0, TextFormat::simple(icon_font(size::ICON), weak));
+                        let f = font(size::BODY, Weight::Medium);
+                        j.append(text, space::S, TextFormat::simple(f, weak));
+                        Elem::Text(galley(j))
                     }
-                    Part::Timer(t) => {
-                        let (s, c) = timer_text(t);
-                        add(&s, font(size::TITLE, Weight::SemiBold), c);
-                    }
+                    Part::Timer(t) => Elem::Text(timer_galley(t)),
                     Part::Checkpoint(Effect::Checkpoint { text, sign }) => {
                         let c = match sign {
                             1 => color::DANGER,
                             -1 => color::SUCCESS,
                             _ => color::TEXT,
                         };
-                        add(text, font(size::BODY, Weight::Medium), c);
+                        Elem::Text(galley(job(&[(text, size::BODY, Weight::Medium, c)], inf)))
                     }
-                    Part::Checkpoint(_) => {}
-                }
+                    Part::Checkpoint(_) => Elem::Text(galley(LayoutJob::default())),
+                    Part::Media(m) => Elem::Media(m.cover, m.playing),
+                })
+                .collect();
+            let gaps = elems.len().saturating_sub(1) as f32 * space::M;
+            Laid {
+                lead: None,
+                rows: Vec::new(),
+                width: elems.iter().map(|e| e.size().x).sum::<f32>() + gaps,
+                trail: None,
+                elems,
             }
-            laid(None, vec![galley(j)], None)
         }
         View::Finish(Effect::Finish { time, diff, record }) => {
             let (glyph, title) = match record {
@@ -429,7 +514,7 @@ fn lay_out(ui: &Ui, view: &View, weak: Color32) -> Laid {
             }
             laid(icon(glyph, size::ICON_LARGE, color::SUCCESS), rows, None)
         }
-        View::Finish(_) => laid(None, Vec::new(), None),
+        View::Finish(_) | View::Player(_) => laid(None, Vec::new(), None),
         View::Broadcast { text, timer } => {
             let row = galley(job(
                 &[(text, size::BODY, Weight::Medium, color::TEXT)],
@@ -438,35 +523,80 @@ fn lay_out(ui: &Ui, view: &View, weak: Color32) -> Laid {
             let lead = icon(icons::MEGAPHONE, size::ICON, color::TEXT);
             laid(lead, vec![row], timer.as_ref().map(timer_galley))
         }
+        View::Track(t) => {
+            let rows = vec![
+                galley(job(
+                    &[(&t.title, size::LABEL, Weight::SemiBold, color::TEXT)],
+                    WRAP,
+                )),
+                galley(job(&[(&t.artist, size::BODY, Weight::Regular, weak)], WRAP)),
+            ];
+            laid(Some(Lead::Cover(t.cover)), rows, None)
+        }
     }
 }
 
 /// The padded size of a laid-out view and whether it is one line (a pill).
 fn measure(l: &Laid) -> (egui::Vec2, bool) {
+    if !l.elems.is_empty() {
+        let h = l.elems.iter().map(|e| e.size().y).fold(0.0, f32::max) + 2.0 * space::S;
+        return (
+            vec2((l.width + 2.0 * space::XL).max(h + space::XXL), h),
+            true,
+        );
+    }
     let rows_h: f32 = l.rows.iter().map(|r| r.size().y).sum();
     let one_line = l.rows.len() == 1 && l.rows[0].rows.len() == 1;
-    let icon_w = l.icon.as_ref().map_or(0.0, |i| i.size().x + space::M);
+    let lead = l.lead.as_ref().map_or(egui::Vec2::ZERO, Lead::size);
+    let lead_w = if l.lead.is_some() {
+        lead.x + space::M
+    } else {
+        0.0
+    };
     let trail_w = l.trail.as_ref().map_or(0.0, |t| t.size().x + space::XL);
-    let py = if one_line { space::S } else { space::M };
-    let h = rows_h + 2.0 * py;
+    let py = if one_line && l.lead.as_ref().is_none_or(|l| matches!(l, Lead::Icon(_))) {
+        space::S
+    } else {
+        space::M
+    };
+    let h = rows_h.max(lead.y) + 2.0 * py;
     // a pill is at least as wide as tall
-    let w = (icon_w + l.width + trail_w + 2.0 * space::XL).max(h + space::XXL);
+    let w = (lead_w + l.width + trail_w + 2.0 * space::XL).max(h + space::XXL);
     (vec2(w, h), one_line)
 }
 
-/// Whether `a` turning into `b` updates in place (no fade): the timer ticking, the same
-/// broadcast with its timer ticking.
+/// The player's first size (then its drawn content's): the track row, the progress row
+/// when there is a timeline, the controls; L inside.
+fn player_size(p: &Player) -> egui::Vec2 {
+    let timeline = p.track.as_ref().is_some_and(|t| t.1.is_some());
+    let mut h = 2.0 * space::L + size::COVER_PLAYER + space::M + size::CONTROL;
+    if timeline {
+        h += space::M + size::CAPTION + space::XS;
+    }
+    vec2(PLAYER_WIDTH, h)
+}
+
+/// Whether `a` turning into `b` updates in place (no fade): the idle row ticking, the
+/// same broadcast with its timer ticking, the player's position moving.
 fn in_place(a: &Option<View>, b: &Option<View>) -> bool {
     match (a, b) {
         (Some(View::Idle(_)), Some(View::Idle(_))) => true,
+        (Some(View::Player(_)), Some(View::Player(_))) => true,
         (Some(View::Broadcast { text: x, .. }), Some(View::Broadcast { text: y, .. })) => x == y,
         _ => false,
     }
 }
 
 impl Anim {
-    /// Springs towards `view` and draws the island; `now` in seconds.
-    pub fn show(&mut self, ui: &mut Ui, glass: Glass, view: Option<View>, now: f64) {
+    /// Springs towards `view` and draws the island; `now` in seconds. Returns what the
+    /// user asked of the media player (the expanded player's controls).
+    pub fn show(
+        &mut self,
+        ui: &mut Ui,
+        glass: Glass,
+        view: Option<View>,
+        now: f64,
+    ) -> Option<Command> {
         let dt = self.last.map_or(0.0, |l| (now - l).clamp(0.0, 0.1) as f32);
         self.last = Some(now);
         let weak = glass.text_secondary();
@@ -477,7 +607,14 @@ impl Anim {
         }
         let hidden = self.opacity.value < 0.02;
         if let Some(v) = &view {
-            let (s, pill) = measure(&lay_out(ui, v, weak));
+            let (s, pill) = match v {
+                View::Player(p) => {
+                    let s = player_size(p);
+                    let h = self.player_h.map_or(s.y, |h| h + 2.0 * space::L);
+                    (vec2(s.x, h), false)
+                }
+                _ => measure(&lay_out(ui, v, weak)),
+            };
             let s = if matches!(v, View::Idle(_)) {
                 self.idle_size = s;
                 s
@@ -497,7 +634,7 @@ impl Anim {
             self.corner.update_damped(r, motion::SPRING, ZETA, dt);
         } else if hidden {
             self.shown = None;
-            return;
+            return None;
         }
         let on = view.is_some() as i32 as f32;
         self.opacity.update(on, motion::NORMAL, dt);
@@ -525,34 +662,322 @@ impl Anim {
         };
         p.rect_filled(rect, cr, fill.gamma_multiply(opacity));
 
-        if let Some(shown) = &self.shown {
-            let alpha = (self.content.value * opacity).clamp(0.0, 1.0);
-            let laid = lay_out(ui, shown, weak);
-            paint_content(&p.with_clip_rect(rect), rect, &laid, alpha);
+        let alpha = (self.content.value * opacity).clamp(0.0, 1.0);
+        match &self.shown {
+            Some(View::Player(player)) => {
+                let inner = Rect::from_min_size(rect.min, player_size(player));
+                let mut child =
+                    ui.new_child(egui::UiBuilder::new().max_rect(inner.shrink(space::L)));
+                child.set_clip_rect(rect.intersect(ui.clip_rect()));
+                child.set_opacity(alpha);
+                let player = player.clone();
+                let command = player_ui(&mut child, &player, &mut self.seeking, weak);
+                self.player_h = Some(child.min_rect().height());
+                return command;
+            }
+            Some(shown) => {
+                let laid = lay_out(ui, shown, weak);
+                paint_content(&p.with_clip_rect(rect), rect, &laid, alpha, now);
+            }
+            None => {}
+        }
+        None
+    }
+}
+
+/// A cover: the image, or a music note on a raised square while there is none.
+fn paint_cover(p: &egui::Painter, rect: Rect, cover: Option<egui::TextureId>, alpha: f32) {
+    let cr = CornerRadius::same(radius::COVER);
+    match cover {
+        Some(tex) => {
+            let uv = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
+            let tint = Color32::WHITE.gamma_multiply(alpha);
+            p.add(egui::epaint::RectShape::filled(rect, cr, tint).with_texture(tex, uv));
+        }
+        None => {
+            p.rect_filled(rect, cr, color::SURFACE_HOVER.gamma_multiply(alpha));
+            let g = p.layout_no_wrap(
+                icons::MUSIC_NOTES.into(),
+                icon_font(rect.height() * 0.55),
+                color::TEXT.gamma_multiply(alpha),
+            );
+            p.galley(rect.center() - g.size() / 2.0, g, Color32::TRANSPARENT);
         }
     }
 }
 
-/// The icon left of the rows, the trailing timer right, the group centred.
-fn paint_content(p: &egui::Painter, rect: Rect, l: &Laid, alpha: f32) {
+/// The equalizer in `rect`: bars moving while the track plays, low while paused.
+fn paint_equalizer(p: &egui::Painter, rect: Rect, playing: bool, alpha: f32, now: f64) {
+    let h = rect.height();
+    for i in 0..EQ_BARS {
+        let level = if playing {
+            // each bar on its own rate and phase
+            let t = now as f32 * (5.0 + 1.7 * i as f32) + i as f32 * 1.3;
+            0.3 + 0.7 * (0.5 + 0.5 * t.sin())
+        } else {
+            0.2
+        };
+        let x = rect.left() + i as f32 * (EQ_BAR + EQ_GAP);
+        let bar = Rect::from_min_max(
+            pos2(x, rect.bottom() - h * level),
+            pos2(x + EQ_BAR, rect.bottom()),
+        );
+        let c = color::ACCENT.gamma_multiply(alpha);
+        p.rect_filled(bar, CornerRadius::same(radius::PILL), c);
+    }
+}
+
+/// The lead left of the rows, the trailing timer right, the group centred; or the idle
+/// elements left to right, M apart.
+fn paint_content(p: &egui::Painter, rect: Rect, l: &Laid, alpha: f32, now: f64) {
     let text = |pos, g: &Arc<Galley>| {
         p.add(TextShape::new(pos, g.clone(), Color32::TRANSPARENT).with_opacity_factor(alpha));
     };
-    let icon_w = l.icon.as_ref().map_or(0.0, |i| i.size().x + space::M);
+    if !l.elems.is_empty() {
+        let mut x = rect.center().x - l.width / 2.0;
+        for e in &l.elems {
+            let s = e.size();
+            let at = pos2(x, rect.center().y - s.y / 2.0);
+            match e {
+                Elem::Text(g) => text(at, g),
+                Elem::Media(cover, playing) => {
+                    let c = Rect::from_min_size(at, egui::Vec2::splat(size::ICON_HUD));
+                    paint_cover(p, c, *cover, alpha);
+                    let eq = Rect::from_min_size(
+                        pos2(c.right() + space::S, rect.center().y - size::ICON / 2.0),
+                        vec2(eq_width(), size::ICON),
+                    );
+                    paint_equalizer(p, eq, *playing, alpha, now);
+                }
+            }
+            x += s.x + space::M;
+        }
+        return;
+    }
+    let lead = l.lead.as_ref().map_or(egui::Vec2::ZERO, Lead::size);
+    let lead_w = if l.lead.is_some() {
+        lead.x + space::M
+    } else {
+        0.0
+    };
     let trail_w = l.trail.as_ref().map_or(0.0, |t| t.size().x + space::XL);
     let rows_h: f32 = l.rows.iter().map(|r| r.size().y).sum();
-    let left = rect.center().x - (icon_w + l.width + trail_w) / 2.0;
-    if let Some(icon) = &l.icon {
-        text(pos2(left, rect.center().y - icon.size().y / 2.0), icon);
+    let left = rect.center().x - (lead_w + l.width + trail_w) / 2.0;
+    match &l.lead {
+        Some(Lead::Icon(g)) => text(pos2(left, rect.center().y - g.size().y / 2.0), g),
+        Some(Lead::Cover(c)) => {
+            let r = Rect::from_min_size(pos2(left, rect.center().y - lead.y / 2.0), lead);
+            paint_cover(p, r, *c, alpha);
+        }
+        None => {}
     }
     let mut y = rect.center().y - rows_h / 2.0;
     for row in &l.rows {
-        text(pos2(left + icon_w, y), row);
+        text(pos2(left + lead_w, y), row);
         y += row.size().y;
     }
     if let Some(t) = &l.trail {
-        let x = left + icon_w + l.width + space::XL;
+        let x = left + lead_w + l.width + space::XL;
         text(pos2(x, rect.center().y - t.size().y / 2.0), t);
+    }
+}
+
+/// A source's app id as a name: "Spotify.exe" -> "Spotify", a packaged app's
+/// "Publisher.App_hash!App" -> "App".
+pub fn source_name(id: &str) -> &str {
+    let name = id.rsplit('!').next().unwrap_or(id);
+    let name = name.strip_suffix(".exe").unwrap_or(name);
+    name.rsplit('.')
+        .next()
+        .filter(|n| !n.is_empty())
+        .unwrap_or(name)
+}
+
+/// The expanded player (SPEC §2, iOS style): cover, title and artist with the "⋯" source
+/// menu; elapsed, progress bar (click or drag to seek), remaining; previous, play/pause,
+/// next. Without a track: a hint and the source menu.
+fn player_ui(ui: &mut Ui, p: &Player, seeking: &mut Option<f32>, weak: Color32) -> Option<Command> {
+    let mut command = None;
+    // the source menu, top right
+    let menu = |ui: &mut Ui, command: &mut Option<Command>| {
+        let r = w::icon_button(ui, icons::DOTS_THREE, "Source");
+        egui::Popup::menu(&r).show(|ui| {
+            w::text(ui, "Source", size::CAPTION, Weight::Regular, weak);
+            if ui
+                .selectable_label(p.source.is_none(), "Automatic")
+                .clicked()
+            {
+                *command = Some(Command::Source(None));
+            }
+            for s in &p.sessions {
+                let on = p.source.as_deref() == Some(s.as_str());
+                if ui.selectable_label(on, source_name(s)).clicked() {
+                    *command = Some(Command::Source(Some(s.clone())));
+                }
+            }
+        });
+    };
+    ui.spacing_mut().item_spacing = vec2(space::M, space::M);
+    let Some((track, timeline, [can_prev, can_next, can_seek])) = &p.track else {
+        ui.horizontal(|ui| {
+            let (rect, _) =
+                ui.allocate_exact_size(egui::Vec2::splat(size::COVER_PLAYER), Sense::hover());
+            paint_cover(ui.painter(), rect, None, ui.opacity());
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = space::XS;
+                w::text(
+                    ui,
+                    "Nothing playing",
+                    size::LABEL,
+                    Weight::SemiBold,
+                    color::TEXT,
+                );
+                w::text(
+                    ui,
+                    "Play music in any app",
+                    size::BODY,
+                    Weight::Regular,
+                    weak,
+                );
+            });
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                menu(ui, &mut command)
+            });
+        });
+        return command;
+    };
+    ui.horizontal(|ui| {
+        let (rect, _) =
+            ui.allocate_exact_size(egui::Vec2::splat(size::COVER_PLAYER), Sense::hover());
+        paint_cover(ui.painter(), rect, track.cover, ui.opacity());
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+            menu(ui, &mut command);
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing.y = space::XS;
+                ui.add_space(space::S);
+                let title = egui::RichText::new(&track.title)
+                    .font(font(size::LABEL, Weight::SemiBold))
+                    .color(color::TEXT);
+                ui.add(egui::Label::new(title).truncate());
+                let artist = egui::RichText::new(&track.artist)
+                    .font(font(size::BODY, Weight::Regular))
+                    .color(weak);
+                ui.add(egui::Label::new(artist).truncate());
+            });
+        });
+    });
+    if let Some((pos, dur)) = timeline {
+        // elapsed, the bar, remaining
+        ui.spacing_mut().item_spacing.y = space::XS;
+        let (row, _) = ui.allocate_exact_size(
+            vec2(ui.available_width(), size::CAPTION + space::XS),
+            Sense::hover(),
+        );
+        let caption = |s: String| {
+            ui.fonts_mut(|f| f.layout_no_wrap(s, font(size::CAPTION, Weight::Medium), weak))
+        };
+        let frac_now = if *dur > 0.0 { (pos / dur) as f32 } else { 0.0 };
+        let frac = seeking.unwrap_or(frac_now).clamp(0.0, 1.0);
+        let shown = frac as f64 * dur;
+        let (elapsed, remaining) = (
+            caption(time(shown)),
+            caption(format!("-{}", time(dur - shown))),
+        );
+        let bar = Rect::from_min_max(
+            pos2(row.left() + elapsed.size().x + space::M, row.top()),
+            pos2(row.right() - remaining.size().x - space::M, row.bottom()),
+        );
+        let painter = ui.painter();
+        painter.galley(
+            pos2(row.left(), row.center().y - elapsed.size().y / 2.0),
+            elapsed.clone(),
+            weak,
+        );
+        let r_at = pos2(
+            row.right() - remaining.size().x,
+            row.center().y - remaining.size().y / 2.0,
+        );
+        painter.galley(r_at, remaining, weak);
+        let track_rect = Rect::from_center_size(bar.center(), vec2(bar.width(), space::XS));
+        let pill = CornerRadius::same(radius::PILL);
+        painter.rect_filled(
+            track_rect,
+            pill,
+            color::TEXT.gamma_multiply(0.25 * ui.opacity()),
+        );
+        let filled = Rect::from_min_size(
+            track_rect.min,
+            vec2(track_rect.width() * frac, track_rect.height()),
+        );
+        painter.rect_filled(filled, pill, color::TEXT.gamma_multiply(ui.opacity()));
+        if *can_seek {
+            let r = ui.interact(bar, ui.scope_id().with("seek"), Sense::click_and_drag());
+            let at = |r: &egui::Response| {
+                r.interact_pointer_pos()
+                    .map(|p| ((p.x - bar.left()) / bar.width().max(1.0)).clamp(0.0, 1.0))
+            };
+            if r.dragged() {
+                *seeking = at(&r);
+            }
+            if (r.drag_stopped() || r.clicked())
+                && let Some(f) = at(&r).or(*seeking)
+            {
+                command = Some(Command::Seek(f as f64 * dur));
+                *seeking = None;
+            }
+        }
+    }
+    // previous, play/pause (larger), next, centred
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = space::XL;
+        let control = |ui: &mut Ui, glyph: &str, size: f32, enabled: bool, tip: &str| {
+            let t = egui::RichText::new(glyph)
+                .font(icon_font(size))
+                .color(color::TEXT);
+            ui.add_enabled(enabled, egui::Button::new(t).frame(false))
+                .on_hover_text(tip)
+                .clicked()
+        };
+        let w = 2.0 * size::ICON_LARGE + size::CONTROL + 2.0 * space::XL;
+        ui.add_space(((ui.available_width() - w) / 2.0).max(0.0));
+        if control(
+            ui,
+            icons::SKIP_BACK,
+            size::ICON_LARGE,
+            *can_prev,
+            "Previous",
+        ) {
+            command = Some(Command::Prev);
+        }
+        let play = if track.playing {
+            icons::PAUSE
+        } else {
+            icons::PLAY
+        };
+        if control(ui, play, size::CONTROL, true, "Play or pause") {
+            command = Some(Command::PlayPause);
+        }
+        if control(ui, icons::SKIP_FORWARD, size::ICON_LARGE, *can_next, "Next") {
+            command = Some(Command::Next);
+        }
+    });
+    command
+}
+
+impl Island {
+    /// The cover's texture for the media thread's cover (uploaded once per cover).
+    fn cover(
+        &mut self,
+        ctx: &egui::Context,
+        cover: Option<&media::Cover>,
+    ) -> Option<egui::TextureId> {
+        let c = cover?;
+        if self.cover.as_ref().is_none_or(|(id, _)| *id != c.id) {
+            let image = egui::ColorImage::from_rgba_unmultiplied(c.size, &c.rgba);
+            let tex = ctx.load_texture("island cover", image, egui::TextureOptions::LINEAR);
+            self.cover = Some((c.id, tex));
+        }
+        self.cover.as_ref().map(|(_, t)| t.id())
     }
 }
 
@@ -576,6 +1001,11 @@ impl Widget for Island {
             y: TOP,
             enabled: true,
         }
+    }
+
+    /// The expanded player takes clicks (it is open like a menu).
+    fn interactive(&self, data: &HudData) -> bool {
+        data.player_open
     }
 
     fn show(&mut self, ui: &mut Ui, data: &HudData, config: &HudConfig) {
@@ -611,6 +1041,23 @@ impl Widget for Island {
             spectator.map(|s| Part::Status(icons::EYE, s))
         };
         let timer = info.as_ref().map(|i| timer(i, tick, now));
+        // now playing; a new title or artist is a track change
+        let state = data.media.map(Media::state).unwrap_or_default();
+        let ctx = ui.ctx().clone();
+        let cover = self.cover(&ctx, state.track.as_ref().and_then(|t| t.cover.as_ref()));
+        let playing = state.track.as_ref().map(|t| NowPlaying {
+            title: t.title.clone(),
+            artist: t.artist.clone(),
+            playing: t.playing,
+            cover,
+        });
+        let key = playing
+            .as_ref()
+            .map(|t| (t.title.clone(), t.artist.clone()));
+        if key.is_some() && key != self.track {
+            self.track_until = tick.wrapping_add(TRACK_TICKS);
+        }
+        self.track = key;
         let (mut idle, mut events) = (Vec::new(), Vec::new());
         for key in hud::item_order(config, "island", &ITEMS) {
             if !on(key) {
@@ -620,6 +1067,7 @@ impl Widget for Island {
                 "status" => status.clone(),
                 "timer" => timer.clone().map(Part::Timer),
                 "checkpoint" => checkpoint.clone().map(Part::Checkpoint),
+                "media" => playing.clone().map(Part::Media),
                 _ => None,
             };
             idle.extend(part);
@@ -630,6 +1078,9 @@ impl Widget for Island {
                     // the timer stays at its end when it is on
                     timer: timer.clone().filter(|_| on("timer")),
                 }),
+                "track" => (playing.clone())
+                    .filter(|_| self.track_until.wrapping_sub(tick) > 0)
+                    .map(View::Track),
                 _ => None,
             };
             events.extend(event);
@@ -641,7 +1092,22 @@ impl Widget for Island {
                 blink: false,
             }));
         }
-        self.anim.show(ui, data.glass, view(events, idle), now);
+        let v =
+            if data.player_open {
+                let now_i = std::time::Instant::now();
+                Some(View::Player(Player {
+                    track: state.track.as_ref().zip(playing).map(|(t, np)| {
+                        (np, t.position(now_i), [t.can_prev, t.can_next, t.can_seek])
+                    }),
+                    sessions: state.sessions.clone(),
+                    source: state.source.clone(),
+                }))
+            } else {
+                view(events, idle)
+            };
+        if let (Some(c), Some(m)) = (self.anim.show(ui, data.glass, v, now), data.media) {
+            m.send(c);
+        }
     }
 
     fn settings(&mut self, ui: &mut Ui, config: &mut HudConfig) {
