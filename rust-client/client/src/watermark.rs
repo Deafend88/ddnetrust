@@ -1,13 +1,14 @@
-//! The watermark (PLAN §10.3, 7.5; SPEC §1): one glass pill top left with the logo and
-//! stats. Settings: `hud_set watermark compact 0|1`, `hud_set watermark <item> 0|1`,
-//! `hud_set watermark order "<item>,..."`.
+//! The watermark (PLAN §10.3, 7.5; SPEC §1): the logo and stats, the Dynamic Island's
+//! idle state (7.9; the island is the one widget, `island.rs`). Settings under the
+//! island's id: `hud_set island compact 0|1`, `hud_set island <item> 0|1`,
+//! `hud_set island order "<item>,..."` and the look sliders.
 
 use ddnet::map::ints_to_str;
 use ddnet::physics::vmath::round_to_int;
 use ddnet::protocol::generated as g;
 use egui::{CornerRadius, Frame, Margin, Ui};
 
-use crate::hud::{Anchor, HudConfig, HudData, Placement, Widget};
+use crate::hud::{HudConfig, HudData};
 use crate::icons;
 use crate::style::{Glass, HUD_SHADOW, LOGO_GLOW, Weight, color, size, space};
 use crate::widgets as w;
@@ -25,6 +26,9 @@ pub const ITEMS: [(&str, bool, &str); 8] = [
     ("uid", false, "Client ID"),
     ("tps", false, "Tick rate"),
 ];
+
+/// The settings id: the island's (the watermark's settings were migrated to it).
+pub const ID: &str = "island";
 
 /// C++ `SERVER_TICK_SPEED`.
 const TICK_SPEED: i32 = 50;
@@ -69,7 +73,7 @@ const LOOK: [(&str, &str, std::ops::RangeInclusive<f32>); 4] = [
 impl Look {
     pub fn of(config: &HudConfig) -> Self {
         let d = Self::default();
-        let n = |key, default| config.number("watermark", key, default);
+        let n = |key, default| config.number(ID, key, default);
         Self {
             corner: n("corner", d.corner).clamp(0.0, 50.0),
             logo_radius: n("logo_radius", d.logo_radius).clamp(0.0, 20.0),
@@ -79,25 +83,25 @@ impl Look {
     }
 }
 
-/// Draws the watermark (also used by the gallery): a HUD bar with the logo (a light
-/// rounded rectangle with a soft glow: the tee mark and "DDNet-rs", the mark only in
-/// compact mode), then the stats. Spacing measured from the reference (PROGRESS 7.5).
-pub fn draw(ui: &mut Ui, glass: Glass, compact: bool, stats: &[Stat], look: Look) {
-    let right = if stats.is_empty() {
-        space::M
-    } else {
-        space::XL
-    };
-    let margin = Margin {
+/// The container's padding: the logo 12 from the edges, the last stat 24.
+pub fn margin(has_stats: bool) -> Margin {
+    let right = if has_stats { space::XL } else { space::M };
+    Margin {
         left: space::M as i8,
         right: right as i8,
         top: space::M as i8,
         bottom: space::M as i8,
-    };
-    // the logo is the tallest item
-    let row_height = look.logo_height;
-    let height = row_height + 2.0 * space::M;
-    let corner = (look.corner / 100.0 * height).round() as u8;
+    }
+}
+
+/// The container's corner radius for its `height`.
+pub fn corner(look: Look, height: f32) -> u8 {
+    (look.corner / 100.0 * height).round() as u8
+}
+
+/// The logo: a light rounded rectangle with a soft glow, the tee mark and "DDNet-rs"
+/// (the mark only in compact mode).
+pub fn logo(ui: &mut Ui, compact: bool, look: Look) {
     // padding from the height; at least 8 left and right
     let pad = ((look.logo_height - size::ICON) / 2.0).max(0.0);
     let logo_margin = Margin::symmetric(pad.max(space::S) as i8, pad as i8);
@@ -105,28 +109,38 @@ pub fn draw(ui: &mut Ui, glass: Glass, compact: bool, stats: &[Stat], look: Look
         color: LOGO_GLOW.color.gamma_multiply(look.glow / 100.0),
         ..LOGO_GLOW
     };
-    w::hud_bar_with(ui, glass, corner, margin, row_height, HUD_SHADOW, |ui| {
-        Frame::new()
-            .fill(color::LOGO)
-            .corner_radius(CornerRadius::same(look.logo_radius.round() as u8))
-            .inner_margin(logo_margin)
-            .shadow(glow)
-            .show(ui, |ui| {
-                ui.spacing_mut().interact_size.y = size::ICON;
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = space::S;
-                    w::tee_mark(ui, size::ICON, color::LOGO_TEXT, color::LOGO);
-                    if !compact {
-                        w::text(
-                            ui,
-                            "DDNet-rs",
-                            size::CAPTION,
-                            Weight::Regular,
-                            color::LOGO_TEXT,
-                        );
-                    }
-                });
+    Frame::new()
+        .fill(color::LOGO)
+        .corner_radius(CornerRadius::same(look.logo_radius.round() as u8))
+        .inner_margin(logo_margin)
+        .shadow(glow)
+        .show(ui, |ui| {
+            ui.spacing_mut().interact_size.y = size::ICON;
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = space::S;
+                w::tee_mark(ui, size::ICON, color::LOGO_TEXT, color::LOGO);
+                if !compact {
+                    w::text(
+                        ui,
+                        "DDNet-rs",
+                        size::CAPTION,
+                        Weight::Regular,
+                        color::LOGO_TEXT,
+                    );
+                }
             });
+        });
+}
+
+/// Draws the watermark alone (the gallery): a HUD bar with the logo, then the stats.
+/// Spacing measured from the reference (PROGRESS 7.5).
+pub fn draw(ui: &mut Ui, glass: Glass, compact: bool, stats: &[Stat], look: Look) {
+    // the logo is the tallest item
+    let row_height = look.logo_height;
+    let corner = corner(look, row_height + 2.0 * space::M);
+    let margin = margin(!stats.is_empty());
+    w::hud_bar_with(ui, glass, corner, margin, row_height, HUD_SHADOW, |ui| {
+        logo(ui, compact, look);
         if !stats.is_empty() {
             ui.add_space(space::XXL);
         }
@@ -147,7 +161,7 @@ pub fn stats(ui: &mut Ui, stats: &[Stat]) {
 /// The keys in the configured order: known keys from `order`, then the missing ones in
 /// default order.
 pub fn order(config: &HudConfig) -> Vec<&'static str> {
-    let saved = config.value("watermark", "order").unwrap_or("");
+    let saved = config.value(ID, "order").unwrap_or("");
     let saved = saved
         .split(',')
         .filter_map(|k| ITEMS.iter().find(|i| i.0 == k.trim()));
@@ -160,14 +174,14 @@ pub fn order(config: &HudConfig) -> Vec<&'static str> {
     keys
 }
 
-fn compact(config: &HudConfig) -> bool {
-    config.on("watermark", "compact", false)
+pub fn compact(config: &HudConfig) -> bool {
+    config.on(ID, "compact", false)
 }
 
 /// Whether item `key` shows.
 pub fn shown(config: &HudConfig, key: &str) -> bool {
     let default = ITEMS.iter().any(|&(k, on, _)| k == key && on);
-    config.on("watermark", key, default)
+    config.on(ID, key, default)
 }
 
 /// The value of item `key`, if known.
@@ -217,96 +231,57 @@ pub fn clock(t: &impl chrono::Timelike) -> String {
     format!("{:02}:{:02}", t.hour(), t.minute())
 }
 
-pub struct Watermark;
-
-impl Widget for Watermark {
-    fn id(&self) -> &'static str {
-        "watermark"
-    }
-
-    fn name(&self) -> &'static str {
-        "Watermark"
-    }
-
-    fn icon(&self) -> &'static str {
-        icons::INFO
-    }
-
-    fn default_placement(&self) -> Placement {
-        Placement {
-            anchor: Anchor::TopLeft,
-            x: 16,
-            y: 16,
-            enabled: true,
+/// The watermark settings in the island's popover: compact, then each item: on/off and
+/// its place in the order, then the look.
+pub fn settings(ui: &mut Ui, config: &mut HudConfig) {
+    let mut order = order(config);
+    let mut swap = None;
+    egui::Grid::new("watermark").num_columns(3).show(ui, |ui| {
+        let mut on = compact(config);
+        if w::toggle(ui, &mut on).changed() {
+            config.set(ID, "compact", on as i32);
         }
-    }
-
-    fn show(&mut self, ui: &mut Ui, data: &HudData, config: &HudConfig) {
-        let on: Vec<&str> = (order(config).into_iter())
-            .filter(|k| shown(config, k))
-            .collect();
-        // DDNet's rule: every item off hides the widget
-        if on.is_empty() {
-            if data.editing {
-                w::placeholder(ui, data.glass, self.icon(), self.name());
-            }
-            return;
-        }
-        let stats: Vec<Stat> = on.into_iter().filter_map(|k| stat(k, data)).collect();
-        draw(ui, data.glass, compact(config), &stats, Look::of(config));
-    }
-
-    /// Compact, then each item: on/off and its place in the order.
-    fn settings(&mut self, ui: &mut Ui, config: &mut HudConfig) {
-        let mut order = order(config);
-        let mut swap = None;
-        egui::Grid::new("watermark").num_columns(3).show(ui, |ui| {
-            let mut on = compact(config);
+        ui.label("Compact");
+        ui.end_row();
+        for (i, key) in order.iter().enumerate() {
+            let mut on = shown(config, key);
             if w::toggle(ui, &mut on).changed() {
-                config.set("watermark", "compact", on as i32);
+                config.set(ID, key, on as i32);
             }
-            ui.label("Compact");
-            ui.end_row();
-            for (i, key) in order.iter().enumerate() {
-                let mut on = shown(config, key);
-                if w::toggle(ui, &mut on).changed() {
-                    config.set("watermark", key, on as i32);
+            ui.label(ITEMS.iter().find(|it| it.0 == *key).map_or(*key, |it| it.2));
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = space::XS;
+                let up =
+                    ui.add_enabled_ui(i > 0, |ui| w::icon_button(ui, icons::CARET_UP, "Move up"));
+                if up.inner.clicked() {
+                    swap = Some(i - 1);
                 }
-                ui.label(ITEMS.iter().find(|it| it.0 == *key).map_or(*key, |it| it.2));
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = space::XS;
-                    let up = ui
-                        .add_enabled_ui(i > 0, |ui| w::icon_button(ui, icons::CARET_UP, "Move up"));
-                    if up.inner.clicked() {
-                        swap = Some(i - 1);
-                    }
-                    let down = ui.add_enabled_ui(i + 1 < order.len(), |ui| {
-                        w::icon_button(ui, icons::CARET_DOWN, "Move down")
-                    });
-                    if down.inner.clicked() {
-                        swap = Some(i);
-                    }
+                let down = ui.add_enabled_ui(i + 1 < order.len(), |ui| {
+                    w::icon_button(ui, icons::CARET_DOWN, "Move down")
                 });
+                if down.inner.clicked() {
+                    swap = Some(i);
+                }
+            });
+            ui.end_row();
+        }
+    });
+    if let Some(i) = swap {
+        order.swap(i, i + 1);
+        config.set(ID, "order", order.join(","));
+    }
+    // the look, until the user settles the defaults
+    egui::Grid::new("watermark_look")
+        .num_columns(2)
+        .show(ui, |ui| {
+            let look = Look::of(config);
+            let values = [look.corner, look.logo_radius, look.logo_height, look.glow];
+            for ((key, name, range), mut v) in LOOK.into_iter().zip(values) {
+                ui.label(name);
+                if w::slider(ui, &mut v, range).changed() {
+                    config.set(ID, key, v.round());
+                }
                 ui.end_row();
             }
         });
-        if let Some(i) = swap {
-            order.swap(i, i + 1);
-            config.set("watermark", "order", order.join(","));
-        }
-        // the look, until the user settles the defaults
-        egui::Grid::new("watermark_look")
-            .num_columns(2)
-            .show(ui, |ui| {
-                let look = Look::of(config);
-                let values = [look.corner, look.logo_radius, look.logo_height, look.glow];
-                for ((key, name, range), mut v) in LOOK.into_iter().zip(values) {
-                    ui.label(name);
-                    if w::slider(ui, &mut v, range).changed() {
-                        config.set("watermark", key, v.round());
-                    }
-                    ui.end_row();
-                }
-            });
-    }
 }

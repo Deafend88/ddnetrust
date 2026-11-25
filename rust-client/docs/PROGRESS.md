@@ -436,7 +436,7 @@ for scenes that do not stay still, or `-RustSubject` to check what the server se
 `examples/maprender.rs` renders a map at a given
 center for fixed-view checks; mask pickups (they bob on each client's own clock).
 
-### M7 — visual identity and HUD (in progress: 7.1-7.8 done and reviewed; next 7.9)
+### M7 — visual identity and HUD (in progress: 7.1-7.8 done and reviewed, 7.9 done; next 7.10)
 
 Pushed and verified: the plan and its review answers (PLAN §10, §10.6), the collision
 leak fix, and 7.1 (fonts + icons, design system, menus + gallery, the review tweaks,
@@ -759,7 +759,8 @@ Built before the editor (the user chose this order) so the editor drags a real w
   rounder, closer to the old shape than to the pill); the logo keeps radius 8.
 
 #### Current state and HUD decisions (2026-11-25, HEAD 10ad433d3): 7.1-7.8 done
-Widgets: watermark (top left), race status chips (under it), position/speed (bottom
+(Since 7.9 the watermark is the island's idle state, top centre; the race status sits top
+left at 16, 16. See the 7.9 status below.) Widgets: watermark (top left), race status chips (under it), position/speed (bottom
 right, off by default), killfeed (top right); the HUD editor (F6 / Esc menu) moves them,
 toggles them and opens their settings. All are reviewed by the user; these decisions
 are final unless the user changes them:
@@ -793,15 +794,47 @@ are final unless the user changes them:
   `scripts/statusbar_check.ps1 [-Kills]`; inputs with the HUD on/off:
   `scripts/hud_input_check.ps1`.
 
+#### 7.9 status (2026-11-25): Dynamic Island merged with the watermark, awaiting review
+- `island.rs`: one widget `island` (top centre 0, 16). Idle = the watermark
+  (`watermark::logo`, stats, all watermark settings now under `hud_set island ...`) +
+  the race timer (TITLE semibold, width from C++'s template class, red/blink in a time
+  limit's last minute) + checkpoint difference + status ("Game paused" / "Free-View" /
+  "Following <name>") + mini cover and accent equalizer (`NowPlaying`, filled by 7.10;
+  `HudData::now_playing` is None until then). Events expand it: finish (check, or
+  trophy for a personal/server record from the local `Sv_RaceFinish`), chat mention
+  (`chat.rs`), broadcast (timer kept at its end), track change (3 s). Liquid Glass and
+  `Glass::liquid_fill` at full strength, `hud_fill` otherwise.
+- `Anim`: width/height/corner on underdamped springs (`anim::Spring::update_damped`),
+  content crossfade (old fades out, swap, new fades in; idle and the same broadcast
+  update in place), events never smaller than the idle size. Idle measured by an
+  invisible egui pass one row tall (a taller row made the island balloon).
+- `chat.rs` + `tolower.rs` (generated, `scripts/gen_tolower.py`); `rs_golden`
+  find_nocase.txt (16,007 vectors, every start offset, malformed UTF-8): all equal.
+  `utf8_decode` in `ddnet::protocol::packer` is now `pub`.
+- Removed: the watermark widget (`Watermark`), `icons::INFO`; added `icons::CHAT`
+  (gallery reference regenerated, only the icon grid changed). `HudConfig::
+  migrate_watermark` runs before `import_cpp`; race status default (16, 16). Our config
+  knows `cl_showhud_timer`, `cl_showhud_time_cp_diff`, `cl_show_broadcasts`,
+  `cl_showhud_spectator` (imported as island items; plus `mentions`).
+- Verified: unit tests (timer cases from RenderGameTimer, race effects, broadcasts,
+  spectating, priority, migration, mentions, damped spring), the watermark layout
+  measurements now through the island (top centre), all gates (fmt, clippy, tests).
+  Live (`scripts/statusbar_check.ps1 -Island`, local server, C++ client spectating):
+  timer text equal in all four states (00:15/18/20/22), "Free-View", "Game paused" and
+  the rcon broadcast shown. Not live-checked: a real finish (needs a race route, like
+  7.8), mentions (no chat sending yet).
+- Review: GIF from `cargo run -p ddnet-rs --example island -- data/maps/dm1.map 900 500
+  2 <out dir>` (frames, composed into a GIF with PIL; sent to the user).
+- Known: at 800x600 the idle island (~610 pt) touches the killfeed top right.
+
 #### Exact next actions (next session starts here)
-1. Read CLAUDE.md, PLAN §10.3 7.9, this section, `git log`.
-2. Next: 7.9 Dynamic Island (PLAN §10.3): top centre; states from
-   `island-concept.png` (idle race timer, track change, broadcast, finish/record,
-   pause/spectate); logic ported exactly (`CHud::RenderGameTimer` hud.cpp:118,
-   `CBroadcast`, finish/record texts with `timefmt::str_time`, already golden-tested);
-   Liquid Glass at full strength. Follow the shape and icon rules above and use the
-   frontend-design skill; live checks with the existing scripts.
-3. Before each commit: gates, `/ponytail-review`, UI rules review; update this file.
+1. Read CLAUDE.md, PLAN §10.3 7.9 (changed) and 7.10, this section, `git log`.
+2. Apply the user's review of the merged island (GIF), if any.
+3. Next: 7.10 Media player (SMTC on a background thread, `windows` crate): fill
+   `HudData::now_playing` (title, artist, cover texture, playing), F7 expands the island
+   into the full player (frees the cursor like a menu), compact capsule, the "⋯" menu,
+   binds `media_play_pause`, `media_next`, `media_prev`.
+4. Before each commit: gates, `/ponytail-review`, UI rules review; update this file.
 
 #### Decisions and gotchas from 7.1
 - egui 0.37 panics in debug if a frame's `TexturesDelta` is dropped unapplied: drain

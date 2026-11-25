@@ -70,7 +70,7 @@ impl Widget for Probe {
         "Probe"
     }
     fn icon(&self) -> &'static str {
-        ddnet_rs::icons::INFO
+        ddnet_rs::icons::MOVE
     }
     fn default_placement(&self) -> Placement {
         self.placement
@@ -96,6 +96,7 @@ fn place(placement: Placement, ppp: f32, screen: egui::Vec2) -> Rect {
         editing: false,
         predictor: None,
         tee: None,
+        now_playing: None,
         events: &[],
     };
     let rect = Rc::new(Cell::new(Rect::NOTHING));
@@ -173,6 +174,44 @@ fn widgets_stay_on_screen() {
     );
 }
 
+/// 7.9: the watermark's saved lines move to the island (its settings, its on/off, its
+/// place only if moved); the race status moves up from under it.
+#[test]
+fn watermark_settings_migrate_to_the_island() {
+    let config = |lines: &[&str]| {
+        let mut c = HudConfig::default();
+        for l in lines {
+            let (cmd, args) = l.split_once(' ').unwrap();
+            c.execute(cmd, args);
+        }
+        c.migrate_watermark();
+        c.serialize()
+    };
+    let got = config(&[
+        "hud_widget watermark top_left 16 16 1",
+        "hud_widget status top_left 16 88 1",
+        r#"hud_set watermark order "fps,ping""#,
+        "hud_set watermark corner 30",
+        "hud_set island corner 10",
+    ]);
+    assert_eq!(
+        got,
+        [
+            r#"hud_widget "status" top_left 16 16 1"#,
+            r#"hud_set "island" "corner" "10""#,
+            r#"hud_set "island" "order" "fps,ping""#,
+        ]
+    );
+    // moved: the island takes its place; off: the island is off
+    let got = config(&["hud_widget watermark right 0 96 1"]);
+    assert_eq!(got, [r#"hud_widget "island" right 0 96 1"#]);
+    let got = config(&["hud_widget watermark top_left 16 16 0"]);
+    assert_eq!(got, [r#"hud_widget "island" top 0 16 0"#]);
+    // nothing to migrate: unchanged, and a moved status stays
+    let got = config(&["hud_widget status top_left 16 88 1"]);
+    assert_eq!(got, [r#"hud_widget "status" top_left 16 88 1"#]);
+}
+
 #[test]
 fn watermark_order_and_items() {
     let mut c = HudConfig::default();
@@ -185,16 +224,16 @@ fn watermark_order_and_items() {
     };
     assert_eq!(on(&c), ["ping", "fps"]);
     // a saved order (with an unknown key and a duplicate) comes first, the rest follow
-    c.execute("hud_set", r#"watermark order "fps, nope,ping,fps""#);
+    c.execute("hud_set", r#"island order "fps, nope,ping,fps""#);
     assert_eq!(
         watermark::order(&c),
         [
             "fps", "ping", "user", "server", "speed", "time", "uid", "tps"
         ]
     );
-    c.execute("hud_set", "watermark user 1");
-    c.execute("hud_set", "watermark ping 0");
-    c.execute("hud_set", "watermark tps 1");
+    c.execute("hud_set", "island user 1");
+    c.execute("hud_set", "island ping 0");
+    c.execute("hud_set", "island tps 1");
     assert_eq!(on(&c), ["fps", "user", "tps"]);
     // the time item: local HH:MM, 24-hour, zero-padded
     let t = |h, m| chrono::NaiveTime::from_hms_opt(h, m, 59).unwrap();
@@ -214,6 +253,7 @@ fn watermark_fps_rounds_like_cpp() {
         editing: false,
         predictor: None,
         tee: None,
+        now_playing: None,
         events: &[],
     };
     let fps = |avg| watermark::stat("fps", &data(avg)).map(|s| s.1);
@@ -306,6 +346,7 @@ fn editor_drags_a_widget_into_the_config() {
         editing: false,
         predictor: None,
         tee: None,
+        now_playing: None,
         events: &[],
     };
     let rect = Rc::new(Cell::new(Rect::NOTHING));
@@ -430,18 +471,23 @@ fn watermark_layout_measurements() {
         editing: false,
         predictor: None,
         tee: None,
+        now_playing: None,
         events: &[],
     };
-    let mut widgets: Vec<Box<dyn Widget>> = vec![Box::new(watermark::Watermark)];
+    // 7.9: the watermark is the island's idle state
+    let island = ddnet_rs::island::Island::default();
+    let mut widgets: Vec<Box<dyn Widget>> = vec![Box::new(island)];
     // the name is off by default; on here to measure the gaps between two stats
     let mut config = HudConfig::default();
-    config.execute("hud_set", "watermark user 1");
+    config.execute("hud_set", "island user 1");
     let ctx = egui::Context::default();
     style::install(&ctx, Glass::Off);
     let mut shapes = Vec::new();
-    for _ in 0..3 {
+    // 3 s at 10 fps: the island's springs settle
+    for i in 0..30 {
         let input = egui::RawInput {
             screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, 600.0))),
+            time: Some(i as f64 * 0.1),
             ..Default::default()
         };
         let mut out = ctx.run_pass(input, |ctx| hud::show(ctx, &mut widgets, &data, &config));
@@ -462,16 +508,17 @@ fn watermark_layout_measurements() {
     let find = |s: &str| {
         (texts.iter().find(|t| t.0 == s)).unwrap_or_else(|| panic!("{s} not in {texts:?}"))
     };
-    let area = ctx
-        .memory(|m| m.area_rect(hud::area_id("watermark")))
-        .unwrap();
-    assert_eq!(area.min, pos2(16.0, 16.0));
+    let area = ctx.memory(|m| m.area_rect(hud::area_id("island"))).unwrap();
+    // top centre (egui snaps the area to a fraction of a point), 16 down
+    let near = |a: f32, b: f32| assert!((a - b).abs() < 0.25, "{a} != {b}");
+    near(area.center().x, 400.0);
+    assert_eq!(area.min.y, 16.0);
     // the logo text: bar margin M, logo margin M, the tee mark (icon size), gap S
     let logo = find("DDNet-rs");
     assert_eq!(logo.1, size::CAPTION);
-    assert_eq!(
-        logo.2.left(),
-        16.0 + space::M + space::M + size::ICON + space::S
+    near(
+        logo.2.left() - area.left(),
+        space::M + space::M + size::ICON + space::S,
     );
     // stats: icon (icon size), 8 pt, value (body), unit right after it (body)
     let icon = |glyph: &str| find(glyph).2;
@@ -498,7 +545,7 @@ fn watermark_layout_measurements() {
         2.0 * space::XL
     );
     // the bar ends 24 after the last unit
-    assert_eq!(area.right() - unit.2.right(), space::XL);
+    near(area.right() - unit.2.right(), space::XL);
 }
 
 /// 7.6: the movement information against the real `CHud::GetMovementInformation` and
@@ -805,6 +852,37 @@ fn str_time_matches_cpp() {
         n += 1;
     }
     assert_eq!(n, 6 * (19 + 300 + 300));
+}
+
+/// 7.9: the chat mention match (`str_utf8_find_nocase` with the C++ lowercase table)
+/// against the real C++ (`rs_golden` find_nocase.txt, every start offset).
+#[test]
+fn find_nocase_matches_cpp() {
+    let path = format!(
+        "{}/../tests/golden/find_nocase.txt",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let text = std::fs::read_to_string(path).unwrap();
+    let hex = |s: &str| -> Vec<u8> {
+        if s == "-" {
+            return Vec::new();
+        }
+        (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+            .collect()
+    };
+    let mut n = 0;
+    for line in text.lines() {
+        let f: Vec<&str> = line.split(' ').collect();
+        let (hay, needle) = (hex(f[0]), hex(f[1]));
+        let from: usize = f[2].parse().unwrap();
+        let want: i32 = f[3].parse().unwrap();
+        let got = ddnet_rs::chat::find_nocase(&hay, from, &needle).map_or(-1, |p| p as i32);
+        assert_eq!(got, want, "{line}");
+        n += 1;
+    }
+    assert_eq!(n, 16007);
 }
 
 /// 7.8: `CInfoMessages`' rules: five entries at most (a new one overwrites the oldest),

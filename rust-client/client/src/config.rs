@@ -279,6 +279,10 @@ pub struct Config {
     pub cl_showhud_ddrace: i32,
     pub cl_showkillmessages: i32,
     pub cl_show_finish_messages: i32,
+    pub cl_showhud_timer: i32,
+    pub cl_showhud_time_cp_diff: i32,
+    pub cl_show_broadcasts: i32,
+    pub cl_showhud_spectator: i32,
     /// Ours (not a C++ variable): the DDNet data dir, used when neither `--data-dir`
     /// nor `DDNET_DATA_DIR` is given.
     pub rs_data_dir: String,
@@ -321,6 +325,10 @@ impl Default for Config {
             cl_showhud_ddrace: 1,
             cl_showkillmessages: 1,
             cl_show_finish_messages: 1,
+            cl_showhud_timer: 1,
+            cl_showhud_time_cp_diff: 1,
+            cl_show_broadcasts: 1,
+            cl_showhud_spectator: 1,
             rs_data_dir: String::new(),
             rs_glass: 1,
             rs_ui_scale: 100,
@@ -378,6 +386,10 @@ impl Config {
             "cl_showhud_ddrace" => Int(&mut self.cl_showhud_ddrace, 0, 1),
             "cl_showkillmessages" => Int(&mut self.cl_showkillmessages, 0, 1),
             "cl_show_finish_messages" => Int(&mut self.cl_show_finish_messages, 0, 1),
+            "cl_showhud_timer" => Int(&mut self.cl_showhud_timer, 0, 1),
+            "cl_showhud_time_cp_diff" => Int(&mut self.cl_showhud_time_cp_diff, 0, 1),
+            "cl_show_broadcasts" => Int(&mut self.cl_show_broadcasts, 0, 1),
+            "cl_showhud_spectator" => Int(&mut self.cl_showhud_spectator, 0, 1),
             "rs_data_dir" => Str(&mut self.rs_data_dir, 512),
             "rs_glass" => Int(&mut self.rs_glass, 0, 2),
             "rs_ui_scale" => Int(&mut self.rs_ui_scale, 50, 200),
@@ -441,7 +453,7 @@ impl Config {
 }
 
 /// Every variable name `Config::var` knows.
-pub const VAR_NAMES: [&str; 33] = [
+pub const VAR_NAMES: [&str; 37] = [
     "player_name",
     "player_skin",
     "player_use_custom_color",
@@ -472,6 +484,10 @@ pub const VAR_NAMES: [&str; 33] = [
     "cl_showhud_ddrace",
     "cl_showkillmessages",
     "cl_show_finish_messages",
+    "cl_showhud_timer",
+    "cl_showhud_time_cp_diff",
+    "cl_show_broadcasts",
+    "cl_showhud_spectator",
     "rs_data_dir",
     "rs_glass",
     "rs_ui_scale",

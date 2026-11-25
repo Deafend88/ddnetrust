@@ -236,7 +236,7 @@ fn byte_at(s: &[u8], pos: usize) -> u8 {
 /// C++: `str_utf8_decode` (str.cpp:971), WHATWG UTF-8 decoder. Returns the code
 /// point, 0 at the terminator, or -1 on error. On an invalid continuation byte the
 /// cursor is left on that byte.
-pub(crate) fn utf8_decode(s: &[u8], pos: &mut usize) -> i32 {
+pub fn utf8_decode(s: &[u8], pos: &mut usize) -> i32 {
     let mut lower: u8 = 0x80;
     let mut upper: u8 = 0xBF;
     let mut code_point: i32 = 0;

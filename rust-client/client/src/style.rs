@@ -38,6 +38,8 @@ pub mod radius {
     pub const SMALL: u8 = 12;
     pub const CARD: u8 = 24;
     pub const PILL: u8 = 255;
+    /// Album covers (the island's mini player and track change).
+    pub const COVER: u8 = 6;
 }
 
 /// Spacing scale in points.
@@ -62,6 +64,8 @@ pub mod size {
     pub const ICON_LARGE: f32 = 21.0;
     /// The race status block's icons and weapon sprites.
     pub const ICON_HUD: f32 = 24.0;
+    /// The album cover in the island's track change.
+    pub const COVER: f32 = 40.0;
 }
 
 /// Animation timing in seconds.
