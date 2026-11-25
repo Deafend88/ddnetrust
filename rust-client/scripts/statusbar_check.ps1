@@ -66,8 +66,8 @@ function Save-Pair([string]$Cpp, [string]$Rust, [string]$Out) {
     $img = New-Object System.Drawing.Bitmap 1000, 200
     $g = [System.Drawing.Graphics]::FromImage($img)
     # the C++ HUD at 2x; with -Kills the right halves (killfeeds) instead of the left
-    $cx = if ($Kills) { 500 } else { 0 }; $rx = if ($Kills) { 200 } else { 0 }
-    $g.DrawImage($a, (New-Object System.Drawing.Rectangle 0, 0, 400, 200), (New-Object System.Drawing.Rectangle ($cx + 100), 0, 200, 100), [System.Drawing.GraphicsUnit]::Pixel)
+    $cx = if ($Kills) { 600 } else { 0 }; $rx = if ($Kills) { 200 } else { 0 }
+    $g.DrawImage($a, (New-Object System.Drawing.Rectangle 0, 0, 400, 200), (New-Object System.Drawing.Rectangle $cx, 0, 200, 100), [System.Drawing.GraphicsUnit]::Pixel)
     $g.DrawImage($b, (New-Object System.Drawing.Rectangle 400, 0, 600, 200), (New-Object System.Drawing.Rectangle $rx, 0, 600, 200), [System.Drawing.GraphicsUnit]::Pixel)
     $g.Dispose(); $a.Dispose(); $b.Dispose(); $img.Save($Out, [System.Drawing.Imaging.ImageFormat]::Png); $img.Dispose()
 }

@@ -9,7 +9,7 @@ use ddnet::protocol::generated::{self as g, ObjCharacter, ObjDDNetCharacter};
 use egui::{Color32, ColorImage, CornerRadius, Margin, Sense, TextureHandle, Ui};
 
 use crate::assets;
-use crate::hud::{Anchor, HudConfig, HudData, Placement, Widget};
+use crate::hud::{Anchor, HudConfig, HudData, Placement, Widget, item_toggles};
 use crate::icons;
 use crate::image::Format;
 use crate::render::content::{SPRITES, SPRITESETS};
@@ -288,8 +288,8 @@ impl WeaponIcons {
         }
     }
 
-    /// A weapon sprite, `size::ICON` tall, at `alpha`; nothing for an unknown weapon.
-    pub fn draw(&mut self, ui: &mut Ui, weapon: usize, alpha: f32) {
+    /// A weapon sprite, `height` tall, at `alpha`; nothing for an unknown weapon.
+    pub fn draw(&mut self, ui: &mut Ui, weapon: usize, height: f32, alpha: f32) {
         if self.textures.is_empty() {
             let ctx = ui.ctx().clone();
             self.textures = (self.images.iter().enumerate())
@@ -303,7 +303,7 @@ impl WeaponIcons {
             return;
         };
         let [tw, th] = t.size().map(|v| v as f32);
-        let h = size::ICON;
+        let h = height;
         let tint = Color32::WHITE.gamma_multiply(alpha);
         ui.add(egui::Image::new((t.id(), egui::vec2(h * tw / th, h))).tint(tint));
     }
@@ -319,9 +319,9 @@ impl StatusBar {
 
 /// Jumps as pips: available ones white, used ones faint.
 fn pips(ui: &mut Ui, (available, total): (i32, i32)) {
-    let r = 3.5;
+    let r = 5.0;
     let width = total as f32 * (2.0 * r + space::XS) - space::XS;
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(width.max(0.0), size::ICON), Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(width.max(0.0), ICON), Sense::hover());
     for n in 0..total {
         let x = rect.left() + r + n as f32 * (2.0 * r + space::XS);
         let fill = if n < available {
@@ -336,7 +336,7 @@ fn pips(ui: &mut Ui, (available, total): (i32, i32)) {
 
 /// The ninja timer: a short bar, white on a faint track.
 fn timer(ui: &mut Ui, progress: f32) {
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(space::XL, size::ICON), Sense::hover());
+    let (rect, _) = ui.allocate_exact_size(egui::vec2(space::XL, ICON), Sense::hover());
     let track = egui::Rect::from_center_size(rect.center(), egui::vec2(space::XL, space::XS));
     let p = ui.painter();
     let round = CornerRadius::same(radius::PILL);
@@ -345,6 +345,9 @@ fn timer(ui: &mut Ui, progress: f32) {
     fill.set_width(track.width() * progress);
     p.rect_filled(fill, round, color::TEXT);
 }
+
+/// The block's icon and sprite size.
+const ICON: f32 = size::ICON_HUD;
 
 impl Widget for StatusBar {
     fn id(&self) -> &'static str {
@@ -369,7 +372,7 @@ impl Widget for StatusBar {
         }
     }
 
-    fn show(&mut self, ui: &mut Ui, data: &HudData, _: &HudConfig) {
+    fn show(&mut self, ui: &mut Ui, data: &HudData, config: &HudConfig) {
         // C++: RenderPlayerState runs with m_HasExtendedData and the server's
         // m_HudDDRace (cl_showhud_ddrace: the widget's on/off)
         let (Some(tee), Some(predictor)) = (data.tee, data.predictor) else {
@@ -399,43 +402,71 @@ impl Widget for StatusBar {
             display_info: ext.jumped_total != -1,
             game_tick: data.client.game_tick().unwrap_or(0),
         });
-        let margin = Margin::symmetric(space::XL as i8, space::M as i8);
-        w::hud_bar(ui, data.glass, false, margin, size::ICON, |ui| {
-            ui.spacing_mut().item_spacing.x = space::S;
-            let mut first = true;
-            let mut group = |ui: &mut Ui| {
-                if !std::mem::take(&mut first) {
-                    w::dot(ui);
-                }
-            };
-            if s.jumps.1 > 0 {
-                group(ui);
-                pips(ui, s.jumps);
+        // rows: weapons, jumps, active effects (only when something is on); an item
+        // that is off is not drawn, every item off hides the widget
+        let on = |key| config.on("status", key, true);
+        let effects: Vec<Indicator> = (s.capabilities.iter())
+            .chain(&s.prohibited)
+            .chain(&s.modes)
+            .copied()
+            .collect();
+        let rows = [
+            on("weapons") && !s.weapons.is_empty(),
+            on("jumps") && s.jumps.1 > 0,
+            on("effects") && !effects.is_empty(),
+        ];
+        if !rows.contains(&true) {
+            if data.editing {
+                w::placeholder(ui, data.glass, self.icon(), self.name());
             }
-            if !s.weapons.is_empty() {
-                group(ui);
-                for &(weapon, active) in &s.weapons {
-                    // C++: 0.4 for weapons not held
-                    self.0.draw(ui, weapon, if active { 1.0 } else { 0.4 });
-                    if weapon == WEAPON_NINJA
-                        && let Some(p) = s.ninja
-                    {
-                        timer(ui, p);
-                    }
+            return;
+        }
+        // several rows: a rounded rectangle (CLAUDE.md shape rule), tight spacing
+        let n = rows.iter().filter(|&&r| r).count();
+        let corner = if n > 1 { radius::CARD } else { radius::PILL };
+        let margin = Margin::same(space::M as i8);
+        w::hud_bar(ui, data.glass, corner, margin, ICON, |ui| {
+            ui.vertical(|ui| {
+                ui.spacing_mut().item_spacing = egui::vec2(space::XS, space::XS);
+                ui.spacing_mut().interact_size.y = ICON;
+                if rows[0] {
+                    ui.horizontal(|ui| {
+                        for &(weapon, active) in &s.weapons {
+                            // C++: 0.4 for weapons not held
+                            self.0
+                                .draw(ui, weapon, ICON, if active { 1.0 } else { 0.4 });
+                            if weapon == WEAPON_NINJA
+                                && let Some(p) = s.ninja
+                            {
+                                timer(ui, p);
+                            }
+                        }
+                    });
                 }
-            }
-            for row in [&s.capabilities, &s.prohibited, &s.modes] {
-                if row.is_empty() {
-                    continue;
+                if rows[1] {
+                    ui.horizontal(|ui| pips(ui, s.jumps));
                 }
-                group(ui);
-                for &ind in row {
-                    w::icon(ui, icon_of(ind), size::ICON, color::TEXT);
-                    if let Some(weapon) = weapon_of(ind) {
-                        self.0.draw(ui, weapon, 1.0);
-                    }
+                if rows[2] {
+                    ui.horizontal(|ui| {
+                        for &ind in &effects {
+                            w::icon(ui, icon_of(ind), ICON, color::TEXT);
+                            if let Some(weapon) = weapon_of(ind) {
+                                self.0.draw(ui, weapon, ICON, 1.0);
+                            }
+                        }
+                    });
                 }
-            }
+            });
         });
+    }
+
+    fn settings(&mut self, ui: &mut Ui, config: &mut HudConfig) {
+        // jumps: C++ cl_showhud_jumps_indicator (imported)
+        let items = [
+            ("weapons", "Weapons", true),
+            ("jumps", "Jumps", true),
+            ("effects", "Active effects", true),
+        ];
+        item_toggles(ui, config, "status", &items);
     }
 }

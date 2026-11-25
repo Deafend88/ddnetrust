@@ -271,6 +271,14 @@ pub struct Config {
     pub cl_limit_max_zoom_level: i32,
     pub cl_race_binds_set: i32,
     pub gfx_vsync: i32,
+    /// C++ HUD switches, imported as the HUD items' first values (`HudConfig::import_cpp`).
+    pub cl_showhud_player_position: i32,
+    pub cl_showhud_player_speed: i32,
+    pub cl_showhud_player_angle: i32,
+    pub cl_showhud_jumps_indicator: i32,
+    pub cl_showhud_ddrace: i32,
+    pub cl_showkillmessages: i32,
+    pub cl_show_finish_messages: i32,
     /// Ours (not a C++ variable): the DDNet data dir, used when neither `--data-dir`
     /// nor `DDNET_DATA_DIR` is given.
     pub rs_data_dir: String,
@@ -306,6 +314,13 @@ impl Default for Config {
             cl_limit_max_zoom_level: 1,
             cl_race_binds_set: 0,
             gfx_vsync: 0,
+            cl_showhud_player_position: 0,
+            cl_showhud_player_speed: 0,
+            cl_showhud_player_angle: 0,
+            cl_showhud_jumps_indicator: 1,
+            cl_showhud_ddrace: 1,
+            cl_showkillmessages: 1,
+            cl_show_finish_messages: 1,
             rs_data_dir: String::new(),
             rs_glass: 1,
             rs_ui_scale: 100,
@@ -322,6 +337,14 @@ enum Var<'a> {
 }
 
 impl Config {
+    /// An integer variable by its C++ name.
+    pub fn int(&self, name: &str) -> Option<i32> {
+        match self.clone().var(name)? {
+            Var::Int(v, ..) => Some(*v),
+            _ => None,
+        }
+    }
+
     fn var(&mut self, name: &str) -> Option<Var<'_>> {
         use Var::*;
         Some(match name.to_ascii_lowercase().as_str() {
@@ -348,6 +371,13 @@ impl Config {
             "cl_limit_max_zoom_level" => Int(&mut self.cl_limit_max_zoom_level, 0, 1),
             "cl_race_binds_set" => Int(&mut self.cl_race_binds_set, 0, 3),
             "gfx_vsync" => Int(&mut self.gfx_vsync, 0, 1),
+            "cl_showhud_player_position" => Int(&mut self.cl_showhud_player_position, 0, 1),
+            "cl_showhud_player_speed" => Int(&mut self.cl_showhud_player_speed, 0, 1),
+            "cl_showhud_player_angle" => Int(&mut self.cl_showhud_player_angle, 0, 1),
+            "cl_showhud_jumps_indicator" => Int(&mut self.cl_showhud_jumps_indicator, 0, 1),
+            "cl_showhud_ddrace" => Int(&mut self.cl_showhud_ddrace, 0, 1),
+            "cl_showkillmessages" => Int(&mut self.cl_showkillmessages, 0, 1),
+            "cl_show_finish_messages" => Int(&mut self.cl_show_finish_messages, 0, 1),
             "rs_data_dir" => Str(&mut self.rs_data_dir, 512),
             "rs_glass" => Int(&mut self.rs_glass, 0, 2),
             "rs_ui_scale" => Int(&mut self.rs_ui_scale, 50, 200),
@@ -411,7 +441,7 @@ impl Config {
 }
 
 /// Every variable name `Config::var` knows.
-pub const VAR_NAMES: [&str; 26] = [
+pub const VAR_NAMES: [&str; 33] = [
     "player_name",
     "player_skin",
     "player_use_custom_color",
@@ -435,6 +465,13 @@ pub const VAR_NAMES: [&str; 26] = [
     "cl_limit_max_zoom_level",
     "cl_race_binds_set",
     "gfx_vsync",
+    "cl_showhud_player_position",
+    "cl_showhud_player_speed",
+    "cl_showhud_player_angle",
+    "cl_showhud_jumps_indicator",
+    "cl_showhud_ddrace",
+    "cl_showkillmessages",
+    "cl_show_finish_messages",
     "rs_data_dir",
     "rs_glass",
     "rs_ui_scale",

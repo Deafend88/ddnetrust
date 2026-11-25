@@ -20,6 +20,7 @@ pub mod skin;
 pub mod statusbar;
 pub mod storage;
 pub mod style;
+pub mod teehead;
 pub mod timefmt;
 pub mod ui;
 pub mod watermark;

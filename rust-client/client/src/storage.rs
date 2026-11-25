@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 /// C++: `IStorage::MAX_PATHS`.
 const MAX_PATHS: usize = 16;
 
+#[derive(Clone)]
 pub struct Storage {
     /// C++: `m_aaStoragePaths`, searched in order; an empty path is the current dir.
     pub paths: Vec<PathBuf>,

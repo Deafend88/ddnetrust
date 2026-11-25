@@ -813,10 +813,20 @@ fn str_time_matches_cpp() {
 #[test]
 fn killfeed_follows_info_messages() {
     use ddnet::protocol::generated::{GameMsg, MsgSvKillMsg, MsgSvKillMsgTeam, MsgSvRaceFinish};
-    use ddnet_rs::killfeed::{Feed, Kind, LIFETIME_TICKS};
+    use ddnet_rs::killfeed::{Feed, Kind, LIFETIME_TICKS, Player};
+    use ddnet_rs::teehead::TeeLook;
 
     // clients 0..3 are active, named "p0".."p3"
-    let name = |id: i32| (0..4).contains(&id).then(|| format!("p{id}"));
+    let player = |id: i32| Player {
+        id,
+        name: format!("p{id}"),
+        tee: TeeLook {
+            skin: "default".into(),
+            custom_color: id == 2,
+            color_body: id,
+        },
+    };
+    let name = |id: i32| (0..4).contains(&id).then(|| player(id));
     let kill = |killer, victim, weapon| {
         GameMsg::SvKillMsg(MsgSvKillMsg {
             killer,
@@ -854,15 +864,15 @@ fn killfeed_follows_info_messages() {
         kinds[0],
         Kind::Kill {
             victim: None,
-            killer: Some((3, "p3".into())),
+            killer: Some(player(3)),
             weapon: 1
         }
     );
     assert_eq!(
         kinds[1],
         Kind::Kill {
-            victim: Some((2, "p2".into())),
-            killer: Some((2, "p2".into())),
+            victim: Some(player(2)),
+            killer: Some(player(2)),
             weapon: -1
         }
     );
@@ -898,7 +908,7 @@ fn killfeed_follows_info_messages() {
     assert_eq!(
         kinds[1],
         Kind::Finish {
-            name: "p1".into(),
+            player: player(1),
             // 3723.45 as f32 is 3723.4499..: C++ rounds it to the even 03.44
             time: "01:02:03.44".into(),
             diff: Some("(-01.50)".into()),
@@ -909,7 +919,7 @@ fn killfeed_follows_info_messages() {
     assert_eq!(
         kinds[2],
         Kind::Finish {
-            name: "p2".into(),
+            player: player(2),
             time: "42.10".into(),
             diff: Some("(+00.36)".into()),
             faster: false,
@@ -918,4 +928,28 @@ fn killfeed_follows_info_messages() {
     );
     // 5 ms rounds to an even centisecond: 0
     assert!(matches!(&kinds[3], Kind::Finish { time, diff: None, .. } if time == "00.00"));
+}
+
+/// The C++ HUD switches become the first values of our HUD items; our own settings win.
+#[test]
+fn cpp_hud_settings_are_imported() {
+    let cpp = |var: &str| matches!(var, "cl_showhud_player_speed" | "cl_showkillmessages");
+    let default = |id: &str| {
+        Some(Placement {
+            anchor: Anchor::TopLeft,
+            x: 0,
+            y: id.len() as i32,
+            enabled: true,
+        })
+    };
+    let mut c = HudConfig::default();
+    c.execute("hud_set", "killfeed kills 0");
+    c.import_cpp(cpp, default);
+    // the speed line only; the panel on because one of its lines is
+    assert!(!c.on("movement", "position", true) && c.on("movement", "speed", false));
+    assert!(c.placements["movement"].enabled);
+    // cl_showhud_ddrace 0: the status bar off; jumps from cl_showhud_jumps_indicator 0
+    assert!(!c.placements["status"].enabled && !c.on("status", "jumps", true));
+    // ours (kills 0) kept; finishes from C++ (0)
+    assert!(!c.on("killfeed", "kills", true) && !c.on("killfeed", "finishes", true));
 }

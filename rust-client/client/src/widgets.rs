@@ -81,23 +81,19 @@ pub fn glass_pill<R>(
 
 /// A HUD bar: a translucent shape over glass (the watermark's container), `margin`
 /// inside, its items centred on a row `row_height` tall (the tallest item). Shape rule
-/// (CLAUDE.md): a pill for one line, a rounded rectangle (`radius::CARD`) for several.
+/// (CLAUDE.md): a pill (`radius::PILL`) for one line, a rounded rectangle
+/// (`radius::CARD`) for several; the watermark's radius is a setting.
 pub fn hud_bar<R>(
     ui: &mut Ui,
     glass: Glass,
-    multi_line: bool,
+    corner_radius: u8,
     margin: Margin,
     row_height: f32,
     add: impl FnOnce(&mut Ui) -> R,
 ) -> InnerResponse<R> {
-    let radius = if multi_line {
-        radius::CARD
-    } else {
-        radius::PILL
-    };
     let frame = Frame::new()
         .fill(glass.hud_fill())
-        .corner_radius(CornerRadius::same(radius))
+        .corner_radius(CornerRadius::same(corner_radius))
         .inner_margin(margin);
     glass_frame(ui, glass, false, frame, |ui| {
         // egui centres a horizontal row's items on interact_size.y (the row runs right
@@ -109,6 +105,18 @@ pub fn hud_bar<R>(
         })
         .inner
     })
+}
+
+/// What a hidden widget (every item off, nothing to show) draws in the HUD editor, so it
+/// can still be selected and turned back on: its icon and name, greyed.
+pub fn placeholder(ui: &mut Ui, glass: Glass, glyph: &str, name: &str) {
+    let margin = Margin::symmetric(space::L as i8, space::S as i8);
+    hud_bar(ui, glass, radius::PILL, margin, size::ICON, |ui| {
+        let weak = ui.visuals().weak_text_color();
+        ui.spacing_mut().item_spacing.x = space::S;
+        icon(ui, glyph, size::ICON, weak);
+        text(ui, name, size::BODY, crate::style::Weight::Regular, weak);
+    });
 }
 
 /// The DDNet-rs mark: a tee looking right (round body, two upright eyes, two feet) in

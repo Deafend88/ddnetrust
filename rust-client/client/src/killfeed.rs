@@ -9,11 +9,12 @@ use egui::emath::TSTransform;
 use egui::{Align, Color32, Layout, Margin, Ui};
 
 use crate::anim::ease_out;
-use crate::hud::{Anchor, HudConfig, HudData, Placement, Widget};
+use crate::hud::{Anchor, HudConfig, HudData, Placement, Widget, item_toggles};
 use crate::icons;
 use crate::statusbar::WeaponIcons;
 use crate::storage::Storage;
-use crate::style::{Weight, color, motion, size, space};
+use crate::style::{Weight, color, motion, radius, size, space};
+use crate::teehead::{TeeHeads, TeeLook};
 use crate::timefmt::{TimeFormat, str_time_float};
 use crate::widgets as w;
 
@@ -22,14 +23,23 @@ pub const MAX: usize = 5;
 /// C++: an entry shows until `GameTick > m_Tick + GameTickSpeed() * 10`.
 pub const LIFETIME_TICKS: i32 = 50 * 10;
 
+/// An active client in a message (C++ copies its name and tee render info when the
+/// message arrives).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Player {
+    pub id: i32,
+    pub name: String,
+    pub tee: TeeLook,
+}
+
 /// What an entry says.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Kind {
-    /// `Sv_KillMsg`: the victim and the killer (id, name) when they are active clients,
-    /// and the weapon (negative: self, world or game).
+    /// `Sv_KillMsg`: the victim and the killer when they are active clients, and the
+    /// weapon (negative: self, world or game).
     Kill {
-        victim: Option<(i32, String)>,
-        killer: Option<(i32, String)>,
+        victim: Option<Player>,
+        killer: Option<Player>,
         weapon: i32,
     },
     /// `Sv_KillMsgTeam`: a DDRace team died. C++ lists up to four members (from the
@@ -38,7 +48,7 @@ pub enum Kind {
     /// `Sv_RaceFinish`: who, the time and the difference to their record as C++ formats
     /// them, and whether it is a record.
     Finish {
-        name: String,
+        player: Player,
         time: String,
         diff: Option<String>,
         faster: bool,
@@ -67,13 +77,12 @@ impl Feed {
         self.slots[self.current] = Some(entry);
     }
 
-    /// C++: `CInfoMessages::OnMessage`. `name` is a client's name if it is active (C++
+    /// C++: `CInfoMessages::OnMessage`. `player` is a client if it is active (C++
     /// `m_aClients[id].m_Active`: its `PlayerInfo` is in the snapshot).
-    pub fn on_message(&mut self, msg: &GameMsg, name: impl Fn(i32) -> Option<String>, tick: i32) {
+    pub fn on_message(&mut self, msg: &GameMsg, player: impl Fn(i32) -> Option<Player>, tick: i32) {
         let kind = match msg {
             GameMsg::SvKillMsg(m) => {
-                let victim = name(m.victim).map(|n| (m.victim, n));
-                let killer = name(m.killer).map(|n| (m.killer, n));
+                let (victim, killer) = (player(m.victim), player(m.killer));
                 if victim.is_none() && killer.is_none() && m.weapon < 0 {
                     return; // message would be empty
                 }
@@ -85,7 +94,7 @@ impl Feed {
             }
             GameMsg::SvKillMsgTeam(m) => Kind::TeamKill { team: m.team },
             GameMsg::SvRaceFinish(m) => {
-                let Some(name) = name(m.client_id) else {
+                let Some(player) = player(m.client_id) else {
                     return;
                 };
                 let format = TimeFormat::HoursCentisecs;
@@ -95,7 +104,7 @@ impl Feed {
                     format!("({}{t})", if m.diff < 0 { '-' } else { '+' })
                 });
                 Kind::Finish {
-                    name,
+                    player,
                     time: str_time_float(m.time as f32 / 1000.0, format),
                     diff,
                     faster: m.diff < 0,
@@ -124,26 +133,37 @@ impl Feed {
     }
 }
 
-/// A client's name if C++ counts it as active: its `PlayerInfo` (client id = item id)
-/// is in the snapshot; the name comes from its `ClientInfo`.
-fn active_name(items: &[ddnet::protocol::snapshot::Item], id: i32) -> Option<String> {
+/// A client if C++ counts it as active: its `PlayerInfo` (client id = item id) is in the
+/// snapshot; name and skin come from its `ClientInfo`.
+fn active_player(items: &[ddnet::protocol::snapshot::Item], id: i32) -> Option<Player> {
     let active = items.iter().any(|it| {
         it.type_id == g::NETOBJTYPE_PLAYERINFO
             && it.id == id
             && g::ObjPlayerInfo::from_ints(&it.data).client_id == id
     });
-    let info = items
-        .iter()
-        .find(|it| it.type_id == g::NETOBJTYPE_CLIENTINFO && it.id == id);
-    active.then(|| {
-        info.and_then(|it| ints_to_str(&g::ObjClientInfo::from_ints(&it.data).name))
-            .unwrap_or_default()
+    if !active {
+        return None;
+    }
+    let info = (items.iter())
+        .find(|it| it.type_id == g::NETOBJTYPE_CLIENTINFO && it.id == id)
+        .map(|it| g::ObjClientInfo::from_ints(&it.data));
+    Some(Player {
+        id,
+        name: info.and_then(|c| ints_to_str(&c.name)).unwrap_or_default(),
+        tee: TeeLook {
+            skin: info
+                .and_then(|c| ints_to_str(&c.skin))
+                .unwrap_or_else(|| "default".into()),
+            custom_color: info.is_some_and(|c| c.use_custom_color != 0),
+            color_body: info.map_or(0, |c| c.color_body),
+        },
     })
 }
 
 pub struct Killfeed {
     feed: Feed,
     weapons: WeaponIcons,
+    heads: TeeHeads,
 }
 
 impl Killfeed {
@@ -151,6 +171,7 @@ impl Killfeed {
         Self {
             feed: Feed::default(),
             weapons: WeaponIcons::new(storage),
+            heads: TeeHeads::new(storage),
         }
     }
 }
@@ -158,14 +179,16 @@ impl Killfeed {
 /// A piece of a capsule.
 enum Part<'a> {
     Name(&'a str),
+    Tee(&'a TeeLook),
     Icon(&'static str),
     Weapon(usize),
     /// A secondary text (the time) or a coloured one (the difference).
     Text(&'a str, Weight, Color32),
 }
 
-/// What a capsule shows, left to right. Kills read like C++ (killer, weapon, victim; the
-/// killer only when it is not the victim); a kill without a weapon shows a skull.
+/// What a capsule shows, left to right, like C++: killer name and tee, weapon, victim tee
+/// and name (the killer only when it is not the victim); a skull instead of the weapon
+/// for a self-kill or death (no weapon).
 fn parts(kind: &Kind, weak: Color32) -> Vec<Part<'_>> {
     match kind {
         Kind::Kill {
@@ -174,24 +197,24 @@ fn parts(kind: &Kind, weak: Color32) -> Vec<Part<'_>> {
             weapon,
         } => {
             let mut p = Vec::new();
-            if let Some((id, n)) = killer
-                && victim.as_ref().map(|v| v.0) != Some(*id)
+            if let Some(k) = killer
+                && victim.as_ref().map(|v| v.id) != Some(k.id)
             {
-                p.push(Part::Name(n));
+                p.extend([Part::Name(&k.name), Part::Tee(&k.tee)]);
             }
             p.push(if *weapon >= 0 {
                 Part::Weapon(*weapon as usize)
             } else {
                 Part::Icon(icons::SKULL)
             });
-            if let Some((_, n)) = victim {
-                p.push(Part::Name(n));
+            if let Some(v) = victim {
+                p.extend([Part::Tee(&v.tee), Part::Name(&v.name)]);
             }
             p
         }
         Kind::TeamKill { .. } => vec![Part::Icon(icons::SKULL)],
         Kind::Finish {
-            name,
+            player,
             time,
             diff,
             faster,
@@ -203,7 +226,8 @@ fn parts(kind: &Kind, weak: Color32) -> Vec<Part<'_>> {
                 } else {
                     icons::FLAG_CHECKERED
                 }),
-                Part::Name(name),
+                Part::Tee(&player.tee),
+                Part::Name(&player.name),
                 Part::Text(time, Weight::Regular, weak),
             ];
             if let Some(d) = diff {
@@ -219,10 +243,13 @@ fn parts(kind: &Kind, weak: Color32) -> Vec<Part<'_>> {
     }
 }
 
+/// The tee heads' size: about twice the text's cap height, like C++'s tees next to names.
+const TEE: f32 = space::XXL;
+
 /// One capsule. Its row runs right to left (the column is right-aligned), so the parts
 /// go in reversed.
-fn capsule(ui: &mut Ui, data: &HudData, weapons: &mut WeaponIcons, kind: &Kind) {
-    let margin = Margin::symmetric(space::L as i8, space::S as i8);
+fn capsule(ui: &mut Ui, data: &HudData, feed: &mut Killfeed, kind: &Kind) {
+    let margin = Margin::symmetric(space::L as i8, space::XS as i8);
     let weak = ui.visuals().weak_text_color();
     // C++: Localize("Team %d")
     let team = match kind {
@@ -233,17 +260,23 @@ fn capsule(ui: &mut Ui, data: &HudData, weapons: &mut WeaponIcons, kind: &Kind) 
     if !team.is_empty() {
         parts.push(Part::Name(&team));
     }
-    w::hud_bar(ui, data.glass, false, margin, size::ICON, |ui| {
+    w::hud_bar(ui, data.glass, radius::PILL, margin, TEE, |ui| {
         ui.spacing_mut().item_spacing.x = space::S;
         for part in parts.iter().rev() {
             match *part {
                 Part::Name(n) => {
                     w::text(ui, n, size::BODY, Weight::Medium, color::TEXT);
                 }
+                Part::Tee(look) => {
+                    let ctx = ui.ctx().clone();
+                    if let Some(t) = feed.heads.get(&ctx, look) {
+                        ui.add(egui::Image::new((t.id(), egui::vec2(TEE, TEE))));
+                    }
+                }
                 Part::Icon(glyph) => {
                     w::icon(ui, glyph, size::ICON, color::TEXT);
                 }
-                Part::Weapon(weapon) => weapons.draw(ui, weapon, 1.0),
+                Part::Weapon(weapon) => feed.weapons.draw(ui, weapon, size::ICON, 1.0),
                 Part::Text(t, weight, c) => {
                     w::text(ui, t, size::BODY, weight, c);
                 }
@@ -274,20 +307,47 @@ impl Widget for Killfeed {
         }
     }
 
-    fn show(&mut self, ui: &mut Ui, data: &HudData, _: &HudConfig) {
+    fn show(&mut self, ui: &mut Ui, data: &HudData, config: &HudConfig) {
         let client = data.client;
         let Some(tick) = client.game_tick() else {
             return;
         };
         let items = client.snapshot();
         for msg in data.events {
-            self.feed.on_message(msg, |id| active_name(items, id), tick);
+            self.feed
+                .on_message(msg, |id| active_player(items, id), tick);
         }
-        let entries: Vec<Entry> = self.feed.entries(tick).into_iter().cloned().collect();
+        // C++ cl_showkillmessages / cl_show_finish_messages (imported): entries still
+        // take their slot, they are just not drawn
+        let (kills, finishes) = (
+            config.on("killfeed", "kills", true),
+            config.on("killfeed", "finishes", true),
+        );
+        let entries: Vec<Entry> = (self.feed.entries(tick).into_iter())
+            .filter(|e| match e.kind {
+                Kind::Finish { .. } => finishes,
+                _ => kills,
+            })
+            .cloned()
+            .collect();
+        if !kills && !finishes {
+            if data.editing {
+                w::placeholder(ui, data.glass, self.icon(), self.name());
+            }
+            return;
+        }
         let sample = Entry {
             tick,
             kind: Kind::Finish {
-                name: "nameless tee".into(),
+                player: Player {
+                    id: 0,
+                    name: "nameless tee".into(),
+                    tee: TeeLook {
+                        skin: "default".into(),
+                        custom_color: false,
+                        color_body: 0,
+                    },
+                },
                 time: "00:42.10".into(),
                 diff: Some("(-00.36)".into()),
                 faster: true,
@@ -316,11 +376,14 @@ impl Widget for Killfeed {
                     TSTransform::from_translation(egui::vec2((1.0 - shown) * space::XXL, 0.0));
                 ui.scope(|ui| {
                     ui.set_opacity(if data.editing { 1.0 } else { alpha });
-                    ui.with_visual_transform(slide, |ui| {
-                        capsule(ui, data, &mut self.weapons, &e.kind)
-                    });
+                    ui.with_visual_transform(slide, |ui| capsule(ui, data, self, &e.kind));
                 });
             }
         });
+    }
+
+    fn settings(&mut self, ui: &mut Ui, config: &mut HudConfig) {
+        let items = [("kills", "Kills", true), ("finishes", "Finishes", true)];
+        item_toggles(ui, config, "killfeed", &items);
     }
 }

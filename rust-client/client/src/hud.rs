@@ -167,6 +167,55 @@ impl HudConfig {
         self.values.retain(|(w, _), _| w != id);
     }
 
+    /// An on/off setting (`hud_set id key 0|1`), `default` while unset.
+    pub fn on(&self, id: &str, key: &str, default: bool) -> bool {
+        self.value(id, key).map_or(default, |v| v.trim() != "0")
+    }
+
+    /// A number setting, `default` while unset or not a number.
+    pub fn number(&self, id: &str, key: &str, default: f32) -> f32 {
+        (self.value(id, key))
+            .and_then(|v| v.trim().parse().ok())
+            .unwrap_or(default)
+    }
+
+    /// The C++ HUD settings as first values, for what our settings.cfg does not set yet
+    /// (DDNet behaviour: an item that is off is not shown; a widget with no item on is
+    /// hidden). `cpp` reads a C++ variable as on/off; `default` is a widget's default
+    /// placement, whose on/off follows C++ too.
+    pub fn import_cpp(
+        &mut self,
+        cpp: impl Fn(&str) -> bool,
+        default: impl Fn(&str) -> Option<Placement>,
+    ) {
+        for (id, key, var) in [
+            ("movement", "position", "cl_showhud_player_position"),
+            ("movement", "speed", "cl_showhud_player_speed"),
+            ("movement", "angle", "cl_showhud_player_angle"),
+            ("status", "jumps", "cl_showhud_jumps_indicator"),
+            ("killfeed", "kills", "cl_showkillmessages"),
+            ("killfeed", "finishes", "cl_show_finish_messages"),
+        ] {
+            if self.value(id, key).is_none() {
+                self.set(id, key, cpp(var) as i32);
+            }
+        }
+        // C++ draws the movement panel when one of its lines is on, the DDRace HUD with
+        // cl_showhud_ddrace
+        let movement = ["position", "speed", "angle"].map(|k| self.on("movement", k, false));
+        for (id, on) in [
+            ("movement", movement.contains(&true)),
+            ("status", cpp("cl_showhud_ddrace")),
+        ] {
+            if !self.placements.contains_key(id)
+                && let Some(p) = default(id)
+            {
+                self.placements
+                    .insert(id.into(), Placement { enabled: on, ..p });
+            }
+        }
+    }
+
     /// A widget's setting as written in `hud_set`.
     pub fn value(&self, id: &str, key: &str) -> Option<&str> {
         self.values
@@ -213,6 +262,28 @@ pub trait Widget {
     fn show(&mut self, ui: &mut egui::Ui, data: &HudData, config: &HudConfig);
     /// The widget's own settings in its editor popover.
     fn settings(&mut self, _ui: &mut egui::Ui, _config: &mut HudConfig) {}
+}
+
+/// On/off toggles for a widget's items (`hud_set id key 0|1`), each `(key, name,
+/// default)`.
+pub fn item_toggles(
+    ui: &mut egui::Ui,
+    config: &mut HudConfig,
+    id: &str,
+    items: &[(&str, &str, bool)],
+) {
+    egui::Grid::new(("hud_items", id))
+        .num_columns(2)
+        .show(ui, |ui| {
+            for &(key, name, default) in items {
+                let mut on = config.on(id, key, default);
+                if crate::widgets::toggle(ui, &mut on).changed() {
+                    config.set(id, key, on as i32);
+                }
+                ui.label(name);
+                ui.end_row();
+            }
+        });
 }
 
 /// The egui area a widget is drawn in.

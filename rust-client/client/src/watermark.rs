@@ -9,7 +9,7 @@ use egui::{CornerRadius, Frame, Margin, Ui};
 
 use crate::hud::{Anchor, HudConfig, HudData, Placement, Widget};
 use crate::icons;
-use crate::style::{Glass, LOGO_GLOW, Weight, color, radius, size, space};
+use crate::style::{Glass, LOGO_GLOW, Weight, color, size, space};
 use crate::widgets as w;
 
 /// Stat keys in their default order, whether each shows by default (SPEC §1, except the
@@ -32,10 +32,57 @@ const TICK_SPEED: i32 = 50;
 /// One stat: icon, value, optional unit.
 pub type Stat = (&'static str, String, Option<&'static str>);
 
+/// The watermark's tunable look (`hud_set watermark corner|logo_radius|logo_height|glow`),
+/// set with sliders in the HUD editor until the user picks final defaults.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Look {
+    /// The container's corner radius in percent of its height (0 square .. 50 pill).
+    pub corner: f32,
+    /// The logo's corner radius in points.
+    pub logo_radius: f32,
+    /// The logo's height in points (the mark plus padding).
+    pub logo_height: f32,
+    /// The logo's glow in percent.
+    pub glow: f32,
+}
+
+impl Default for Look {
+    fn default() -> Self {
+        Self {
+            corner: 35.0,
+            logo_radius: 8.0,
+            // the earlier, larger logo: the mark and 12 above and below
+            logo_height: size::ICON + 2.0 * space::M,
+            glow: 100.0,
+        }
+    }
+}
+
+/// The sliders: (key, name, range).
+const LOOK: [(&str, &str, std::ops::RangeInclusive<f32>); 4] = [
+    ("corner", "Corner radius %", 0.0..=50.0),
+    ("logo_radius", "Logo radius", 0.0..=20.0),
+    ("logo_height", "Logo height", size::ICON..=48.0),
+    ("glow", "Glow %", 0.0..=100.0),
+];
+
+impl Look {
+    pub fn of(config: &HudConfig) -> Self {
+        let d = Self::default();
+        let n = |key, default| config.number("watermark", key, default);
+        Self {
+            corner: n("corner", d.corner).clamp(0.0, 50.0),
+            logo_radius: n("logo_radius", d.logo_radius).clamp(0.0, 20.0),
+            logo_height: n("logo_height", d.logo_height).clamp(size::ICON, 48.0),
+            glow: n("glow", d.glow).clamp(0.0, 100.0),
+        }
+    }
+}
+
 /// Draws the watermark (also used by the gallery): a HUD bar with the logo (a light
 /// rounded rectangle with a soft glow: the tee mark and "DDNet-rs", the mark only in
 /// compact mode), then the stats. Spacing measured from the reference (PROGRESS 7.5).
-pub fn draw(ui: &mut Ui, glass: Glass, compact: bool, stats: &[Stat]) {
+pub fn draw(ui: &mut Ui, glass: Glass, compact: bool, stats: &[Stat], look: Look) {
     let right = if stats.is_empty() {
         space::M
     } else {
@@ -47,14 +94,23 @@ pub fn draw(ui: &mut Ui, glass: Glass, compact: bool, stats: &[Stat]) {
         top: space::M as i8,
         bottom: space::M as i8,
     };
-    // the logo is the tallest item: the mark and its padding
-    let row_height = size::ICON + 2.0 * space::S;
-    w::hud_bar(ui, glass, false, margin, row_height, |ui| {
+    // the logo is the tallest item
+    let row_height = look.logo_height;
+    let height = row_height + 2.0 * space::M;
+    let corner = (look.corner / 100.0 * height).round() as u8;
+    // padding from the height; at least 8 left and right
+    let pad = ((look.logo_height - size::ICON) / 2.0).max(0.0);
+    let logo_margin = Margin::symmetric(pad.max(space::S) as i8, pad as i8);
+    let glow = egui::Shadow {
+        color: LOGO_GLOW.color.gamma_multiply(look.glow / 100.0),
+        ..LOGO_GLOW
+    };
+    w::hud_bar(ui, glass, corner, margin, row_height, |ui| {
         Frame::new()
             .fill(color::LOGO)
-            .corner_radius(CornerRadius::same(radius::SMALL))
-            .inner_margin(Margin::symmetric(space::M as i8, space::S as i8))
-            .shadow(LOGO_GLOW)
+            .corner_radius(CornerRadius::same(look.logo_radius.round() as u8))
+            .inner_margin(logo_margin)
+            .shadow(glow)
             .show(ui, |ui| {
                 ui.spacing_mut().interact_size.y = size::ICON;
                 ui.horizontal(|ui| {
@@ -105,17 +161,13 @@ pub fn order(config: &HudConfig) -> Vec<&'static str> {
 }
 
 fn compact(config: &HudConfig) -> bool {
-    config
-        .value("watermark", "compact")
-        .is_some_and(|v| v.trim() != "0")
+    config.on("watermark", "compact", false)
 }
 
 /// Whether item `key` shows.
 pub fn shown(config: &HudConfig, key: &str) -> bool {
-    match config.value("watermark", key) {
-        Some(v) => v.trim() != "0",
-        None => ITEMS.iter().any(|&(k, on, _)| k == key && on),
-    }
+    let default = ITEMS.iter().any(|&(k, on, _)| k == key && on);
+    config.on("watermark", key, default)
 }
 
 /// The value of item `key`, if known.
@@ -190,12 +242,18 @@ impl Widget for Watermark {
     }
 
     fn show(&mut self, ui: &mut Ui, data: &HudData, config: &HudConfig) {
-        let stats: Vec<Stat> = order(config)
-            .into_iter()
+        let on: Vec<&str> = (order(config).into_iter())
             .filter(|k| shown(config, k))
-            .filter_map(|k| stat(k, data))
             .collect();
-        draw(ui, data.glass, compact(config), &stats);
+        // DDNet's rule: every item off hides the widget
+        if on.is_empty() {
+            if data.editing {
+                w::placeholder(ui, data.glass, self.icon(), self.name());
+            }
+            return;
+        }
+        let stats: Vec<Stat> = on.into_iter().filter_map(|k| stat(k, data)).collect();
+        draw(ui, data.glass, compact(config), &stats, Look::of(config));
     }
 
     /// Compact, then each item: on/off and its place in the order.
@@ -236,5 +294,19 @@ impl Widget for Watermark {
             order.swap(i, i + 1);
             config.set("watermark", "order", order.join(","));
         }
+        // the look, until the user settles the defaults
+        egui::Grid::new("watermark_look")
+            .num_columns(2)
+            .show(ui, |ui| {
+                let look = Look::of(config);
+                let values = [look.corner, look.logo_radius, look.logo_height, look.glow];
+                for ((key, name, range), mut v) in LOOK.into_iter().zip(values) {
+                    ui.label(name);
+                    if w::slider(ui, &mut v, range).changed() {
+                        config.set("watermark", key, v.round());
+                    }
+                    ui.end_row();
+                }
+            });
     }
 }

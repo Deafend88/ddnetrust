@@ -120,6 +120,7 @@ fn page(ctx: &egui::Context, glass: Glass) {
                             (icons::WIFI, "27".into(), Some("ms")),
                             (icons::MONITOR, "372".into(), Some("fps")),
                         ],
+                        watermark::Look::default(),
                     );
                     ui.add_space(space::M);
                     // the island's look (7.9): Liquid Glass at full strength

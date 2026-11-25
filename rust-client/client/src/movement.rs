@@ -9,10 +9,10 @@ use ddnet::physics::vmath::{PI, Vec2, length, mix, vec2};
 use ddnet::protocol::generated::ObjCharacter;
 use egui::{Margin, Ui};
 
-use crate::hud::{Anchor, HudConfig, HudData, Placement, Widget};
+use crate::hud::{Anchor, HudConfig, HudData, Placement, Widget, item_toggles};
 use crate::icons;
 use crate::render::players::target_angle;
-use crate::style::{Weight, color, font, size, space};
+use crate::style::{Weight, color, font, radius, size, space};
 use crate::widgets as w;
 
 /// C++ `SERVER_TICK_SPEED` (`Client()->GameTickSpeed()`).
@@ -104,9 +104,8 @@ pub const ITEMS: [(&str, &str); 3] = [
 ];
 
 fn shown_item(config: &HudConfig, key: &str) -> bool {
-    config
-        .value("movement", key)
-        .is_none_or(|v| v.trim() != "0")
+    // the first values come from C++'s cl_showhud_player_* (HudConfig::import_cpp)
+    config.on("movement", key, true)
 }
 
 /// An item: icon, labelled values ("X", "57.53"), unit.
@@ -182,7 +181,15 @@ impl Widget for Movement {
     }
 
     fn show(&mut self, ui: &mut Ui, data: &HudData, config: &HudConfig) {
-        let Some(i) = of(data) else { return };
+        let info = of(data);
+        let any_on = ITEMS.iter().any(|(k, _)| shown_item(config, k));
+        // DDNet's rule: every item off hides the widget (in the editor: a placeholder)
+        let Some(i) = info.filter(|_| any_on) else {
+            if data.editing {
+                w::placeholder(ui, data.glass, self.icon(), self.name());
+            }
+            return;
+        };
         let xy = |v: Vec2| vec![("X", shown(v.x)), ("Y", shown(v.y))];
         let items: Vec<Item> = ITEMS
             .iter()
@@ -193,12 +200,7 @@ impl Widget for Movement {
                 _ => (icons::CROSSHAIR, vec![("aim", shown(i.angle))], Some("°")),
             })
             .collect();
-        if items.is_empty() {
-            return;
-        }
-        let stacked = config
-            .value("movement", "stacked")
-            .is_some_and(|v| v.trim() != "0");
+        let stacked = config.on("movement", "stacked", false);
         let margin = Margin::symmetric(space::XL as i8, space::L as i8);
         // two-row items make it a multi-line widget: a rounded rectangle, not a pill
         let multi_line = stacked && items.iter().any(|i| i.1.len() > 1);
@@ -208,29 +210,24 @@ impl Widget for Movement {
         } else {
             line.max(size::ICON)
         };
-        w::hud_bar(ui, data.glass, multi_line, margin, row_height, |ui| {
-            row(ui, &items, stacked)
-        });
+        w::hud_bar(
+            ui,
+            data.glass,
+            if multi_line {
+                radius::CARD
+            } else {
+                radius::PILL
+            },
+            margin,
+            row_height,
+            |ui| row(ui, &items, stacked),
+        );
     }
 
     fn settings(&mut self, ui: &mut Ui, config: &mut HudConfig) {
-        egui::Grid::new("movement").num_columns(2).show(ui, |ui| {
-            let mut on = config
-                .value("movement", "stacked")
-                .is_some_and(|v| v.trim() != "0");
-            if w::toggle(ui, &mut on).changed() {
-                config.set("movement", "stacked", on as i32);
-            }
-            ui.label("Two rows");
-            ui.end_row();
-            for (key, name) in ITEMS {
-                let mut on = shown_item(config, key);
-                if w::toggle(ui, &mut on).changed() {
-                    config.set("movement", key, on as i32);
-                }
-                ui.label(name);
-                ui.end_row();
-            }
-        });
+        let items: Vec<(&str, &str, bool)> = std::iter::once(("stacked", "Two rows", false))
+            .chain(ITEMS.iter().map(|&(k, n)| (k, n, true)))
+            .collect();
+        item_toggles(ui, config, "movement", &items);
     }
 }

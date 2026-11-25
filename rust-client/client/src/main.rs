@@ -881,14 +881,26 @@ fn main() {
     let settings = load_settings(&storage, ours.as_deref());
     let start = Instant::now();
     let vsync = options.vsync || settings.config.gfx_vsync != 0;
+    let hud: Vec<Box<dyn Widget>> = vec![
+        Box::new(Watermark),
+        Box::new(StatusBar::new(&storage)),
+        Box::new(Movement),
+        Box::new(Killfeed::new(&storage)),
+    ];
+    // the C++ HUD switches are the first values of our HUD items
+    let mut settings = settings;
+    let (config, layout) = (&settings.config, &mut settings.hud);
+    layout.import_cpp(
+        |var| config.int(var).unwrap_or(0) != 0,
+        |id| {
+            (hud.iter())
+                .find(|w| w.id() == id)
+                .map(|w| w.default_placement())
+        },
+    );
     let mut app = App {
         menu: Menu::new(options.server, &storage),
-        hud: vec![
-            Box::new(Watermark),
-            Box::new(StatusBar::new(&storage)),
-            Box::new(Movement),
-            Box::new(Killfeed::new(&storage)),
-        ],
+        hud,
         editor: Editor::default(),
         frame_time_average: 0.0001,
         options,
