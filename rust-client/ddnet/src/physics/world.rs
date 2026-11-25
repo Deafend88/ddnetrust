@@ -2,8 +2,8 @@
 //! with its characters, `CCharacter` (`prediction/entities/character.cpp`), which add the
 //! DDNet tiles (freeze, switches, speedups, tune zones, ...) to the character core.
 //!
-//! Weapons are not predicted (`m_PredictWeapons` false), so `FireWeapon` does nothing and
-//! no projectiles, lasers or pickups exist. Doors come from snapshot lasers.
+//! Weapons (`m_PredictWeapons`) live in `weapons.rs`; projectiles, lasers, pickups,
+//! draggers and plasma in their own files. Doors come from snapshot lasers.
 
 use super::collision::{
     CANTMOVE_DOWN, Collision, TILE_DEATH, TILE_FREEZE, TILE_JUMP, TILE_LFREEZE, TILE_LUNFREEZE,
@@ -15,6 +15,9 @@ use super::core::{
     read_ddnet, set_hooked_player,
 };
 use super::door::{Door, reset_door_collision};
+use super::laser::Laser;
+use super::pickup::{Dragger, Pickup, Plasma};
+use super::projectile::Projectile;
 use super::teams::{MAX_CLIENTS, NUM_DDRACE_TEAMS, TeamsCore};
 use super::tuning::{Param, Tuning};
 use super::vmath::{Vec2, distance, dot, normalize, trunc_i32, vec2};
@@ -59,7 +62,7 @@ pub const NUM_TUNE_ZONES: usize = 256;
 /// C++: `TuneZone::OVERRIDE_NONE`.
 pub const TUNE_ZONE_OVERRIDE_NONE: i32 = -1;
 /// C++: `g_pData->m_Weapons.m_Ninja.m_Duration` (ms).
-const NINJA_DURATION: i32 = 15000;
+pub(super) const NINJA_DURATION: i32 = 15000;
 
 /// C++: `CGameWorld::m_WorldConfig` plus the `g_Config` values the prediction reads.
 #[derive(Clone, Copy, Debug, Default)]
@@ -75,6 +78,13 @@ pub struct WorldConfig {
     pub is_fng: bool,
     /// C++: `m_IsSolo`: no extended object and neither player collision nor hooking.
     pub is_solo: bool,
+    /// C++: `m_PredictWeapons` (`cl_antiping` with `cl_antiping_weapons`).
+    pub predict_weapons: bool,
+    /// C++: `m_IsVanilla`, `m_IsDDRace` (game info `m_PredictVanilla`/`m_PredictDDRace`)
+    /// and `m_OldLaser`.
+    pub is_vanilla: bool,
+    pub is_ddrace: bool,
+    pub old_laser: bool,
     /// C++: `g_Config.m_SvFreezeDelay` (default 3).
     pub freeze_delay: i32,
     /// C++: `g_Config.m_ClAntiPingPlayers` (default 1).
@@ -116,16 +126,21 @@ pub struct Character {
     /// C++: `CEntity::m_SnapTicks`, world ticks since the last snapshot had it.
     pub snap_ticks: i32,
     pub strong_weak_id: i32,
-    marked_for_destroy: bool,
+    pub pain_sound_timer: i32,
+    /// C++: `m_aHitObjects` up to `m_NumObjectsHit` (the ninja dash).
+    pub hit_objects: Vec<i32>,
+    /// C++: `m_GameTeam` (set by `NetCharAdd`).
+    pub game_team: i32,
+    pub(super) marked_for_destroy: bool,
 }
 
 /// What a character reaches through C++ `GameWorld()` while its core is taken out of the
 /// world. `me` is the core's slot in `cores` (`usize::MAX` before it is inserted).
-struct Ctx<'w> {
-    col: &'w Collision,
+pub(super) struct Ctx<'w> {
+    pub(super) col: &'w Collision,
     tunings: &'w [Tuning],
     config: &'w WorldConfig,
-    game_tick: i32,
+    pub(super) game_tick: i32,
     teams: &'w mut TeamsCore,
     switchers: &'w mut [super::core::Switcher],
     cores: &'w mut [Option<CharacterCore>],
@@ -154,7 +169,7 @@ pub fn core_obj(c: &ObjCharacter) -> ObjCharacterCore {
 }
 
 /// C++: `CTuningParams::GetWeaponFireDelay`.
-fn fire_delay(t: &Tuning, weapon: i32) -> f32 {
+pub(super) fn fire_delay(t: &Tuning, weapon: i32) -> f32 {
     let p = [
         Param::HammerFireDelay,
         Param::GunFireDelay,
@@ -186,7 +201,7 @@ fn speeder_angle(v: Vec2) -> f32 {
 }
 
 impl Character {
-    fn tuning<'w>(&self, w: &Ctx<'w>) -> &'w Tuning {
+    pub(super) fn tuning<'w>(&self, w: &Ctx<'w>) -> &'w Tuning {
         &w.tunings[self.overridden_tune_zone() as usize]
     }
 
@@ -203,7 +218,7 @@ impl Character {
         w.teams.team(self.id)
     }
 
-    fn set_weapon(&mut self, c: &mut CharacterCore, w: &Ctx, weapon: i32) {
+    pub(super) fn set_weapon(&mut self, c: &mut CharacterCore, w: &Ctx, weapon: i32) {
         if weapon == c.active_weapon {
             return;
         }
@@ -212,7 +227,7 @@ impl Character {
         self.set_active_weapon(c, w, weapon);
     }
 
-    fn set_active_weapon(&mut self, c: &mut CharacterCore, w: &Ctx, weapon: i32) {
+    pub(super) fn set_active_weapon(&mut self, c: &mut CharacterCore, w: &Ctx, weapon: i32) {
         c.active_weapon = if (g::WEAPON_HAMMER..NUM_WEAPONS as i32).contains(&weapon) {
             weapon
         } else {
@@ -242,11 +257,11 @@ impl Character {
         self.last_tune_zone_tick = w.game_tick;
     }
 
-    fn take_damage(&mut self, c: &mut CharacterCore, force: Vec2) {
+    pub(super) fn take_damage(&mut self, c: &mut CharacterCore, force: Vec2) {
         c.vel = clamp_vel(self.move_restrictions, c.vel + force);
     }
 
-    fn handle_jetpack(&mut self, c: &mut CharacterCore, w: &Ctx) {
+    pub(super) fn handle_jetpack(&mut self, c: &mut CharacterCore, w: &Ctx) {
         if self.num_inputs < 2 || c.active_weapon < 0 {
             return;
         }
@@ -269,30 +284,14 @@ impl Character {
         }
     }
 
-    fn remove_ninja(&mut self, c: &mut CharacterCore, w: &Ctx) {
+    pub(super) fn remove_ninja(&mut self, c: &mut CharacterCore, w: &Ctx) {
         c.ninja.current_move_time = 0;
         c.weapons[g::WEAPON_NINJA as usize].got = false;
         c.active_weapon = self.last_weapon;
         self.set_weapon(c, w, c.active_weapon);
     }
 
-    fn handle_ninja(&mut self, c: &mut CharacterCore, w: &Ctx) {
-        if c.active_weapon != g::WEAPON_NINJA {
-            return;
-        }
-        if w.game_tick - c.ninja.activation_tick > NINJA_DURATION * SERVER_TICK_SPEED / 1000 {
-            self.remove_ninja(c, w);
-            return;
-        }
-        self.set_weapon(c, w, g::WEAPON_NINJA);
-        c.ninja.current_move_time -= 1;
-        if c.ninja.current_move_time == 0 {
-            c.vel = c.ninja.activation_dir * c.ninja.old_vel_amount as f32;
-        }
-        // C++ moves the ninja dash while `m_CurrentMoveTime > 0`; only FireWeapon starts one.
-    }
-
-    fn do_weapon_switch(&mut self, c: &mut CharacterCore, w: &Ctx) {
+    pub(super) fn do_weapon_switch(&mut self, c: &mut CharacterCore, w: &Ctx) {
         if self.reload_timer != 0 || self.queued_weapon == -1 {
             return;
         }
@@ -348,16 +347,33 @@ impl Character {
         self.do_weapon_switch(c, w);
     }
 
-    fn handle_weapons(&mut self, c: &mut CharacterCore, w: &Ctx) {
-        self.handle_ninja(c, w);
-        self.handle_jetpack(c, w);
-        if self.reload_timer != 0 {
-            self.reload_timer -= 1;
+    /// C++: `CCharacter::GiveWeapon` (character.cpp:1244).
+    pub(super) fn give_weapon(
+        &mut self,
+        c: &mut CharacterCore,
+        w: &Ctx,
+        weapon: i32,
+        remove: bool,
+    ) {
+        if weapon == g::WEAPON_NINJA {
+            if remove {
+                self.remove_ninja(c, w);
+            } else {
+                self.give_ninja(c, w);
+            }
+            return;
         }
-        // FireWeapon: weapons are not predicted
+        if remove {
+            if c.active_weapon == weapon {
+                self.set_active_weapon(c, w, g::WEAPON_GUN);
+            }
+        } else {
+            c.weapons[weapon as usize].ammo = -1;
+        }
+        c.weapons[weapon as usize].got = !remove;
     }
 
-    fn give_ninja(&mut self, c: &mut CharacterCore, w: &Ctx) {
+    pub(super) fn give_ninja(&mut self, c: &mut CharacterCore, w: &Ctx) {
         c.ninja.activation_tick = w.game_tick;
         let ninja = &mut c.weapons[g::WEAPON_NINJA as usize];
         ninja.got = true;
@@ -387,11 +403,18 @@ impl Character {
         self.saved_input = self.input;
     }
 
-    fn on_direct_input(&mut self, c: &mut CharacterCore, w: &Ctx, new: &ObjPlayerInput) {
+    /// C++: `CCharacter::OnDirectInput` up to `FireWeapon`: `None` if the input is
+    /// skipped (chatting), else whether `FireWeapon` follows (`GameWorld::on_direct_input`).
+    fn on_direct_input(
+        &mut self,
+        c: &mut CharacterCore,
+        w: &Ctx,
+        new: &ObjPlayerInput,
+    ) -> Option<bool> {
         if !w.config.bug_ddrace_input && new.player_flags & g::PLAYERFLAG_CHATTING != 0 {
             self.reset_input();
             self.input.hook = 0;
-            return;
+            return None;
         }
         self.num_inputs += 1;
         self.latest_prev_input = self.latest_input;
@@ -403,11 +426,11 @@ impl Character {
         if self.latest_input.target_x == 0 && self.latest_input.target_y == 0 {
             self.latest_input.target_y = -1;
         }
-        if self.num_inputs > 1 && self.team(w) != g::TEAM_SPECTATORS {
+        let fire = self.num_inputs > 1 && self.team(w) != g::TEAM_SPECTATORS;
+        if fire {
             self.handle_weapon_switch(c, w);
-            // FireWeapon: weapons are not predicted
         }
-        self.latest_prev_input = self.latest_input;
+        Some(fire)
     }
 
     fn reset_input(&mut self) {
@@ -421,9 +444,8 @@ impl Character {
         self.latest_prev_input = self.input;
     }
 
-    /// C++: `CCharacter::Tick` after the core tick.
+    /// C++: `CCharacter::Tick` after the core tick and `HandleWeapons`.
     fn tick(&mut self, c: &mut CharacterCore, w: &mut Ctx) {
-        self.handle_weapons(c, w);
         self.ddrace_post_core_tick(c, w);
         if self.interfering
             && (self.freeze_time == 0 || w.config.antiping_players != 3)
@@ -678,7 +700,9 @@ impl Character {
             let active = number == 0 || w.switchers[number as usize].status[team as usize];
             if active {
                 match switch_type {
-                    TILE_FREEZE => self.freeze_for(c, w, delay),
+                    TILE_FREEZE => {
+                        self.freeze_for(c, w, delay);
+                    }
                     TILE_DFREEZE => c.deep_frozen = true,
                     TILE_DUNFREEZE => c.deep_frozen = false,
                     TILE_LFREEZE => c.live_frozen = true,
@@ -804,19 +828,19 @@ impl Character {
     }
 
     /// C++: `CCharacter::Freeze()`.
-    fn freeze(&mut self, c: &mut CharacterCore, w: &Ctx) {
-        self.freeze_for(c, w, w.config.freeze_delay);
+    pub(super) fn freeze(&mut self, c: &mut CharacterCore, w: &Ctx) -> bool {
+        self.freeze_for(c, w, w.config.freeze_delay)
     }
 
     /// C++: `CCharacter::Freeze(int Seconds)`.
-    fn freeze_for(&mut self, c: &mut CharacterCore, w: &Ctx, seconds: i32) {
+    fn freeze_for(&mut self, c: &mut CharacterCore, w: &Ctx, seconds: i32) -> bool {
         if !w.config.predict_freeze
             || seconds <= 0
             || c.super_
             || c.invincible
             || self.freeze_time > seconds * SERVER_TICK_SPEED
         {
-            return;
+            return false;
         }
         if c.freeze_start < w.game_tick - SERVER_TICK_SPEED {
             self.freeze_time = seconds * SERVER_TICK_SPEED;
@@ -828,10 +852,12 @@ impl Character {
             } else {
                 w.game_tick + self.freeze_time
             };
+            return true;
         }
+        false
     }
 
-    fn unfreeze(&mut self, c: &mut CharacterCore, w: &Ctx) {
+    pub(super) fn unfreeze(&mut self, c: &mut CharacterCore, w: &Ctx) {
         if self.freeze_time <= 0 {
             return;
         }
@@ -1006,20 +1032,26 @@ fn set_hit_disabled(c: &mut CharacterCore, disabled: bool) {
     c.laser_hit_disabled = disabled;
 }
 
-/// C++: `CGameWorld` holding characters and doors.
+/// C++: `CGameWorld` with its entities.
 #[derive(Clone)]
 pub struct GameWorld {
     /// Shared with the predictor: dropped with the last world that uses it.
-    col: Rc<Collision>,
+    pub(super) col: Rc<Collision>,
     pub core: WorldCore,
     pub teams: TeamsCore,
     /// C++: the tuning list, one per tune zone.
     pub tunings: Vec<Tuning>,
     pub game_tick: i32,
     pub config: WorldConfig,
-    chars: Vec<Option<Character>>,
+    pub(super) chars: Vec<Option<Character>>,
     /// Character ids in entity list order: C++ inserts at the front.
-    order: Vec<usize>,
+    pub(super) order: Vec<usize>,
+    /// The other entity lists, each in C++ list order (front first).
+    pub projectiles: Vec<Projectile>,
+    pub lasers: Vec<Laser>,
+    pub pickups: Vec<Pickup>,
+    pub draggers: Vec<Dragger>,
+    pub plasmas: Vec<Plasma>,
     /// Doors in entity list order. C++ copies none into the predicted world; a clone
     /// keeps them, but only `net_obj_end` reads them.
     doors: Vec<Door>,
@@ -1041,9 +1073,19 @@ impl GameWorld {
             config,
             chars: vec![None; MAX_CLIENTS],
             order: Vec::new(),
+            projectiles: Vec::new(),
+            lasers: Vec::new(),
+            pickups: Vec::new(),
+            draggers: Vec::new(),
+            plasmas: Vec::new(),
             doors: Vec::new(),
             local_id: -1,
         }
+    }
+
+    /// The non-core part of character `id` (for the parity tests).
+    pub fn character_mut(&mut self, id: usize) -> Option<&mut Character> {
+        self.chars.get_mut(id)?.as_mut()
     }
 
     pub fn character(&self, id: usize) -> Option<(&Character, &CharacterCore)> {
@@ -1067,7 +1109,7 @@ impl GameWorld {
     }
 
     /// Runs `f` on character `id` with it and its core taken out of the world.
-    fn with_char<R>(
+    pub(super) fn with_char<R>(
         &mut self,
         id: usize,
         f: impl FnOnce(&mut Character, &mut CharacterCore, &mut Ctx) -> R,
@@ -1183,6 +1225,7 @@ impl GameWorld {
         id: usize,
         obj: &ObjCharacter,
         ext: &ObjDDNetCharacter,
+        game_team: i32,
         is_local: bool,
     ) {
         // C++: IsLocalTeam
@@ -1199,6 +1242,7 @@ impl GameWorld {
         } else {
             self.add_character(id, obj, ext);
         }
+        self.chars[id].as_mut().unwrap().game_team = game_team;
     }
 
     /// C++: `CGameWorld::NetObjEnd`.
@@ -1299,7 +1343,14 @@ impl GameWorld {
 
     /// C++: `CCharacter::OnDirectInput`.
     pub fn on_direct_input(&mut self, id: usize, input: &ObjPlayerInput) {
-        self.with_char(id, |ch, c, w| ch.on_direct_input(c, w, input));
+        let Some(fire) = self.with_char(id, |ch, c, w| ch.on_direct_input(c, w, input)) else {
+            return;
+        };
+        if fire {
+            self.fire_weapon(id);
+        }
+        let ch = self.chars[id].as_mut().unwrap();
+        ch.latest_prev_input = ch.latest_input;
     }
 
     /// C++: `CCharacter::OnPredictedInput`.
@@ -1314,24 +1365,7 @@ impl GameWorld {
     /// callbacks the core ticks queued.
     fn apply_interferences(&mut self) {
         for (slot, other, disallow_reset) in std::mem::take(&mut self.core.interferences) {
-            let Some(me) = &self.chars[slot] else {
-                continue;
-            };
-            if me.freeze_time != 0 {
-                continue;
-            }
-            let allow_enable = me.is_local || me.interfering;
-            let Some(other) = self.chars.get_mut(other as usize).and_then(|c| c.as_mut()) else {
-                continue;
-            };
-            if !allow_enable && !disallow_reset {
-                // a non-predicted player interacts with them, but not player bounces here
-                if other.freeze_time == 0 || self.config.antiping_players != 3 {
-                    other.interfering = false;
-                }
-            } else if allow_enable {
-                other.interfering = true;
-            }
+            self.anti_ping_interference(slot, other, disallow_reset, true);
         }
     }
 
@@ -1346,8 +1380,25 @@ impl GameWorld {
         self.apply_interferences();
     }
 
-    /// C++: `CGameWorld::Tick` for the characters.
+    /// C++: `CGameWorld::Tick` (gameworld.cpp:200): every entity list in `ENTTYPE` order
+    /// (projectiles, lasers, doors, draggers, plasma, pickups, characters), then
+    /// `TickDeferred`, `RemoveEntities` and the switch timers.
     pub fn tick(&mut self) {
+        for i in 0..self.projectiles.len() {
+            self.tick_projectile(i);
+        }
+        for i in 0..self.lasers.len() {
+            self.tick_laser(i);
+        }
+        for i in 0..self.draggers.len() {
+            self.tick_dragger(i);
+        }
+        for i in 0..self.plasmas.len() {
+            self.tick_plasma(i);
+        }
+        for i in 0..self.pickups.len() {
+            self.tick_pickup(i);
+        }
         let order = self.order.clone();
         let no_weak = self.config.no_weak_hook_and_bounce;
         if no_weak {
@@ -1362,6 +1413,7 @@ impl GameWorld {
             } else {
                 self.pre_tick(id);
             }
+            self.handle_weapons(id);
             self.with_char(id, |ch, c, w| ch.tick(c, w));
         }
         for &id in &order {
@@ -1373,6 +1425,12 @@ impl GameWorld {
                 ch.snap_ticks += 1;
             }
         }
+        // RemoveEntities (characters are not destroyed while ticking)
+        self.projectiles.retain(|e| !e.marked_for_destroy);
+        self.lasers.retain(|e| !e.marked_for_destroy);
+        self.draggers.retain(|e| !e.marked_for_destroy);
+        self.plasmas.retain(|e| !e.marked_for_destroy);
+        self.pickups.retain(|e| !e.marked_for_destroy);
 
         // update switch state
         let tick = self.game_tick;

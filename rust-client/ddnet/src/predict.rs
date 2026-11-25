@@ -730,6 +730,24 @@ impl Predictor {
 
         // update the server world with the new snapshot
         self.world.net_obj_begin(self.teams.clone(), self.local_id);
+        let items = client.snapshot_at(tick).unwrap_or(&[]);
+        // C++: GameTeam = IsTeamPlay() ? m_aClients[i].m_Team : i. ponytail: C++ keeps a
+        // client's team from older snapshots when its PlayerInfo is missing; here it is 0.
+        let team_play = items
+            .iter()
+            .find(|it| it.type_id == g::NETOBJTYPE_GAMEINFO)
+            .is_some_and(|it| ints(it, 1)[0] & g::GAMEFLAG_TEAMS != 0);
+        let game_team = |i: usize| {
+            if !team_play {
+                return i as i32;
+            }
+            items
+                .iter()
+                .filter(|it| it.type_id == g::NETOBJTYPE_PLAYERINFO)
+                .map(|it| g::ObjPlayerInfo::from_ints(&ints(it, g::ObjPlayerInfo::NUM_INTS)))
+                .find(|p| p.client_id == i as i32)
+                .map_or(0, |p| p.team)
+        };
         for (i, c) in self.chars.iter().enumerate() {
             // ponytail: characters without the extended object (vanilla servers) are
             // skipped, see `Character::read`
@@ -739,7 +757,8 @@ impl Predictor {
                 ..
             }) = c
             {
-                self.world.net_char_add(i, cur, ext, i == local);
+                self.world
+                    .net_char_add(i, cur, ext, game_team(i), i == local);
             }
         }
         // C++: SnapCollectEntities: entities sorted by id with their EntityEx; only

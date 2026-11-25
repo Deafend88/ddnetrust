@@ -77,6 +77,11 @@
 #include <game/client/pickup_data.h>
 #include <game/client/projectile_data.h>
 #include <game/client/prediction/entities/character.h>
+#include <game/client/prediction/entities/dragger.h>
+#include <game/client/prediction/entities/laser.h>
+#include <game/client/prediction/entities/pickup.h>
+#include <game/client/prediction/entities/plasma.h>
+#include <game/client/prediction/entities/projectile.h>
 #include <game/client/prediction/gameworld.h>
 #include <game/collision.h>
 #include <game/map/render_map.h>
@@ -967,6 +972,482 @@ static int WorldMode(const char *pMapFile, const char *pOutFile, bool HookTele, 
 				}
 			fprintf(f, " | %08x\n", Switches.Crc());
 		}
+	}
+	fclose(f);
+	return 0;
+}
+
+// Access to private members for the weapons dump: explicit instantiations may name them.
+template<typename Tag, typename Tag::Type Ptr>
+struct SRobPrivate
+{
+	friend typename Tag::Type Get(Tag) { return Ptr; }
+};
+#define RS_PRIVATE(Name, Class, MemberType, Member) \
+	struct Name \
+	{ \
+		using Type = MemberType Class::*; \
+		friend Type Get(Name); \
+	}; \
+	template struct SRobPrivate<Name, &Class::Member>;
+RS_PRIVATE(SCharReload, CCharacter, int, m_ReloadTimer)
+RS_PRIVATE(SCharQueued, CCharacter, int, m_QueuedWeapon)
+RS_PRIVATE(SCharPain, CCharacter, int, m_PainSoundTimer)
+RS_PRIVATE(SCharNumHit, CCharacter, int, m_NumObjectsHit)
+RS_PRIVATE(SCharMoveRestrictions, CCharacter, int, m_MoveRestrictions)
+RS_PRIVATE(SProjDir, CProjectile, vec2, m_Direction)
+RS_PRIVATE(SProjLife, CProjectile, int, m_LifeSpan)
+RS_PRIVATE(SProjOwner, CProjectile, int, m_Owner)
+RS_PRIVATE(SProjType, CProjectile, int, m_Type)
+RS_PRIVATE(SProjStart, CProjectile, int, m_StartTick)
+RS_PRIVATE(SProjExplosive, CProjectile, bool, m_Explosive)
+RS_PRIVATE(SProjBouncing, CProjectile, int, m_Bouncing)
+RS_PRIVATE(SProjFreeze, CProjectile, bool, m_Freeze)
+RS_PRIVATE(SProjTune, CProjectile, int, m_TuneZone)
+RS_PRIVATE(SLaserFrom, CLaser, vec2, m_From)
+RS_PRIVATE(SLaserDir, CLaser, vec2, m_Dir)
+RS_PRIVATE(SLaserEnergy, CLaser, float, m_Energy)
+RS_PRIVATE(SLaserBounces, CLaser, int, m_Bounces)
+RS_PRIVATE(SLaserEval, CLaser, int, m_EvalTick)
+RS_PRIVATE(SLaserOwner, CLaser, int, m_Owner)
+RS_PRIVATE(SLaserZero, CLaser, bool, m_ZeroEnergyBounceInLastTick)
+RS_PRIVATE(SLaserPrev, CLaser, vec2, m_PrevPos)
+RS_PRIVATE(SLaserType, CLaser, int, m_Type)
+RS_PRIVATE(SLaserTune, CLaser, int, m_TuneZone)
+RS_PRIVATE(SPickupCore, CPickup, vec2, m_Core)
+RS_PRIVATE(SDraggerCore, CDragger, vec2, m_Core)
+RS_PRIVATE(SDraggerWalls, CDragger, bool, m_IgnoreWalls)
+RS_PRIVATE(SDraggerTarget, CDragger, int, m_TargetId)
+RS_PRIVATE(SPlasmaCore, CPlasma, vec2, m_Core)
+RS_PRIVATE(SPlasmaFreeze, CPlasma, bool, m_Freeze)
+RS_PRIVATE(SPlasmaExplosive, CPlasma, bool, m_Explosive)
+RS_PRIVATE(SPlasmaFor, CPlasma, int, m_ForClientId)
+RS_PRIVATE(SPlasmaEval, CPlasma, int, m_EvalTick)
+RS_PRIVATE(SPlasmaLife, CPlasma, int, m_LifeTime)
+
+// WorldState plus the weapon state of a character.
+static void WeaponCharState(SQueries &Q, CCharacter *pChar)
+{
+	WorldState(Q, pChar);
+	Q.Int(pChar->*Get(SCharReload()));
+	Q.Int(pChar->GetAttackTick());
+	Q.Int(pChar->*Get(SCharQueued()));
+	Q.Int(pChar->*Get(SCharPain()));
+	Q.Int(pChar->*Get(SCharNumHit()));
+	Q.Int(pChar->*Get(SCharMoveRestrictions()));
+	Q.Int(pChar->m_GameTeam);
+	Q.Int(pChar->m_LastSnapWeapon);
+}
+
+// Every non-character entity, list by list in ENTTYPE order.
+static void WeaponEntityState(SQueries &Q, CGameWorld &World)
+{
+	for(CEntity *pEnt = World.FindFirst(CGameWorld::ENTTYPE_PROJECTILE); pEnt; pEnt = pEnt->TypeNext())
+	{
+		CProjectile *p = static_cast<CProjectile *>(pEnt);
+		Q.Int(p->GetId());
+		Q.Vec(p->m_Pos);
+		Q.Vec(p->*Get(SProjDir()));
+		Q.Int(p->*Get(SProjLife()));
+		Q.Int(p->*Get(SProjOwner()));
+		Q.Int(p->*Get(SProjType()));
+		Q.Int(p->*Get(SProjStart()));
+		Q.Int(p->*Get(SProjExplosive()));
+		Q.Int(p->m_Layer);
+		Q.Int(p->m_Number);
+		Q.Int(p->*Get(SProjBouncing()));
+		Q.Int(p->*Get(SProjFreeze()));
+		Q.Int(p->*Get(SProjTune()));
+	}
+	Q.Int(-1);
+	for(CEntity *pEnt = World.FindFirst(CGameWorld::ENTTYPE_LASER); pEnt; pEnt = pEnt->TypeNext())
+	{
+		CLaser *p = static_cast<CLaser *>(pEnt);
+		Q.Int(p->GetId());
+		Q.Vec(p->m_Pos);
+		Q.Vec(p->*Get(SLaserFrom()));
+		Q.Vec(p->*Get(SLaserDir()));
+		Q.Vec(p->*Get(SLaserPrev()));
+		Q.Float(p->*Get(SLaserEnergy()));
+		Q.Int(p->*Get(SLaserBounces()));
+		Q.Int(p->*Get(SLaserEval()));
+		Q.Int(p->*Get(SLaserOwner()));
+		Q.Int(p->*Get(SLaserType()));
+		Q.Int(p->*Get(SLaserZero()));
+		Q.Int(p->*Get(SLaserTune()));
+	}
+	Q.Int(-1);
+	for(CEntity *pEnt = World.FindFirst(CGameWorld::ENTTYPE_DRAGGER); pEnt; pEnt = pEnt->TypeNext())
+	{
+		CDragger *p = static_cast<CDragger *>(pEnt);
+		Q.Int(p->GetId());
+		Q.Vec(p->m_Pos);
+		Q.Vec(p->*Get(SDraggerCore()));
+		Q.Float(p->GetStrength());
+		Q.Int(p->*Get(SDraggerWalls()));
+		Q.Int(p->*Get(SDraggerTarget()));
+		Q.Int(p->m_Number);
+		Q.Int(p->m_Layer);
+	}
+	Q.Int(-1);
+	for(CEntity *pEnt = World.FindFirst(CGameWorld::ENTTYPE_PLASMA); pEnt; pEnt = pEnt->TypeNext())
+	{
+		CPlasma *p = static_cast<CPlasma *>(pEnt);
+		Q.Int(p->GetId());
+		Q.Vec(p->m_Pos);
+		Q.Vec(p->*Get(SPlasmaCore()));
+		Q.Int(p->*Get(SPlasmaFreeze()));
+		Q.Int(p->*Get(SPlasmaExplosive()));
+		Q.Int(p->*Get(SPlasmaFor()));
+		Q.Int(p->*Get(SPlasmaEval()));
+		Q.Int(p->*Get(SPlasmaLife()));
+		Q.Int(p->m_Number);
+		Q.Int(p->m_Layer);
+	}
+	Q.Int(-1);
+	for(CEntity *pEnt = World.FindFirst(CGameWorld::ENTTYPE_PICKUP); pEnt; pEnt = pEnt->TypeNext())
+	{
+		CPickup *p = static_cast<CPickup *>(pEnt);
+		Q.Int(p->GetId());
+		Q.Vec(p->m_Pos);
+		Q.Int(p->Type());
+		Q.Int(p->Subtype());
+		Q.Int(p->Flags());
+		Q.Int(p->m_Number);
+		Q.Int(p->m_Layer);
+		Q.Vec(p->*Get(SPickupCore()));
+		Q.Int(p->InDDNetTile());
+	}
+}
+
+static int EntityCount(CGameWorld &World, int Type)
+{
+	int n = 0;
+	for(CEntity *pEnt = World.FindFirst(Type); pEnt; pEnt = pEnt->TypeNext())
+		n++;
+	return n;
+}
+
+// ZoneTuning plus weapon parameters per zone.
+static void WeaponZoneTuning(CTuningParams *pTuning, int Zone)
+{
+	ZoneTuning(pTuning, Zone);
+	if(Zone % 3 == 1)
+	{
+		pTuning->m_LaserReach = 400.0f;
+		pTuning->m_GrenadeCurvature = 4.0f;
+		pTuning->m_ExplosionStrength = 3.0f;
+		pTuning->m_LaserBounceNum = 1;
+	}
+	else if(Zone % 3 == 2)
+	{
+		pTuning->m_GunSpeed = 1400.0f;
+		pTuning->m_ShotgunStrength = 25.0f;
+		pTuning->m_HammerStrength = 3.0f;
+		pTuning->m_GunFireDelay = 200;
+	}
+}
+
+static constexpr int WEAPON_RUNS = 30;
+static constexpr int WEAPON_TICKS = 150;
+static constexpr int WEAPON_CHARS = 4;
+
+// Weapons and entities in the prediction world (M8.3): characters with every weapon
+// firing at each other, plus pickups, draggers, turret projectiles and plasma, in six
+// world configurations (DDRace, DDRace with no weak hook/old laser/teams, vanilla, FNG,
+// solo with limited ammo, changed global tuning without zones).
+static int WeaponsMode(const char *pMapFile, const char *pOutFile, bool Verbose)
+{
+	std::unique_ptr<IStorage> pStorage = CreateLocalStorage();
+	std::unique_ptr<IMap> pMap = CreateMap();
+	CLayers Layers;
+	FILE *f = fopen(pOutFile, "wb");
+	if(!pStorage || !f || !LoadMapAndLayers(pStorage.get(), pMapFile, pMap.get(), &Layers))
+		return -1;
+	MakeMovers(pMap.get(), &Layers);
+	CCollision Collision;
+	Collision.Init(&Layers);
+	const int Width = Collision.GetWidth(), Height = Collision.GetHeight();
+
+	g_Config.m_SvFreezeDelay = 3;
+	g_Config.m_ClAntiPingPlayers = 1;
+	g_Config.m_SvDeepfly = 1;
+	g_Config.m_SvHit = 1;
+	g_Config.m_SvDraggerRange = 700;
+	g_Config.m_SvOldTeleportHook = 0;
+
+	static CTuningParams s_aTuning[TuneZone::NUM];
+	const int aIds[WEAPON_CHARS] = {3, 0, 6, 1};
+	const int aPickupTypes[] = {POWERUP_FREEZE, POWERUP_ARMOR, POWERUP_WEAPON, POWERUP_NINJA, POWERUP_ARMOR_SHOTGUN,
+		POWERUP_ARMOR_GRENADE, POWERUP_ARMOR_NINJA, POWERUP_ARMOR_LASER, POWERUP_HEALTH};
+	const auto Free = [&](int x, int y) {
+		const int t = Collision.GetTileIndex(std::clamp(y, 0, Height - 1) * Width + std::clamp(x, 0, Width - 1));
+		return t != TILE_SOLID && t != TILE_NOHOOK;
+	};
+	for(int Run = 0; Run < WEAPON_RUNS; Run++)
+	{
+		int Index = 0;
+		for(int Try = 0; Try < 300; Try++)
+		{
+			Index = Rand() % (Width * Height);
+			const int x = Index % Width, y = Index / Width;
+			if(Free(x - 2, y) && Free(x - 1, y) && Free(x, y) && Free(x + 1, y) && Free(x + 2, y))
+				break;
+		}
+		const int Mode = Run % 6;
+		fprintf(f, "run %d %d %d\n", Run, Index, Mode);
+
+		for(int z = 0; z < TuneZone::NUM; z++)
+		{
+			s_aTuning[z] = CTuningParams();
+			WeaponZoneTuning(&s_aTuning[z], z);
+		}
+		if(Mode == 5)
+		{
+			CTuningParams &T = s_aTuning[0];
+			T.m_LaserBounceNum = 2;
+			T.m_LaserBounceCost = 50;
+			T.m_LaserBounceDelay = 300;
+			T.m_ShotgunStrength = 20.0f;
+			T.m_ExplosionStrength = 9.0f;
+			T.m_HammerStrength = 2.0f;
+			T.m_HammerHitFireDelay = 200;
+			T.m_GrenadeLifetime = 1.5f;
+			T.m_GunLifetime = 0.5f;
+			T.m_ShotgunSpeeddiff = 0.6f;
+		}
+		fprintf(f, "tune0");
+		for(int i = 0; i < CTuningParams::Num(); i++)
+			fprintf(f, " %d", ((const CTuneParam *)&s_aTuning[0])[i].Get());
+		fprintf(f, "\n");
+
+		CGameWorld World;
+		World.Init(&Collision, s_aTuning, nullptr);
+		World.m_Core.InitSwitchers(Collision.m_HighestSwitchNumber);
+		World.m_GameTick = WORLD_START_TICK;
+		auto &Config = World.m_WorldConfig;
+		Config.m_IsDDRace = Mode != 2 && Mode != 3;
+		Config.m_IsVanilla = Mode == 2;
+		Config.m_IsFNG = Mode == 3;
+		Config.m_InfiniteAmmo = Mode != 4;
+		Config.m_PredictTiles = Mode != 2;
+		Config.m_PredictFreeze = Mode != 2;
+		Config.m_PredictWeapons = true;
+		Config.m_PredictDDRace = Config.m_IsDDRace;
+		Config.m_IsSolo = Mode == 4;
+		Config.m_UseTuneZones = Mode != 5;
+		Config.m_BugDDRaceInput = false;
+		Config.m_NoWeakHookAndBounce = Mode == 1;
+		Config.m_PredictEvents = false;
+		Config.m_OldLaser = Mode == 1;
+		if(Mode == 1)
+			World.m_Teams.Team(aIds[2], 1);
+
+		const vec2 Spot = vec2((Index % Width) * 32 + 16, (Index / Width) * 32 + 16);
+		for(int i = 0; i < WEAPON_CHARS; i++)
+		{
+			CNetObj_Character Obj = {};
+			Obj.m_X = (int)Spot.x + i * 24 - 36;
+			Obj.m_Y = (int)Spot.y;
+			Obj.m_HookX = Obj.m_X;
+			Obj.m_HookY = Obj.m_Y;
+			Obj.m_HookedPlayer = -1;
+			Obj.m_Angle = i * 100;
+			Obj.m_Weapon = (i + Run) % 5;
+			Obj.m_AmmoCount = Mode == 4 ? i : 10;
+			Obj.m_AttackTick = WORLD_START_TICK - 30;
+			CNetObj_DDNetCharacter Ext = {};
+			Ext.m_Flags = CHARACTERFLAG_WEAPON_HAMMER | CHARACTERFLAG_WEAPON_GUN | CHARACTERFLAG_WEAPON_SHOTGUN |
+				      CHARACTERFLAG_WEAPON_GRENADE | CHARACTERFLAG_WEAPON_LASER;
+			Ext.m_Jumps = 2;
+			Ext.m_JumpedTotal = -1;
+			Ext.m_NinjaActivationTick = -1;
+			Ext.m_FreezeStart = -1;
+			Ext.m_StrongWeakId = i;
+			Ext.m_TuneZoneOverride = TuneZone::OVERRIDE_NONE;
+			if(Mode == 0 && i == 3)
+			{
+				Ext.m_Flags |= CHARACTERFLAG_WEAPON_NINJA;
+				Ext.m_NinjaActivationTick = WORLD_START_TICK - 10;
+				Obj.m_Weapon = WEAPON_NINJA;
+			}
+			if(Mode == 0 && i == 2)
+				Ext.m_Flags |= CHARACTERFLAG_JETPACK;
+			if(Mode == 1 && i == 3)
+				Ext.m_Flags |= CHARACTERFLAG_SUPER;
+			if(Mode == 4 && i == 3)
+				Ext.m_Flags |= CHARACTERFLAG_HAMMER_HIT_DISABLED | CHARACTERFLAG_SHOTGUN_HIT_DISABLED |
+					       CHARACTERFLAG_GRENADE_HIT_DISABLED | CHARACTERFLAG_LASER_HIT_DISABLED;
+			if(Mode == 3 && i == 1)
+				Ext.m_FreezeEnd = WORLD_START_TICK + 40;
+			if(Mode == 5 && i == 2)
+				Ext.m_FreezeEnd = -1;
+			CCharacter *pChar = new CCharacter(&World, aIds[i], &Obj, &Ext);
+			World.InsertEntity(pChar);
+			pChar->m_GameTeam = i % 2;
+			if(i == 0)
+				pChar->Read(&Obj, &Ext, true); // the local player
+			fprintf(f, "char %d %d", aIds[i], i % 2);
+			for(int k = 0; k < (int)(sizeof(Obj) / sizeof(int)); k++)
+				fprintf(f, " %d", ((const int *)&Obj)[k]);
+			fprintf(f, " |");
+			for(int k = 0; k < (int)(sizeof(Ext) / sizeof(int)); k++)
+				fprintf(f, " %d", ((const int *)&Ext)[k]);
+			fprintf(f, "\n");
+		}
+
+		// entities from snapshots: pickups (appended), draggers and turret projectiles
+		for(int k = 0; k < 8; k++)
+		{
+			CPickupData Data;
+			Data.m_Pos = Spot + vec2((int)(Rand() % 161) - 80, (int)(Rand() % 81) - 60);
+			Data.m_Type = aPickupTypes[(Run + k) % 9];
+			Data.m_Subtype = (Run + k) % 6;
+			Data.m_SwitchNumber = k % 3 == 0 ? 1 : 0;
+			Data.m_Flags = 0;
+			fprintf(f, "pickup %d %08x %08x %d %d %d\n", 100 + k, FloatBits(Data.m_Pos.x), FloatBits(Data.m_Pos.y), Data.m_Type, Data.m_Subtype, Data.m_SwitchNumber);
+			World.InsertEntity(new CPickup(&World, 100 + k, &Data), true);
+		}
+		for(int k = 0; k < 2; k++)
+		{
+			CLaserData Data;
+			Data.m_From = Spot + vec2((int)(Rand() % 401) - 200, (int)(Rand() % 201) - 150);
+			Data.m_To = Data.m_From;
+			Data.m_StartTick = WORLD_START_TICK;
+			Data.m_ExtraInfo = true;
+			Data.m_Owner = -1;
+			Data.m_Type = LASERTYPE_DRAGGER;
+			Data.m_SwitchNumber = k;
+			Data.m_Subtype = (Run + k * 3) % 8 - 1;
+			Data.m_TuneZone = 0;
+			Data.m_Predict = true;
+			fprintf(f, "dragger %d %08x %08x %d %d\n", 120 + k, FloatBits(Data.m_From.x), FloatBits(Data.m_From.y), Data.m_Subtype, Data.m_SwitchNumber);
+			World.InsertEntity(new CDragger(&World, 120 + k, &Data));
+		}
+		for(int k = 0; k < 3; k++)
+		{
+			const int aTypes[] = {WEAPON_GUN, WEAPON_GRENADE, WEAPON_SHOTGUN};
+			CProjectileData Data;
+			Data.m_StartPos = Spot + vec2((int)(Rand() % 301) - 150, (int)(Rand() % 161) - 120);
+			Data.m_StartVel = direction((Rand() % 360) * (pi / 180.0f)) * (k == 2 ? 0.7f : 1.0f);
+			if(k == 0) // the owner-less turret shot aims at the tees
+				Data.m_StartVel = normalize(Spot - Data.m_StartPos);
+			Data.m_Type = aTypes[(Run + k) % 3];
+			Data.m_StartTick = WORLD_START_TICK - (int)(Rand() % 5);
+			Data.m_ExtraInfo = k != 1;
+			Data.m_Owner = k == 0 ? -1 : aIds[k];
+			Data.m_Explosive = (Run / 2) % 2 == 0 || k == 0;
+			Data.m_Bouncing = Run % 3;
+			Data.m_Freeze = k == 2 && Run % 2 == 1;
+			Data.m_TuneZone = 0;
+			Data.m_SwitchNumber = Run % 4 == 1 ? 1 : 0;
+			fprintf(f, "proj %d %08x %08x %08x %08x %d %d %d %d %d %d %d %d\n", 130 + k, FloatBits(Data.m_StartPos.x),
+				FloatBits(Data.m_StartPos.y), FloatBits(Data.m_StartVel.x), FloatBits(Data.m_StartVel.y), Data.m_Type,
+				Data.m_StartTick, Data.m_ExtraInfo, Data.m_Owner, Data.m_Explosive, Data.m_Bouncing, Data.m_Freeze,
+				Data.m_SwitchNumber);
+			World.InsertEntity(new CProjectile(&World, 130 + k, &Data));
+		}
+
+		CNetObj_PlayerInput aInputs[MAX_CLIENTS] = {};
+		int aHold[WEAPON_CHARS][4] = {};
+		int aTotals[5] = {};
+		for(int Tick = 1; Tick <= WEAPON_TICKS; Tick++)
+		{
+			if(Rand() % 25 == 0)
+			{
+				CLaserData Data;
+				Data.m_From = Spot + vec2((int)(Rand() % 401) - 200, (int)(Rand() % 201) - 150);
+				Data.m_To = Data.m_From;
+				Data.m_StartTick = World.GameTick();
+				Data.m_ExtraInfo = true;
+				Data.m_Owner = Rand() % 5 == 0 ? 99 : aIds[Rand() % WEAPON_CHARS];
+				Data.m_Type = LASERTYPE_PLASMA;
+				Data.m_SwitchNumber = 0;
+				Data.m_Subtype = (int)(Rand() % 5) - 1;
+				Data.m_TuneZone = 0;
+				Data.m_Predict = true;
+				fprintf(f, "plasma %d %08x %08x %d %d\n", 140 + Tick, FloatBits(Data.m_From.x), FloatBits(Data.m_From.y), Data.m_Owner, Data.m_Subtype);
+				World.InsertEntity(new CPlasma(&World, 140 + Tick, &Data));
+			}
+			for(int i = 0; i < WEAPON_CHARS; i++)
+			{
+				CNetObj_PlayerInput &In = aInputs[aIds[i]];
+				if(--aHold[i][0] <= 0)
+				{
+					In.m_Direction = (int)(Rand() % 3) - 1;
+					aHold[i][0] = 1 + Rand() % 30;
+				}
+				if(--aHold[i][1] <= 0)
+				{
+					In.m_Hook = Rand() % 4 == 0;
+					aHold[i][1] = 1 + Rand() % 40;
+					// aim mostly at the others
+					const float Angle = (Rand() % 360) * (pi / 180.0f);
+					const int Length = Rand() % 300;
+					In.m_TargetX = Rand() % 2 ? (int)(Rand() % 201) - 100 : (int)(std::cos(Angle) * Length);
+					In.m_TargetY = (int)(std::sin(Angle) * Length);
+				}
+				if(--aHold[i][2] <= 0)
+				{
+					In.m_Jump = Rand() % 5 == 0;
+					aHold[i][2] = 1 + Rand() % 15;
+				}
+				if(--aHold[i][3] <= 0)
+				{
+					if((In.m_Fire & 1) != (int)(Rand() % 2))
+						In.m_Fire = (In.m_Fire + 1) & INPUT_STATE_MASK;
+					aHold[i][3] = 1 + Rand() % 8;
+				}
+				const int Extra = Rand() % 100;
+				In.m_NextWeapon += Extra == 0 ? 2 : 0;
+				In.m_PrevWeapon += Extra == 1 ? 2 : 0;
+				In.m_WantedWeapon = Extra >= 2 && Extra < 8 ? Extra - 1 : 0;
+				In.m_PlayerFlags = Extra >= 98 ? PLAYERFLAG_CHATTING : PLAYERFLAG_PLAYING;
+			}
+			for(int Id = 0; Id < MAX_CLIENTS; Id++)
+			{
+				if(CCharacter *pChar = World.GetCharacterById(Id))
+				{
+					const CNetObj_PlayerInput &In = aInputs[Id];
+					fprintf(f, "%d %d %d %d %d %d %d %d %d %d ", In.m_Direction, In.m_Jump, In.m_Hook, In.m_TargetX, In.m_TargetY,
+						In.m_Fire, In.m_NextWeapon, In.m_PrevWeapon, In.m_WantedWeapon, In.m_PlayerFlags);
+					pChar->OnDirectInput(&In);
+				}
+			}
+			World.m_GameTick = WORLD_START_TICK + Tick;
+			for(int Id = 0; Id < MAX_CLIENTS; Id++)
+				if(CCharacter *pChar = World.GetCharacterById(Id))
+					pChar->OnPredictedInput(&aInputs[Id]);
+			World.Tick();
+
+			fprintf(f, "|");
+			for(int Id = 0; Id < MAX_CLIENTS; Id++)
+			{
+				CCharacter *pChar = World.GetCharacterById(Id);
+				if(!pChar)
+					continue;
+				SQueries Q;
+				WeaponCharState(Q, pChar);
+				fprintf(f, " %08x %08x %08x", FloatBits(pChar->GetPos().x), FloatBits(pChar->GetPos().y), Q.Crc());
+			}
+			SQueries E;
+			WeaponEntityState(E, World);
+			const int aCounts[5] = {EntityCount(World, CGameWorld::ENTTYPE_PROJECTILE), EntityCount(World, CGameWorld::ENTTYPE_LASER),
+				EntityCount(World, CGameWorld::ENTTYPE_DRAGGER), EntityCount(World, CGameWorld::ENTTYPE_PLASMA),
+				EntityCount(World, CGameWorld::ENTTYPE_PICKUP)};
+			for(int k = 0; k < 5; k++)
+				aTotals[k] += aCounts[k];
+			fprintf(f, " | %d %d %d %d %d %08x", aCounts[0], aCounts[1], aCounts[2], aCounts[3], aCounts[4], E.Crc());
+			if(Verbose)
+			{
+				fprintf(f, " [");
+				for(int v : E.m_vValues)
+					fprintf(f, " %x", (unsigned)v);
+				fprintf(f, " ]");
+			}
+			fprintf(f, "\n");
+		}
+		fprintf(f, "totals %d %d %d %d %d\n", aTotals[0], aTotals[1], aTotals[2], aTotals[3], aTotals[4]);
 	}
 	fclose(f);
 	return 0;
@@ -2154,7 +2635,7 @@ int main(int argc, const char **argv)
 		Collision.Init(&Layers);
 		return MsgsMode(pMap.get(), &Collision, argv[3]);
 	}
-	if(argc >= 4 && (str_comp(argv[1], "collision") == 0 || str_comp(argv[1], "core") == 0 || str_comp(argv[1], "world") == 0))
+	if(argc >= 4 && (str_comp(argv[1], "collision") == 0 || str_comp(argv[1], "core") == 0 || str_comp(argv[1], "world") == 0 || str_comp(argv[1], "weapons") == 0))
 	{
 		bool HookTele = false, Verbose = false;
 		for(int i = 4; i < argc; i++)
@@ -2164,10 +2645,12 @@ int main(int argc, const char **argv)
 		}
 		if(str_comp(argv[1], "world") == 0)
 			return WorldMode(argv[2], argv[3], HookTele, Verbose);
+		if(str_comp(argv[1], "weapons") == 0)
+			return WeaponsMode(argv[2], argv[3], Verbose);
 		if(str_comp(argv[1], "core") == 0)
 			return CoreMode(argv[2], argv[3], HookTele, Verbose);
 		return CollisionMode(argv[2], argv[3], HookTele, Verbose);
 	}
-	log_error(TOOL_NAME, "Usage: %s map <map file> <output file> <scratch dir> | collision|core|world <map file> <output file> [hooktele] [verbose] | doors|mapimages|envelopes|items|msgs <map file> <output file> | envelopes-synthetic|screen|anims|colors|interp|camera|movement <output file> | png <output file> <dir>... | skins <output file> <dir>", argc > 0 ? argv[0] : TOOL_NAME);
+	log_error(TOOL_NAME, "Usage: %s map <map file> <output file> <scratch dir> | collision|core|world|weapons <map file> <output file> [hooktele] [verbose] | doors|mapimages|envelopes|items|msgs <map file> <output file> | envelopes-synthetic|screen|anims|colors|interp|camera|movement <output file> | png <output file> <dir>... | skins <output file> <dir>", argc > 0 ? argv[0] : TOOL_NAME);
 	return -1;
 }

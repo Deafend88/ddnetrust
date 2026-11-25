@@ -1034,11 +1034,38 @@ are final unless the user changes them:
   100% identical on all 7 maps and both variants (125 and 15,878 movers); 6 of 6
   mutations caught.
 
+#### 8.3 (2026-11-26): weapons and entities in the prediction world — done
+- `physics/weapons.rs`: HandleWeapons, HandleNinja (dash with hits), FireWeapon (hammer
+  incl. FNG, gun, vanilla shotgun spread, DDRace shotgun laser, grenade, laser, ninja,
+  reload and attack tick, pain timer), FindEntities, IntersectCharacter,
+  CreateExplosion, AntiPingInterference (the core's queued interferences use it too).
+  They run on the whole world; `Character::on_direct_input` now returns whether
+  FireWeapon follows. `projectile.rs` (fired and snapshot projectiles, bouncing and
+  freeze turrets), `laser.rs` (DoBounce, HitCharacter incl. the stacked-shotgun bug),
+  `pickup.rs` (pickups with movers, draggers, plasma); `collision.rs` gained
+  `intersect_no_laser(_no_walls)`. World tick in C++ `ENTTYPE` order, then
+  `RemoveEntities`. New world config: `predict_weapons`, `is_vanilla`, `is_ddrace`,
+  `old_laser`; `NetCharAdd` sets the game team.
+- Verified: `rs_parity weapons` (new): per map 30 runs x 150 ticks, 4 tees with every
+  weapon firing at each other (random aim, fire, weapon switches, chat), 8 pickups of
+  every type (some on switches, mover tiles from `MakeMovers`), 2 draggers of every
+  subtype, 3 turret projectiles (bouncing, freeze, without extra info), plasma from
+  random ticks (some without target); six configs (DDRace; no weak hook + old laser +
+  team split + super; vanilla; FNG with game teams; solo + limited ammo + hit-disabled
+  tee; changed global tuning without zones), ninja, jetpack, deep freeze, zone weapon
+  tuning. Every character (full state + reload, attack tick, queued weapon, pain timer,
+  ninja hits, move restrictions) and every entity compared each tick: 100% identical on
+  all 7 maps (31,500 ticks). 32 of 33 hand-made mutations caught; the other is
+  equivalent here (vanilla laser delay of 7.5 ticks: `>` and `>=` never differ).
+- Regenerate: `build-rs/rs_parity.exe weapons "data/maps/<name>.map"
+  rust-client/tests/golden/maps/<name>.weapons.txt` (add `verbose` for entity values).
+
 #### Exact next actions (next session starts here)
-State (2026-11-25): M8 8.1 and 8.2 done and pushed. Waiting for the user's review of earlier
+State (2026-11-26): M8 8.1, 8.2 and 8.3 done and pushed. Waiting for the user's review of earlier
 work: the HUD fixes, the volume popover (d04d4040a) and 7.11 (89a3b16b2).
 1. Read CLAUDE.md, PLAN §12 (incl. §12.7), this file, `git log`.
-2. Next: 8.3 (weapons and entities in the world, `rs_parity weapons`), then 8.4.
+2. Next: 8.4 (snapshot entities into the world: NetObjAdd, CopyWorld, FindMatch;
+   `rs_parity netents`), then stop for the user's review.
 3. When the `cl_antiping*` config variables are added (8.8 at the latest), read them
    and `cl_prediction_margin` from `settings_ddnet.cfg` once, like name/skin/binds
    (§12.7 answer 1).

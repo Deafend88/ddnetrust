@@ -271,3 +271,19 @@ only matters for names so long that neither file can exist.
   so the game tile grid stays immutable (no `Cell`, unlike PLAN §12.3 assumed).
 - `intersect_line_tele_weapon` is the prediction's call without `pTeleNr`, which skips
   the tele lookup and is the same loop as `IntersectLine`.
+
+## 2026-11-26 — Antiping 8.3: weapons and entities in the prediction world
+
+- `sv_hit`, `sv_deepfly` and `sv_dragger_range`, which the C++ prediction reads from
+  `g_Config`, are constants with their defaults (1, 1, 700): servers never send them, so
+  a C++ client always uses its own defaults.
+- Predicted events (sounds, explosions, hammer hits, damage indicators) are not created:
+  C++ drops them unless `cl_predict_events` is on (default 0), and DDNet-rs has no
+  sounds or particles yet. They change no physics.
+- The gun's `new CProjectile(..., 0, -1)` passes SoundImpact 0 and Layer -1 (its
+  comments say Force 0, SoundImpact -1); the layer -1 is kept.
+- `m_GameTeam` comes from the snapshot's PlayerInfo team in team games; C++ keeps a
+  client's last known team when its PlayerInfo is missing, DDNet-rs uses 0 then (only
+  FNG's melt hammer reads it).
+- CEntity leaves `m_Number`/`m_Layer` of fired lasers uninitialized; nothing reads them,
+  so the Rust laser has no such fields.

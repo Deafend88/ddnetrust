@@ -1304,3 +1304,316 @@ fn cpp_copies_match_source() {
     }
     assert_eq!(copies, 8);
 }
+
+/// rs_parity's `WeaponZoneTuning`: `ZoneTuning` plus weapon parameters per zone.
+fn weapon_zone_tuning(zone: usize) -> Tuning {
+    let mut t = zone_tuning(zone);
+    match zone % 3 {
+        1 => {
+            t.set(Param::LaserReach, 400.0);
+            t.set(Param::GrenadeCurvature, 4.0);
+            t.set(Param::ExplosionStrength, 3.0);
+            t.set(Param::LaserBounceNum, 1.0);
+        }
+        2 => {
+            t.set(Param::GunSpeed, 1400.0);
+            t.set(Param::ShotgunStrength, 25.0);
+            t.set(Param::HammerStrength, 3.0);
+            t.set(Param::GunFireDelay, 200.0);
+        }
+        _ => {}
+    }
+    t
+}
+
+/// `WeaponState` of rs_parity: `world_state` plus the weapon state.
+fn weapon_char_state(ch: &Character, c: &CharacterCore, teams: &TeamsCore) -> Queries {
+    let mut q = world_state(ch, c, teams);
+    q.int(ch.reload_timer);
+    q.int(ch.attack_tick);
+    q.int(ch.queued_weapon);
+    q.int(ch.pain_sound_timer);
+    q.int(ch.hit_objects.len() as i32);
+    q.int(ch.move_restrictions);
+    q.int(ch.game_team);
+    q.int(ch.last_snap_weapon);
+    q
+}
+
+/// `WeaponEntityState` of rs_parity.
+fn weapon_entity_state(w: &GameWorld) -> Queries {
+    let mut q = Queries::default();
+    for p in &w.projectiles {
+        q.int(p.id);
+        q.vec(p.pos);
+        q.vec(p.direction);
+        q.int(p.life_span);
+        q.int(p.owner);
+        q.int(p.type_);
+        q.int(p.start_tick);
+        q.int(p.explosive);
+        q.int(p.layer);
+        q.int(p.number);
+        q.int(p.bouncing);
+        q.int(p.freeze);
+        q.int(p.tune_zone);
+    }
+    q.int(-1);
+    for l in &w.lasers {
+        q.int(l.id);
+        q.vec(l.pos);
+        q.vec(l.from);
+        q.vec(l.dir);
+        q.vec(l.prev_pos);
+        q.0.push(l.energy.to_bits() as i32);
+        q.int(l.bounces);
+        q.int(l.eval_tick);
+        q.int(l.owner);
+        q.int(l.type_);
+        q.int(l.zero_energy_bounce_in_last_tick);
+        q.int(l.tune_zone);
+    }
+    q.int(-1);
+    for d in &w.draggers {
+        q.int(d.id);
+        q.vec(d.pos);
+        q.vec(d.core);
+        q.0.push(d.strength.to_bits() as i32);
+        q.int(d.ignore_walls);
+        q.int(d.target_id);
+        q.int(d.number);
+        q.int(d.layer);
+    }
+    q.int(-1);
+    for p in &w.plasmas {
+        q.int(p.id);
+        q.vec(p.pos);
+        q.vec(p.core);
+        q.int(p.freeze);
+        q.int(p.explosive);
+        q.int(p.for_client_id);
+        q.int(p.eval_tick);
+        q.int(p.life_time);
+        q.int(p.number);
+        q.int(p.layer);
+    }
+    q.int(-1);
+    for p in &w.pickups {
+        q.int(p.id);
+        q.vec(p.pos);
+        q.int(p.type_);
+        q.int(p.subtype);
+        q.int(p.flags);
+        q.int(p.number);
+        q.int(p.layer);
+        q.vec(p.core);
+        q.int(p.is_core_active);
+    }
+    q
+}
+
+/// Weapons and entities in the prediction world (M8.3) against `rs_parity weapons`.
+fn check_weapons(name: &str, col: Rc<Collision>, text: &str) {
+    use ddnet::items::{LaserData, PickupData, ProjectileData};
+    use ddnet::physics::pickup::{Dragger, Pickup, Plasma};
+    use ddnet::physics::projectile::Projectile;
+
+    const SORTED: [usize; 4] = [0, 1, 3, 6];
+    const START_TICK: i32 = 10000;
+    let zones: Vec<Tuning> = (0..NUM_TUNE_ZONES).map(weapon_zone_tuning).collect();
+    let num = |s: &str| s.parse::<i32>().unwrap();
+    let mut world: Option<GameWorld> = None;
+    let (mut ticks, mut runs) = (0, 0);
+    let mut tick = 0;
+    let mut mode = 0;
+    for line in text.lines() {
+        let w: Vec<&str> = line.split(' ').collect();
+        match w[0] {
+            "run" => {
+                mode = num(w[3]);
+                tick = 0;
+                runs += 1;
+                let config = WorldConfig {
+                    is_ddrace: mode != 2 && mode != 3,
+                    is_vanilla: mode == 2,
+                    is_fng: mode == 3,
+                    infinite_ammo: mode != 4,
+                    predict_tiles: mode != 2,
+                    predict_freeze: mode != 2,
+                    predict_weapons: true,
+                    predict_ddrace: mode != 2 && mode != 3,
+                    is_solo: mode == 4,
+                    use_tune_zones: mode != 5,
+                    bug_ddrace_input: false,
+                    no_weak_hook_and_bounce: mode == 1,
+                    old_laser: mode == 1,
+                    freeze_delay: 3,
+                    antiping_players: 1,
+                };
+                let mut wd = GameWorld::new(Rc::clone(&col), config);
+                wd.tunings = zones.clone();
+                wd.game_tick = START_TICK;
+                if mode == 1 {
+                    wd.teams.set_team(6, 1);
+                }
+                world = Some(wd);
+            }
+            "tune0" => {
+                let ints: Vec<i32> = w[1..].iter().map(|s| num(s)).collect();
+                world.as_mut().unwrap().tunings[0] = Tuning(ints.try_into().unwrap());
+            }
+            "char" => {
+                let wd = world.as_mut().unwrap();
+                let (obj, ext) = line.split_once(" |").unwrap();
+                let obj: Vec<i32> = obj.split(' ').skip(3).map(num).collect();
+                let ext: Vec<i32> = ext.split_whitespace().map(num).collect();
+                let (obj, ext) = (
+                    ObjCharacter::from_ints(&obj),
+                    ObjDDNetCharacter::from_ints(&ext),
+                );
+                let id = num(w[1]) as usize;
+                wd.add_character(id, &obj, &ext);
+                wd.character_mut(id).unwrap().game_team = num(w[2]);
+                if id == 3 {
+                    wd.read_character(id, &obj, &ext, true); // the local player
+                }
+            }
+            "pickup" => {
+                let d = PickupData {
+                    pos: vec2(bits(w[2]), bits(w[3])),
+                    type_: num(w[4]),
+                    subtype: num(w[5]),
+                    switch_number: num(w[6]),
+                    flags: 0,
+                };
+                world
+                    .as_mut()
+                    .unwrap()
+                    .pickups
+                    .push(Pickup::from_data(num(w[1]), &d));
+            }
+            "dragger" | "plasma" => {
+                let wd = world.as_mut().unwrap();
+                let from = vec2(bits(w[2]), bits(w[3]));
+                let plasma = w[0] == "plasma";
+                let d = LaserData {
+                    from,
+                    to: from,
+                    start_tick: if plasma { wd.game_tick } else { START_TICK },
+                    extra_info: true,
+                    owner: if plasma { num(w[4]) } else { -1 },
+                    type_: if plasma {
+                        g::LASERTYPE_PLASMA
+                    } else {
+                        g::LASERTYPE_DRAGGER
+                    },
+                    switch_number: if plasma { 0 } else { num(w[5]) },
+                    subtype: num(w[if plasma { 5 } else { 4 }]),
+                    tune_zone: 0,
+                    predict: true,
+                };
+                if plasma {
+                    let p = Plasma::from_data(wd, num(w[1]), &d);
+                    wd.plasmas.insert(0, p);
+                } else {
+                    wd.draggers.insert(0, Dragger::from_data(num(w[1]), &d));
+                }
+            }
+            "proj" => {
+                let wd = world.as_mut().unwrap();
+                let d = ProjectileData {
+                    start_pos: vec2(bits(w[2]), bits(w[3])),
+                    start_vel: vec2(bits(w[4]), bits(w[5])),
+                    type_: num(w[6]),
+                    start_tick: num(w[7]),
+                    extra_info: w[8] == "1",
+                    owner: num(w[9]),
+                    explosive: w[10] == "1",
+                    bouncing: num(w[11]),
+                    freeze: w[12] == "1",
+                    switch_number: num(w[13]),
+                    tune_zone: 0,
+                };
+                let p = Projectile::from_data(wd, num(w[1]), &d);
+                wd.projectiles.insert(0, p);
+            }
+            "totals" => {}
+            _ => {
+                let wd = world.as_mut().unwrap();
+                tick += 1;
+                let (inputs, rest) = line.split_once(" |").unwrap();
+                let (states, entities) = rest.rsplit_once(" | ").unwrap();
+                let v: Vec<i32> = inputs.split(' ').map(num).collect();
+                let input = |k: usize| {
+                    let v = &v[k * 10..k * 10 + 10];
+                    ObjPlayerInput {
+                        direction: v[0],
+                        jump: v[1],
+                        hook: v[2],
+                        target_x: v[3],
+                        target_y: v[4],
+                        fire: v[5],
+                        next_weapon: v[6],
+                        prev_weapon: v[7],
+                        wanted_weapon: v[8],
+                        player_flags: v[9],
+                    }
+                };
+                for (k, &id) in SORTED.iter().enumerate() {
+                    wd.on_direct_input(id, &input(k));
+                }
+                wd.game_tick = START_TICK + tick;
+                for (k, &id) in SORTED.iter().enumerate() {
+                    wd.on_predicted_input(id, &input(k));
+                }
+                wd.tick();
+
+                let state = |id: usize| {
+                    let (ch, c) = wd.character(id).unwrap();
+                    weapon_char_state(ch, c, &wd.teams)
+                };
+                let chars: Vec<String> = SORTED
+                    .iter()
+                    .map(|&id| {
+                        let pos = wd.character(id).unwrap().0.pos;
+                        let crc = state(id).crc();
+                        format!("{:08x} {:08x} {crc:08x}", pos.x.to_bits(), pos.y.to_bits())
+                    })
+                    .collect();
+                let e = weapon_entity_state(wd);
+                let got = format!(
+                    "{} | {} {} {} {} {} {:08x}",
+                    chars.join(" "),
+                    wd.projectiles.len(),
+                    wd.lasers.len(),
+                    wd.draggers.len(),
+                    wd.plasmas.len(),
+                    wd.pickups.len(),
+                    e.crc()
+                );
+                let want = format!("{} | {entities}", states.trim());
+                assert_eq!(
+                    got, want,
+                    "{name}, run {runs} (mode {mode}), tick {tick}; entities {:x?}",
+                    e.0
+                );
+                ticks += 1;
+            }
+        }
+    }
+    assert_eq!(runs, 30, "{name}");
+    assert_eq!(ticks, 30 * 150, "{name}");
+}
+
+#[test]
+fn weapons() {
+    for name in MAPS {
+        let map = load(name);
+        let layers = make_movers(Layers::from_map(&map));
+        check_weapons(
+            name,
+            Rc::new(Collision::from_layers(layers)),
+            &golden_file(name, "weapons"),
+        );
+    }
+}

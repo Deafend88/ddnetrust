@@ -761,6 +761,60 @@ impl Collision {
         bounces
     }
 
+    /// C++: `CCollision::IntersectNoLaser` (collision.cpp:1149): the first solid, no-hook
+    /// or no-laser tile (or front no-laser tile) on the line, as (hit tile, collision
+    /// point, point before it).
+    pub fn intersect_no_laser(&self, pos0: Vec2, pos1: Vec2) -> (i32, Vec2, Vec2) {
+        let distance = distance(pos0, pos1);
+        let mut last = pos0;
+        let rounded = trunc_i32(distance.ceil());
+        for i in 0..rounded.max(0) {
+            let pos = mix(pos0, pos1, i as f32 / distance);
+            let nx = (round_to_int(pos.x) / 32).clamp(0, self.width - 1);
+            let ny = (round_to_int(pos.y) / 32).clamp(0, self.height - 1);
+            let index = (ny * self.width + nx) as usize;
+            let tile = self.tiles[index].index as i32;
+            let front = self.front.as_ref().map_or(0, |f| f[index].index as i32);
+            if tile == TILE_SOLID
+                || tile == TILE_NOHOOK
+                || tile == TILE_NOLASER
+                || front == TILE_NOLASER
+            {
+                let hit = if front == TILE_NOLASER {
+                    self.get_front_collision_at(pos.x, pos.y)
+                } else {
+                    self.get_collision_at(pos.x, pos.y)
+                };
+                return (hit, pos, last);
+            }
+            last = pos;
+        }
+        (0, pos1, pos1)
+    }
+
+    /// C++: `CCollision::IntersectNoLaserNoWalls` (collision.cpp:1181): like
+    /// `intersect_no_laser`, but only no-laser tiles stop the line.
+    pub fn intersect_no_laser_no_walls(&self, pos0: Vec2, pos1: Vec2) -> (i32, Vec2, Vec2) {
+        let distance = distance(pos0, pos1);
+        let mut last = pos0;
+        let rounded = trunc_i32(distance.ceil());
+        for i in 0..rounded.max(0) {
+            let pos = mix(pos0, pos1, i as f32 / distance);
+            let (x, y) = (round_to_int(pos.x), round_to_int(pos.y));
+            let no_laser = self.get_tile(x, y) == TILE_NOLASER;
+            if no_laser || self.get_front_tile(x, y) == TILE_NOLASER {
+                let hit = if no_laser {
+                    self.get_collision_at(pos.x, pos.y)
+                } else {
+                    self.get_front_collision_at(pos.x, pos.y)
+                };
+                return (hit, pos, last);
+            }
+            last = pos;
+        }
+        (0, pos1, pos1)
+    }
+
     /// C++: `CCollision::MoverSpeed` (collision.cpp:786): the tile index if the game tile
     /// at (x, y) is a mover (`TILE_CP`, `TILE_CP_F`) with its speed, else `None` (C++
     /// returns 0 and leaves the speed untouched).
