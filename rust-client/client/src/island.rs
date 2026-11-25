@@ -377,6 +377,8 @@ pub struct Anim {
     player_lyrics: bool,
     /// The volume slider's value while it is dragged.
     volume: Option<f32>,
+    /// When the volume slider opened.
+    volume_open: Option<f64>,
     /// The island's rect as last drawn (the subtitles go under it).
     pub rect: Option<Rect>,
     last: Option<f64>,
@@ -714,9 +716,10 @@ impl Anim {
                     seeking: &mut self.seeking,
                     lyrics_open: &mut self.player_lyrics,
                     volume: &mut self.volume,
+                    volume_open: &mut self.volume_open,
+                    card: rect,
                 };
-                let lines = if *controls.lyrics_open { 3 } else { 0 };
-                let command = player_ui(&mut child, &player, Some(&mut controls), lines, weak);
+                let command = player_ui(&mut child, &player, Some(&mut controls), 0, weak);
                 self.player_h = Some(child.min_rect().height());
                 return command;
             }
@@ -865,6 +868,10 @@ pub struct Controls<'a> {
     pub lyrics_open: &'a mut bool,
     /// The volume slider's value while it is dragged.
     pub volume: &'a mut Option<f32>,
+    /// When the volume slider opened (`None`: closed).
+    pub volume_open: &'a mut Option<f64>,
+    /// The player card's rect (the slider slides out of its side).
+    pub card: Rect,
 }
 
 /// `controls`: the interactive F7 player (source menu, lyrics button, seeking, buttons,
@@ -1028,82 +1035,24 @@ pub fn player_ui(
             }
         }
     }
-    // previous, play/pause (larger), next, centred
-    if interactive {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = space::XL;
-            let control = |ui: &mut Ui, glyph: &str, size: f32, enabled: bool, tip: &str| {
-                let t = egui::RichText::new(glyph)
-                    .font(icon_font(size))
-                    .color(color::TEXT);
-                ui.add_enabled(enabled, egui::Button::new(t).frame(false))
-                    .on_hover_text(tip)
-                    .clicked()
-            };
-            let w = 2.0 * size::ICON_LARGE + size::CONTROL + 2.0 * space::XL;
-            ui.add_space(((ui.available_width() - w) / 2.0).max(0.0));
-            if control(
-                ui,
-                icons::SKIP_BACK,
-                size::ICON_LARGE,
-                *can_prev,
-                "Previous",
-            ) {
-                command = Some(Command::Prev);
+    // the bottom area, one fixed height: the controls, or (lyrics view) the current
+    // line and the next one, so the card never changes size
+    if let Some(c) = controls.as_mut() {
+        let (area, _) =
+            ui.allocate_exact_size(vec2(ui.available_width(), BOTTOM_HEIGHT), Sense::hover());
+        let lyrics = p.lyrics.as_ref().filter(|_| *c.lyrics_open);
+        if let Some(l) = lyrics {
+            paint_lyric_pair(ui, area, l, timeline.map(|t| t.0), weak);
+        } else {
+            if let Some(cmd) = transport(ui, area, track.playing, *can_prev, *can_next) {
+                command = Some(cmd);
             }
-            let play = if track.playing {
-                icons::PAUSE
-            } else {
-                icons::PLAY
-            };
-            if control(ui, play, size::CONTROL, true, "Play or pause") {
-                command = Some(Command::PlayPause);
+            if let Some(level) = p.volume
+                && let Some(cmd) = volume_button(ui, area, level, c)
+            {
+                command = Some(cmd);
             }
-            if control(ui, icons::SKIP_FORWARD, size::ICON_LARGE, *can_next, "Next") {
-                command = Some(Command::Next);
-            }
-        });
-    }
-    // the app's volume (the Volume Mixer's, not the game's)
-    if let (Some(c), Some(level)) = (controls.as_mut(), p.volume) {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = space::S;
-            let icon = |ui: &mut Ui, g: &str| w::icon(ui, g, size::ICON, weak);
-            icon(ui, icons::VOLUME_DOWN);
-            let mut v = c.volume.unwrap_or(level);
-            ui.spacing_mut().slider_width = ui.available_width() - size::ICON - space::S;
-            let r = ui
-                .scope(|ui| {
-                    // a thin white rail and a small white knob, like the progress bar
-                    let vis = ui.visuals_mut();
-                    vis.selection.bg_fill = color::TEXT;
-                    let ws = &mut vis.widgets;
-                    for w in [&mut ws.inactive, &mut ws.hovered, &mut ws.active] {
-                        w.bg_fill = color::TEXT;
-                        w.weak_bg_fill = color::TEXT;
-                        w.fg_stroke.color = color::TEXT;
-                        w.bg_stroke = egui::Stroke::NONE;
-                        w.expansion = 0.0;
-                    }
-                    ws.inactive.bg_fill = color::TEXT.gamma_multiply(0.25);
-                    ui.spacing_mut().slider_rail_height = space::XS;
-                    ui.spacing_mut().interact_size.y = space::M;
-                    let s = egui::Slider::new(&mut v, 0.0..=1.0)
-                        .show_value(false)
-                        .trailing_fill(true);
-                    ui.add(s)
-                })
-                .inner;
-            icon(ui, icons::VOLUME_UP);
-            if r.dragged() {
-                *c.volume = Some(v);
-            }
-            // one command per change of mind, not one per pixel dragged
-            if r.drag_stopped() || (r.changed() && !r.dragged()) {
-                command = Some(Command::Volume(v));
-                *c.volume = None;
-            }
-        });
+        }
     }
     if lyric_lines > 0
         && let Some(l) = &p.lyrics
@@ -1113,8 +1062,244 @@ pub fn player_ui(
     command
 }
 
+/// The player's bottom area: the play/pause control and a little room.
+const BOTTOM_HEIGHT: f32 = size::CONTROL + space::S;
+/// The centres of previous and next, left and right of play/pause's.
+const TRANSPORT_STEP: f32 = size::CONTROL + space::XL;
+/// The volume slider's height.
+const VOLUME_HEIGHT: f32 = 120.0;
+
+/// Previous, play/pause and next (Phosphor Fill), symmetric around the area's centre.
+fn transport(ui: &mut Ui, area: Rect, playing: bool, prev: bool, next: bool) -> Option<Command> {
+    let mut command = None;
+    let buttons = [
+        (
+            -1.0,
+            icons::SKIP_BACK,
+            size::ICON_LARGE,
+            prev,
+            "Previous",
+            Command::Prev,
+        ),
+        (
+            0.0,
+            if playing { icons::PAUSE } else { icons::PLAY },
+            size::CONTROL,
+            true,
+            "Play or pause",
+            Command::PlayPause,
+        ),
+        (
+            1.0,
+            icons::SKIP_FORWARD,
+            size::ICON_LARGE,
+            next,
+            "Next",
+            Command::Next,
+        ),
+    ];
+    for (dx, glyph, glyph_size, enabled, tip, cmd) in buttons {
+        let at = area.center() + vec2(dx * TRANSPORT_STEP, 0.0);
+        let rect = Rect::from_center_size(at, egui::Vec2::splat(size::CONTROL));
+        let r = ui.interact(rect, ui.scope_id().with(tip), Sense::click());
+        let c = if !enabled {
+            color::TEXT.gamma_multiply(0.3)
+        } else if r.hovered() {
+            color::TEXT
+        } else {
+            color::TEXT.gamma_multiply(0.9)
+        };
+        let g = ui
+            .ctx()
+            .fonts_mut(|f| f.layout_no_wrap(glyph.into(), icon_font(glyph_size), c));
+        let p = ui.painter();
+        // centred on the glyph's ink, not its advance box (side bearings differ)
+        let pos = at - g.mesh_bounds.center().to_vec2();
+        p.add(TextShape::new(pos, g, c).with_opacity_factor(ui.opacity()));
+        if enabled && r.on_hover_text(tip).clicked() {
+            command = Some(cmd);
+        }
+    }
+    command
+}
+
+/// The speaker at the area's left: its icon follows the level (muted, low, high); the
+/// wheel over it changes the volume in 5 % steps; a click slides a vertical slider out
+/// of the card's side (`volume_pane`), a click outside closes it.
+fn volume_button(ui: &mut Ui, area: Rect, level: f32, c: &mut Controls) -> Option<Command> {
+    let mut command = None;
+    let shown = c.volume.unwrap_or(level);
+    let glyph = if shown <= 0.001 {
+        icons::VOLUME_OFF
+    } else if shown < 0.5 {
+        icons::VOLUME_DOWN
+    } else {
+        icons::VOLUME_UP
+    };
+    let rect = Rect::from_min_size(
+        pos2(area.left(), area.center().y - size::CONTROL / 2.0),
+        egui::Vec2::splat(size::CONTROL),
+    );
+    let r = ui.interact(rect, ui.scope_id().with("volume"), Sense::click());
+    let ink = if r.hovered() {
+        color::TEXT
+    } else {
+        color::TEXT.gamma_multiply(0.8)
+    };
+    let g = ui
+        .ctx()
+        .fonts_mut(|f| f.layout_no_wrap(glyph.into(), icon_font(size::ICON), ink));
+    let pos = rect.center() - g.mesh_bounds.center().to_vec2();
+    ui.painter()
+        .add(TextShape::new(pos, g, ink).with_opacity_factor(ui.opacity()));
+    if r.hovered() {
+        // the wheel's notches this frame (up: louder)
+        let wheel: f32 = ui.input(|i| {
+            (i.raw.events.iter())
+                .filter_map(|e| match e {
+                    egui::Event::MouseWheel { delta, .. } => Some(delta.y),
+                    _ => None,
+                })
+                .sum()
+        });
+        if wheel != 0.0 {
+            let v = (shown + 0.05 * wheel.signum()).clamp(0.0, 1.0);
+            *c.volume = Some(v);
+            command = Some(Command::Volume(v));
+        }
+    }
+    let r = r.on_hover_text(format!("Volume {}%", (shown * 100.0).round()));
+    let now = ui.input(|i| i.time);
+    if r.clicked() {
+        *c.volume_open = c.volume_open.is_none().then_some(now);
+    }
+    if let Some(opened) = *c.volume_open {
+        let (cmd, pane) = volume_pane(ui, c.card, rect, shown, now - opened, c.volume);
+        command = command.or(cmd);
+        // a click anywhere else closes it
+        if pane.clicked_elsewhere() && !r.clicked() {
+            *c.volume_open = None;
+        }
+    }
+    // the media thread reports the new level within a poll; until then the set one shows
+    if !r.hovered() && c.volume.is_some_and(|d| (d - level).abs() < 0.01) {
+        *c.volume = None;
+    }
+    command
+}
+
+/// Whether the volume slider fits left of the card (else it opens on the right).
+fn pane_on_left(card: Rect, screen: Rect) -> bool {
+    card.left() - space::S - size::CONTROL >= screen.left() + space::S
+}
+
+/// The volume slider: a narrow capsule that slides out of the card's left edge, level
+/// with the speaker (the right edge when the card sits at the screen's left edge), so it
+/// never covers the card. `age`: seconds since it opened. Returns a volume command and
+/// the pane's response (for closing on a click elsewhere).
+fn volume_pane(
+    ui: &Ui,
+    card: Rect,
+    speaker: Rect,
+    shown: f32,
+    age: f64,
+    dragged: &mut Option<f32>,
+) -> (Option<Command>, egui::Response) {
+    let mut command = None;
+    let size = vec2(size::CONTROL, VOLUME_HEIGHT);
+    let screen = ui.ctx().content_rect();
+    let left = pane_on_left(card, screen);
+    let y = (speaker.center().y - size.y / 2.0).clamp(
+        screen.top() + space::S,
+        (screen.bottom() - size.y - space::S).max(0.0),
+    );
+    // slides out from under the card's edge over motion::FAST
+    let t = crate::anim::ease_out((age as f32 / motion::FAST).min(1.0));
+    let x = if left {
+        card.left() - (space::S + size.x) * t
+    } else {
+        card.right() + (space::S + size.x) * t - size.x
+    };
+    let area = egui::Area::new(ui.scope_id().with("volume pane"))
+        .order(egui::Order::Foreground)
+        .fixed_pos(pos2(x, y))
+        .show(ui.ctx(), |ui| {
+            ui.set_opacity(t);
+            let (pane, br) = ui.allocate_exact_size(size, Sense::click_and_drag());
+            let pill = CornerRadius::same(radius::PILL);
+            let p = ui.painter();
+            p.add(HUD_SHADOW.as_shape(pane, pill));
+            p.rect_filled(pane, pill, color::SURFACE.gamma_multiply(0.92 * t));
+            let track = Rect::from_center_size(
+                pane.center(),
+                vec2(space::XS, pane.height() - 2.0 * space::L),
+            );
+            let at = |y: f32| ((track.bottom() - y) / track.height()).clamp(0.0, 1.0);
+            let mut v = shown;
+            if let Some(pos) = br.interact_pointer_pos() {
+                v = at(pos.y);
+                *dragged = Some(v);
+            }
+            let rail = CornerRadius::same(radius::PILL);
+            p.rect_filled(track, rail, color::TEXT.gamma_multiply(0.25 * t));
+            let top = track.bottom() - track.height() * v;
+            let filled = Rect::from_min_max(pos2(track.left(), top), track.max);
+            p.rect_filled(filled, rail, color::TEXT.gamma_multiply(t));
+            // a thin handle across the bar, no round knob
+            let handle =
+                Rect::from_center_size(pos2(track.center().x, top), vec2(space::M, space::XS));
+            p.rect_filled(handle, rail, color::TEXT.gamma_multiply(t));
+            if br.drag_stopped() || br.clicked() {
+                command = Some(Command::Volume(v));
+            }
+        });
+    (command, area.response)
+}
+
+/// The lyrics view in the player's bottom area: the current line (Inter Display, full
+/// white) and the next one dimmed under it, each cut to one line.
+fn paint_lyric_pair(ui: &Ui, area: Rect, lyrics: &Lyrics, position: Option<f64>, weak: Color32) {
+    let note = match lyrics {
+        Lyrics::Loading => Some("Looking for lyrics"),
+        Lyrics::NotFound => Some("No synced lyrics for this track"),
+        Lyrics::Unavailable => Some("Lyrics unavailable (offline?)"),
+        Lyrics::Lines(_) if position.is_none() => Some("This player does not report the position"),
+        Lyrics::Lines(_) => None,
+    };
+    let one_line = |text: &str, f: egui::FontId, c: Color32| {
+        let mut job = LayoutJob::single_section(text.into(), TextFormat::simple(f, c));
+        job.wrap = egui::text::TextWrapping::truncate_at_width(area.width());
+        ui.ctx().fonts_mut(|fonts| fonts.layout_job(job))
+    };
+    let rows = match (note, lyrics, position) {
+        (Some(n), ..) => vec![one_line(n, font(size::BODY, Weight::Regular), weak)],
+        (None, Lyrics::Lines(all), Some(pos)) => {
+            let now = lyrics::current(all, pos);
+            let line = |i: usize| all.get(i).map_or("", |l| l.1.as_str());
+            let current = now.map_or("…", line);
+            let next = line(now.map_or(0, |i| i + 1));
+            vec![
+                one_line(current, display(size::LABEL, Weight::SemiBold), color::TEXT),
+                one_line(next, font(size::CAPTION, Weight::Regular), weak),
+            ]
+        }
+        _ => Vec::new(),
+    };
+    let h: f32 = rows.iter().map(|r| r.size().y).sum();
+    let mut y = area.center().y - h / 2.0;
+    for g in rows {
+        let x = area.center().x - g.size().x / 2.0;
+        let size = g.size().y;
+        ui.painter().add(
+            TextShape::new(pos2(x, y), g, Color32::TRANSPARENT).with_opacity_factor(ui.opacity()),
+        );
+        y += size;
+    }
+}
+
 /// The subtitles under the island: the current lyrics line, small, translucent, no box
-/// (a faint shadow keeps it legible on bright maps); a new line crossfades in.
+/// (a soft shadow of the glyphs keeps it legible on bright maps); a new line crossfades
+/// in.
 #[derive(Default)]
 pub struct Subtitles {
     line: String,
@@ -1141,10 +1326,17 @@ impl Subtitles {
                 fonts.layout(text.clone(), font, color::TEXT, WRAP)
             });
             let rect = Rect::from_min_size(at - vec2(g.size().x / 2.0, 0.0), g.size());
-            let mut shadow = HUD_SHADOW;
-            shadow.color = shadow.color.gamma_multiply(alpha);
             let p = ui.painter();
-            p.add(shadow.as_shape(rect.expand(space::XS), CornerRadius::same(radius::PILL)));
+            // a soft shadow of the glyphs themselves (two rings of faint dark copies),
+            // so the line reads on bright maps without a box
+            for (r, a) in [(1.0, 0.16), (2.0, 0.08)] {
+                for k in 0..8 {
+                    let t = k as f32 * std::f32::consts::FRAC_PI_4;
+                    let off = vec2(t.cos(), t.sin()) * r + vec2(0.0, 1.0);
+                    let c = Color32::BLACK.gamma_multiply(a * alpha);
+                    p.galley_with_override_text_color(rect.min + off, g.clone(), c);
+                }
+            }
             let shape = TextShape::new(rect.min, g, Color32::TRANSPARENT);
             p.add(shape.with_opacity_factor(alpha * SUBTITLE_ALPHA));
         }
@@ -1572,6 +1764,16 @@ mod tests {
         assert!(paused(&info(g::GAMESTATEFLAG_PAUSED, 0, 0, 0)));
         let over = g::GAMESTATEFLAG_PAUSED | g::GAMESTATEFLAG_GAMEOVER;
         assert!(!paused(&info(over, 0, 0, 0)));
+    }
+
+    #[test]
+    fn volume_slider_opens_beside_the_card() {
+        let screen = Rect::from_min_size(pos2(0.0, 0.0), vec2(1280.0, 720.0));
+        let card = |x: f32| Rect::from_min_size(pos2(x, 16.0), vec2(360.0, 160.0));
+        assert!(pane_on_left(card(460.0), screen));
+        assert!(!pane_on_left(card(16.0), screen));
+        // just enough room: S + its width + S
+        assert!(pane_on_left(card(space::S * 2.0 + size::CONTROL), screen));
     }
 
     #[test]

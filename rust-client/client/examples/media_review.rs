@@ -64,7 +64,7 @@ fn main() {
     let mut painter = Painter::new(&gfx, gfx.format, glass);
     let (mut anim, mut idle, mut subtitles) =
         (Anim::default(), Anim::default(), Subtitles::default());
-    let (mut seeking, mut volume, mut open) = (None, None, true);
+    let (mut seeking, mut volume, mut open, mut volume_open) = (None, None, true, None);
     for i in 0..60 {
         let t = i as f64 / 30.0;
         let view = MapView {
@@ -81,7 +81,22 @@ fn main() {
         render.render_foreground(&mut batch, &view);
         let world = gfx.world_view();
         gfx.render(&mut batch, &world, size);
+        // click the compact player's speaker once, so its volume popover shows
+        let speaker = anim
+            .rect
+            .map(|r| egui::pos2(r.left() + space::L + 16.0, r.bottom() - space::L - 20.0));
+        let mut events = Vec::new();
+        if let Some(at) = speaker.filter(|_| i == 40 || i == 41) {
+            events.push(egui::Event::PointerMoved(at));
+            events.push(egui::Event::PointerButton {
+                pos: at,
+                button: egui::PointerButton::Primary,
+                pressed: i == 40,
+                modifiers: Default::default(),
+            });
+        }
         let input = egui::RawInput {
+            events,
             screen_rect: Some(egui::Rect::from_min_size(
                 egui::Pos2::ZERO,
                 egui::vec2(size.width as f32, size.height as f32),
@@ -110,8 +125,10 @@ fn main() {
                                 seeking: &mut seeking,
                                 lyrics_open: &mut open,
                                 volume: &mut volume,
+                                volume_open: &mut volume_open,
+                                card: ui.max_rect(),
                             };
-                            player_ui(ui, &player(true), Some(&mut c), 3, weak);
+                            player_ui(ui, &player(true), Some(&mut c), 0, weak);
                         });
                     });
                 });

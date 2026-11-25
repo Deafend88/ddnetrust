@@ -436,7 +436,7 @@ for scenes that do not stay still, or `-RustSubject` to check what the server se
 `examples/maprender.rs` renders a map at a given
 center for fixed-view checks; mask pickups (they bob on each client's own clock).
 
-### M7 — visual identity and HUD (in progress: 7.1-7.9 done and reviewed, 7.10 built, awaiting the user's live check)
+### M7 — visual identity and HUD (in progress: 7.1-7.10 done and accepted; next 7.11)
 
 Pushed and verified: the plan and its review answers (PLAN §10, §10.6), the collision
 leak fix, and 7.1 (fonts + icons, design system, menus + gallery, the review tweaks,
@@ -930,11 +930,28 @@ are final unless the user changes them:
   `examples/media_review.rs` (compact player with volume, player with lyrics, island
   with subtitles, card).
 
+#### 7.10 review round 3 (2026-11-25): player accepted by the user
+- Player bottom area has one fixed height (`BOTTOM_HEIGHT`): the controls, or in the
+  lyrics view the current line (Inter Display) with the next one dimmed under it; the
+  card never changes size. The old full-width volume row is gone.
+- Previous / play-pause / next are Phosphor Fill again (`gen_icons.py`), placed at fixed
+  centres symmetric around the card's centre and centred on their glyph ink
+  (`mesh_bounds`); measured: -56.5 / +55.5 px around 640.
+- Volume: speaker at the area's left (icon by level: off / down / up; wheel = 5 %
+  steps); a click slides a narrow vertical slider (thin bar, small flat handle) out of
+  the card's LEFT edge, level with the speaker, never over the card; on the right when
+  there is no room (`pane_on_left`, tested); a click elsewhere closes it.
+- Subtitles: the box shadow (diagonal streaks at the ends) became a soft shadow of the
+  glyphs (two rings of faint dark copies); checked on dm1 (bright) and Tsunami (dark).
+- Verified: gates, review renders (`examples/media_review.rs`, which also clicks the
+  speaker once so the slider shows).
+
 #### Exact next actions (next session starts here)
-1. Read CLAUDE.md, PLAN §10.3 7.10/7.11, this section, `git log`.
-2. Apply the user's review of round 2, if any.
-3. Then 7.11 (settings page entries, default HUD layout, frame time check, docs).
-4. Before each commit: gates, `/ponytail-review`, UI rules review; update this file.
+1. Read CLAUDE.md, PLAN §10.3 7.11, this section, `git log`.
+2. Next: 7.11 (settings page entries: glass strength, UI scale, HUD editor, media on/off;
+   the default HUD layout; the frame time check with everything on, target M6 frame time
+   + under 1 ms at 1440p; docs). Then M7 is done; after it: antiping (PLAN §11).
+3. Before each commit: gates, `/ponytail-review`, UI rules review; update this file.
 
 #### Decisions and gotchas from 7.1
 - egui 0.37 panics in debug if a frame's `TexturesDelta` is dropped unapplied: drain
