@@ -7,7 +7,7 @@ use ddnet::physics::vmath::round_to_int;
 use ddnet::protocol::generated as g;
 use egui::{CornerRadius, Frame, Margin, Ui};
 
-use crate::hud::{Anchor, HudConfig, HudData, Placement, Widget};
+use crate::hud::{self, Anchor, HudConfig, HudData, Placement, Widget};
 use crate::icons;
 use crate::style::{Glass, HUD_SHADOW, ICON_GLOW, LOGO_GLOW, Weight, color, size, space};
 use crate::widgets as w;
@@ -16,7 +16,7 @@ use crate::widgets as w;
 /// editor. SPEC §1, except: the name is off (it already shows above the tee; user review
 /// 2026-11-25); the local time is on and first, then ping and fps (user decision
 /// 2026-11-25: the clock lives here, not in the island).
-pub const ITEMS: [(&str, bool, &str); 8] = [
+pub const ITEMS: [hud::Item; 8] = [
     ("time", true, "Local time"),
     ("user", false, "Name"),
     ("server", false, "Server address"),
@@ -154,17 +154,7 @@ pub fn stats(ui: &mut Ui, stats: &[Stat], look: Look) {
 /// The keys in the configured order: known keys from `order`, then the missing ones in
 /// default order.
 pub fn order(config: &HudConfig) -> Vec<&'static str> {
-    let saved = config.value("watermark", "order").unwrap_or("");
-    let saved = saved
-        .split(',')
-        .filter_map(|k| ITEMS.iter().find(|i| i.0 == k.trim()));
-    let mut keys = Vec::new();
-    for (k, ..) in saved.chain(&ITEMS) {
-        if !keys.contains(k) {
-            keys.push(*k);
-        }
-    }
-    keys
+    hud::item_order(config, "watermark", &ITEMS)
 }
 
 fn compact(config: &HudConfig) -> bool {
@@ -173,8 +163,7 @@ fn compact(config: &HudConfig) -> bool {
 
 /// Whether item `key` shows.
 pub fn shown(config: &HudConfig, key: &str) -> bool {
-    let default = ITEMS.iter().any(|&(k, on, _)| k == key && on);
-    config.on("watermark", key, default)
+    hud::item_on(config, "watermark", &ITEMS, key)
 }
 
 /// The value of item `key`, if known.
@@ -283,42 +272,15 @@ impl Widget for Watermark {
 
     /// Compact, then each item: on/off and its place in the order.
     fn settings(&mut self, ui: &mut Ui, config: &mut HudConfig) {
-        let mut order = order(config);
-        let mut swap = None;
-        egui::Grid::new("watermark").num_columns(3).show(ui, |ui| {
+        egui::Grid::new("watermark").num_columns(2).show(ui, |ui| {
             let mut on = compact(config);
             if w::toggle(ui, &mut on).changed() {
                 config.set("watermark", "compact", on as i32);
             }
             ui.label("Compact");
             ui.end_row();
-            for (i, key) in order.iter().enumerate() {
-                let mut on = shown(config, key);
-                if w::toggle(ui, &mut on).changed() {
-                    config.set("watermark", key, on as i32);
-                }
-                ui.label(ITEMS.iter().find(|it| it.0 == *key).map_or(*key, |it| it.2));
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = space::XS;
-                    let up = ui
-                        .add_enabled_ui(i > 0, |ui| w::icon_button(ui, icons::CARET_UP, "Move up"));
-                    if up.inner.clicked() {
-                        swap = Some(i - 1);
-                    }
-                    let down = ui.add_enabled_ui(i + 1 < order.len(), |ui| {
-                        w::icon_button(ui, icons::CARET_DOWN, "Move down")
-                    });
-                    if down.inner.clicked() {
-                        swap = Some(i);
-                    }
-                });
-                ui.end_row();
-            }
         });
-        if let Some(i) = swap {
-            order.swap(i, i + 1);
-            config.set("watermark", "order", order.join(","));
-        }
+        hud::item_list(ui, config, "watermark", &ITEMS);
         // the look, until the user settles the defaults
         egui::Grid::new("watermark_look")
             .num_columns(2)

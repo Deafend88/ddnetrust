@@ -835,6 +835,13 @@ are final unless the user changes them:
   watermark; a saved placement (e.g. 16, 88) is kept (Reset in the HUD editor moves it).
   `watermark_layout_measurements` checks the new gaps, the height, no dots and a glow
   behind each icon. Before/after/reference comparison sent to the user.
+- Accepted by the user (2026-11-25): watermark and island looks.
+- Island items like the watermark's (user request): `hud::item_order`/`item_on`/
+  `item_list` (shared with the watermark: toggle + up/down per item); island items
+  status, timer, checkpoint, media, finish, broadcasts, track (`hud_set island order`);
+  the idle row follows the order, events' order is their priority. media/track act in
+  7.10. Key `spectator` became `status` (import from `cl_showhud_spectator`). Fixed on
+  the way: turning the spectator text off no longer shows race effects while spectating.
 - Known: at 800x600 the default watermark (with the clock) reaches under the island;
   from about 1000 pt width they do not touch.
 

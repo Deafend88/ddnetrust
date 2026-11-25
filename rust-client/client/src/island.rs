@@ -15,7 +15,7 @@ use egui::text::{LayoutJob, TextFormat};
 use egui::{Color32, CornerRadius, Galley, Rect, Sense, Ui, pos2, vec2};
 
 use crate::anim::Spring;
-use crate::hud::{Anchor, HudConfig, HudData, Placement, Widget, item_toggles};
+use crate::hud::{self, Anchor, HudConfig, HudData, Placement, Widget};
 use crate::icons;
 use crate::style::{
     Glass, HUD_SHADOW, Weight, color, font, icon_font, motion, radius, size, space,
@@ -249,46 +249,43 @@ pub fn paused(info: &g::ObjGameInfo) -> bool {
 /// What the island shows.
 #[derive(Clone, Debug, PartialEq)]
 pub enum View {
-    /// Idle: the race timer with the checkpoint difference, after a status (pause or
-    /// spectator text) when there is one.
-    Timer {
-        status: Option<(&'static str, String)>,
-        timer: Option<Timer>,
-        checkpoint: Option<Effect>,
-    },
+    /// Idle: the shown items in their configured order.
+    Idle(Vec<Part>),
     /// The finish time (an `Effect::Finish`).
     Finish(Effect),
     /// A server broadcast; the timer stays at its end (C++ shows both).
     Broadcast { text: String, timer: Option<Timer> },
 }
 
-/// The view by priority: finish > broadcast > the timer; `None`: nothing to show.
-pub fn view(
-    finish: Option<Effect>,
-    broadcast: Option<String>,
-    status: Option<(&'static str, String)>,
-    timer: Option<Timer>,
-    checkpoint: Option<Effect>,
-) -> Option<View> {
-    if let Some(f) = finish {
-        return Some(View::Finish(f));
-    }
-    if let Some(text) = broadcast {
-        return Some(View::Broadcast { text, timer });
-    }
-    (status.is_some() || timer.is_some()).then_some(View::Timer {
-        status,
-        timer,
-        checkpoint,
-    })
+/// An item of the idle row.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Part {
+    /// "Game paused" or the spectator text, with its icon.
+    Status(&'static str, String),
+    Timer(Timer),
+    /// The checkpoint difference (an `Effect::Checkpoint`).
+    Checkpoint(Effect),
 }
 
-/// The island's items (`hud_set island <key> 0|1`), first values from C++.
-const ITEMS: [(&str, &str, bool); 4] = [
-    ("timer", "Race timer", true),
-    ("checkpoint", "Checkpoint difference", true),
-    ("broadcasts", "Broadcasts", true),
-    ("spectator", "Spectator text", true),
+/// The first active event (they come in priority order), else the idle row if it has
+/// anything; `None`: nothing to show.
+pub fn view(events: Vec<View>, idle: Vec<Part>) -> Option<View> {
+    let idle = (!idle.is_empty()).then_some(View::Idle(idle));
+    events.into_iter().next().or(idle)
+}
+
+/// The island's items (`hud_set island <key> 0|1`, `hud_set island order "<key>,..."`):
+/// the idle row's parts in their order, and the events, whose order is their priority.
+/// First values from C++ where it has a switch (`HudConfig::import_cpp`); "media" and
+/// "track" come with the media player (7.10).
+pub const ITEMS: [hud::Item; 7] = [
+    ("status", true, "Pause and spectator status"),
+    ("timer", true, "Race timer"),
+    ("checkpoint", true, "Checkpoint difference"),
+    ("media", true, "Now playing"),
+    ("finish", true, "Finish and record"),
+    ("broadcasts", true, "Broadcasts"),
+    ("track", true, "Track change"),
 ];
 
 /// The island widget: the race state, the broadcast and the springs.
@@ -368,38 +365,40 @@ fn lay_out(ui: &Ui, view: &View, weak: Color32) -> Laid {
         galley(job(&[(&s, size::TITLE, Weight::SemiBold, c)], inf))
     };
     match view {
-        View::Timer {
-            status,
-            timer,
-            checkpoint,
-        } => {
-            // status text, then the timer and its checkpoint difference; digits are
-            // tabular (style.rs), so the width only changes with the timer's class
-            let mut spans = Vec::new();
-            let (t, cp);
-            if let Some((_, text)) = status {
-                spans.push((text.as_str(), size::BODY, Weight::Medium, weak));
-            }
-            if let Some(timer) = timer {
-                let (s, c) = timer_text(timer);
-                t = if status.is_some() {
-                    format!("   {s}")
-                } else {
-                    s
+        View::Idle(parts) => {
+            // one row in the configured order, 3 spaces apart; the status icon is a span
+            // in the icon font; digits are tabular, so the timer's width only changes
+            // with its class (like C++'s)
+            let mut j = LayoutJob::default();
+            for (n, part) in parts.iter().enumerate() {
+                let mut add = |t: &str, f: egui::FontId, c: Color32| {
+                    j.append(t, 0.0, TextFormat::simple(f, c));
                 };
-                spans.push((t.as_str(), size::TITLE, Weight::SemiBold, c));
+                if n > 0 {
+                    add("   ", font(size::BODY, Weight::Regular), weak);
+                }
+                match part {
+                    Part::Status(glyph, text) => {
+                        add(glyph, icon_font(size::ICON), weak);
+                        add("  ", font(size::BODY, Weight::Regular), weak);
+                        add(text, font(size::BODY, Weight::Medium), weak);
+                    }
+                    Part::Timer(t) => {
+                        let (s, c) = timer_text(t);
+                        add(&s, font(size::TITLE, Weight::SemiBold), c);
+                    }
+                    Part::Checkpoint(Effect::Checkpoint { text, sign }) => {
+                        let c = match sign {
+                            1 => color::DANGER,
+                            -1 => color::SUCCESS,
+                            _ => color::TEXT,
+                        };
+                        add(text, font(size::BODY, Weight::Medium), c);
+                    }
+                    Part::Checkpoint(_) => {}
+                }
             }
-            if let Some(Effect::Checkpoint { text, sign }) = checkpoint {
-                let c = match sign {
-                    1 => color::DANGER,
-                    -1 => color::SUCCESS,
-                    _ => color::TEXT,
-                };
-                cp = format!("   {text}");
-                spans.push((cp.as_str(), size::BODY, Weight::Medium, c));
-            }
-            let lead = status.as_ref().and_then(|(g, _)| icon(g, size::ICON, weak));
-            laid(lead, vec![galley(job(&spans, inf))], None)
+            laid(None, vec![galley(j)], None)
         }
         View::Finish(Effect::Finish { time, diff, record }) => {
             let (glyph, title) = match record {
@@ -459,7 +458,7 @@ fn measure(l: &Laid) -> (egui::Vec2, bool) {
 /// broadcast with its timer ticking.
 fn in_place(a: &Option<View>, b: &Option<View>) -> bool {
     match (a, b) {
-        (Some(View::Timer { .. }), Some(View::Timer { .. })) => true,
+        (Some(View::Idle(_)), Some(View::Idle(_))) => true,
         (Some(View::Broadcast { text: x, .. }), Some(View::Broadcast { text: y, .. })) => x == y,
         _ => false,
     }
@@ -479,7 +478,7 @@ impl Anim {
         let hidden = self.opacity.value < 0.02;
         if let Some(v) = &view {
             let (s, pill) = measure(&lay_out(ui, v, weak));
-            let s = if matches!(v, View::Timer { .. }) {
+            let s = if matches!(v, View::Idle(_)) {
                 self.idle_size = s;
                 s
             } else {
@@ -589,20 +588,13 @@ impl Widget for Island {
             self.race.on_message(msg, local, tick);
             self.broadcast.on_message(msg, tick);
         }
-        let on = |key: &str| {
-            let d = ITEMS.iter().find(|i| i.0 == key).is_none_or(|i| i.2);
-            config.on("island", key, d)
-        };
+        let on = |key: &str| hud::item_on(config, "island", &ITEMS, key);
         let items = client.snapshot();
         let info = (items.iter())
             .find(|it| it.type_id == g::NETOBJTYPE_GAMEINFO)
             .map(|it| g::ObjGameInfo::from_ints(&it.data));
         let now = ui.input(|i| i.time);
-        let timer = info
-            .as_ref()
-            .filter(|_| on("timer"))
-            .map(|i| timer(i, tick, now));
-        let spectator = spectating(items).filter(|_| on("spectator"));
+        let spectator = spectating(items);
         // C++ renders the race effects only for a local character that is not spectating
         let race = if data.tee.is_some() && spectator.is_none() {
             self.race.effect(tick, on("checkpoint"))
@@ -614,27 +606,46 @@ impl Widget for Island {
             cp => (None, cp),
         };
         let status = if info.as_ref().is_some_and(paused) {
-            Some((icons::PAUSE, "Game paused".to_string()))
+            Some(Part::Status(icons::PAUSE, "Game paused".into()))
         } else {
-            spectator.map(|s| (icons::EYE, s))
+            spectator.map(|s| Part::Status(icons::EYE, s))
         };
-        let broadcast = (self.broadcast.shown(tick))
-            .filter(|_| on("broadcasts"))
-            .map(str::to_string);
-        let mut v = view(finish, broadcast, status, timer, checkpoint);
-        if v.is_none() && data.editing {
-            let timer = Timer::Clock {
+        let timer = info.as_ref().map(|i| timer(i, tick, now));
+        let (mut idle, mut events) = (Vec::new(), Vec::new());
+        for key in hud::item_order(config, "island", &ITEMS) {
+            if !on(key) {
+                continue;
+            }
+            let part = match key {
+                "status" => status.clone(),
+                "timer" => timer.clone().map(Part::Timer),
+                "checkpoint" => checkpoint.clone().map(Part::Checkpoint),
+                _ => None,
+            };
+            idle.extend(part);
+            let event = match key {
+                "finish" => finish.clone().map(View::Finish),
+                "broadcasts" => self.broadcast.shown(tick).map(|text| View::Broadcast {
+                    text: text.into(),
+                    // the timer stays at its end when it is on
+                    timer: timer.clone().filter(|_| on("timer")),
+                }),
+                _ => None,
+            };
+            events.extend(event);
+        }
+        if idle.is_empty() && data.editing {
+            idle.push(Part::Timer(Timer::Clock {
                 text: "00:00".into(),
                 warn: false,
                 blink: false,
-            };
-            v = view(None, None, None, Some(timer), None);
+            }));
         }
-        self.anim.show(ui, data.glass, v, now);
+        self.anim.show(ui, data.glass, view(events, idle), now);
     }
 
     fn settings(&mut self, ui: &mut Ui, config: &mut HudConfig) {
-        item_toggles(ui, config, "island", &ITEMS);
+        hud::item_list(ui, config, "island", &ITEMS);
     }
 }
 
@@ -805,40 +816,36 @@ mod tests {
 
     #[test]
     fn view_priority() {
-        let t = || Some(timer(&info(0, 0, 0, 0), 0, 0.0));
-        let finish = Effect::Finish {
+        let t = || Part::Timer(timer(&info(0, 0, 0, 0), 0, 0.0));
+        let finish = View::Finish(Effect::Finish {
             time: "00:01.00".into(),
             diff: None,
             record: Record::None,
-        };
-        let cp = || {
-            Some(Effect::Checkpoint {
-                text: "+00.10".into(),
-                sign: 1,
-            })
-        };
-        let status = || Some((icons::PAUSE, "Game paused".to_string()));
-        let b = || Some("b".to_string());
-        let v = view(Some(finish.clone()), b(), status(), t(), cp());
-        assert_eq!(v, Some(View::Finish(finish)));
-        let v = view(None, b(), status(), t(), cp());
-        let broadcast = View::Broadcast {
+        });
+        let b = View::Broadcast {
             text: "b".into(),
-            timer: t(),
+            timer: None,
         };
-        assert_eq!(v, Some(broadcast));
-        let v = view(None, None, status(), t(), cp());
-        let idle = View::Timer {
-            status: status(),
-            timer: t(),
-            checkpoint: cp(),
-        };
-        assert_eq!(v, Some(idle));
-        assert!(view(None, None, status(), None, None).is_some());
-        assert_eq!(view(None, None, None, None, cp()), None);
+        // events come in priority order; the first wins over the idle row
+        let v = view(vec![b.clone(), finish.clone()], vec![t()]);
+        assert_eq!(v, Some(b));
+        assert_eq!(view(vec![], vec![t()]), Some(View::Idle(vec![t()])));
+        assert_eq!(view(vec![], vec![]), None);
         // pause: C++ RenderPauseNotification, not when the game is over
         assert!(paused(&info(g::GAMESTATEFLAG_PAUSED, 0, 0, 0)));
         let over = g::GAMESTATEFLAG_PAUSED | g::GAMESTATEFLAG_GAMEOVER;
         assert!(!paused(&info(over, 0, 0, 0)));
+    }
+
+    #[test]
+    fn items_keep_their_order() {
+        let mut c = HudConfig::default();
+        let order = |c: &HudConfig| hud::item_order(c, "island", &ITEMS);
+        assert_eq!(order(&c)[..3], ["status", "timer", "checkpoint"]);
+        c.execute("hud_set", r#"island order "broadcasts,timer""#);
+        assert_eq!(order(&c)[..3], ["broadcasts", "timer", "status"]);
+        c.execute("hud_set", "island timer 0");
+        assert!(!hud::item_on(&c, "island", &ITEMS, "timer"));
+        assert!(hud::item_on(&c, "island", &ITEMS, "finish"));
     }
 }

@@ -198,7 +198,7 @@ impl HudConfig {
             ("island", "timer", "cl_showhud_timer"),
             ("island", "checkpoint", "cl_showhud_time_cp_diff"),
             ("island", "broadcasts", "cl_show_broadcasts"),
-            ("island", "spectator", "cl_showhud_spectator"),
+            ("island", "status", "cl_showhud_spectator"),
         ] {
             if self.value(id, key).is_none() {
                 self.set(id, key, cpp(var) as i32);
@@ -288,6 +288,66 @@ pub fn item_toggles(
                 ui.end_row();
             }
         });
+}
+
+/// An orderable item: key, on by default, name in the editor.
+pub type Item = (&'static str, bool, &'static str);
+
+/// The item keys in the configured order (`hud_set id order "<key>,..."`): known keys
+/// from the saved order, then the missing ones in default order.
+pub fn item_order(config: &HudConfig, id: &str, items: &[Item]) -> Vec<&'static str> {
+    let saved = config.value(id, "order").unwrap_or("");
+    let saved = (saved.split(',')).filter_map(|k| items.iter().find(|i| i.0 == k.trim()));
+    let mut keys = Vec::new();
+    for (k, ..) in saved.chain(items) {
+        if !keys.contains(k) {
+            keys.push(*k);
+        }
+    }
+    keys
+}
+
+/// Whether item `key` is on (`hud_set id key 0|1`).
+pub fn item_on(config: &HudConfig, id: &str, items: &[Item], key: &str) -> bool {
+    let default = items.iter().any(|&(k, on, _)| k == key && on);
+    config.on(id, key, default)
+}
+
+/// The items in their order, each with an on/off toggle and up/down buttons.
+pub fn item_list(ui: &mut egui::Ui, config: &mut HudConfig, id: &str, items: &[Item]) {
+    use crate::{icons, style::space, widgets as w};
+    let mut order = item_order(config, id, items);
+    let mut swap = None;
+    egui::Grid::new(("hud_list", id))
+        .num_columns(3)
+        .show(ui, |ui| {
+            for (i, key) in order.iter().enumerate() {
+                let mut on = item_on(config, id, items, key);
+                if w::toggle(ui, &mut on).changed() {
+                    config.set(id, key, on as i32);
+                }
+                ui.label(items.iter().find(|it| it.0 == *key).map_or(*key, |it| it.2));
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = space::XS;
+                    let up = ui
+                        .add_enabled_ui(i > 0, |ui| w::icon_button(ui, icons::CARET_UP, "Move up"));
+                    if up.inner.clicked() {
+                        swap = Some(i - 1);
+                    }
+                    let down = ui.add_enabled_ui(i + 1 < order.len(), |ui| {
+                        w::icon_button(ui, icons::CARET_DOWN, "Move down")
+                    });
+                    if down.inner.clicked() {
+                        swap = Some(i);
+                    }
+                });
+                ui.end_row();
+            }
+        });
+    if let Some(i) = swap {
+        order.swap(i, i + 1);
+        config.set(id, "order", order.join(","));
+    }
 }
 
 /// The egui area a widget is drawn in.

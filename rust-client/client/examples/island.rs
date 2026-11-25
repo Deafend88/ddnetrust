@@ -8,7 +8,7 @@ use ddnet_rs::assets;
 use ddnet_rs::gfx::batch::Batch;
 use ddnet_rs::gfx::{Gfx, Size};
 use ddnet_rs::icons;
-use ddnet_rs::island::{Anim, Effect, Record, Timer, View};
+use ddnet_rs::island::{Anim, Effect, Part, Record, Timer, View};
 use ddnet_rs::render::map::{MapRender, View as MapView, hsl_packed_to_rgb};
 use ddnet_rs::storage::Storage;
 use ddnet_rs::style::Glass;
@@ -27,12 +27,13 @@ fn clock(t: f64) -> Timer {
 
 /// The scripted sequence by time.
 fn script(t: f64) -> Option<View> {
-    let idle = |checkpoint, status| {
-        Some(View::Timer {
-            status,
-            timer: Some(clock(t)),
-            checkpoint,
-        })
+    let idle = |checkpoint: Option<Effect>, status: Option<(&'static str, String)>| {
+        let status = status.map(|(g, t)| Part::Status(g, t));
+        let parts = (status.into_iter())
+            .chain([Part::Timer(clock(t))])
+            .chain(checkpoint.map(Part::Checkpoint))
+            .collect();
+        Some(View::Idle(parts))
     };
     let cp = Effect::Checkpoint {
         text: "-01.20".into(),
