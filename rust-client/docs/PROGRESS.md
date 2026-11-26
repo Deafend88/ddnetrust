@@ -1179,7 +1179,13 @@ are final unless the user changes them:
   secondary text on hover).
 
 #### Exact next actions (next session starts here)
-State (2026-11-26): M8 (8.1-8.8) done and pushed; stopped for the user's review of
+State (2026-11-26, later): M8 approved by the user (antiping tested live; C++ smoothing
+kept as is; no C++ antiping capture wanted). `scripts/gen_cpp_copies.py` committed. M9
+(feature parity) planned in PLAN §13 and the roadmap in §11 updated; stopped for the
+user's review of §13 (questions in §13.12). Next: record the answers in a §13.13, then
+start 13.1 (chat).
+
+Previous state: M8 (8.1-8.8) done and pushed; stopped for the user's review of
 8.5-8.8. Review material: `docs/review/8.7/` (gun/grenade/laser, DDNet-rs predicted vs
 the C++ spectator view) and `docs/review/8.8/settings_antiping.png`. Open points for
 the user: the C++ smoothing unit quirk (DECISIONS 8.6: smoothing has no visible effect,

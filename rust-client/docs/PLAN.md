@@ -693,7 +693,19 @@ Verify: all gates; the M6 screenshot comparisons still pass with the HUD disable
 
 ---
 
-## 11. Roadmap after M7 (recorded 2026-11-24, not planned in detail yet)
+## 11. Roadmap after M7 (recorded 2026-11-24, updated 2026-11-26)
+
+Current order (2026-11-26):
+- **M8 antiping:** done and approved (§12).
+- **M9 feature parity with stock DDNet, in our style:** planned in §13.
+- **M10 effects and particles** (C++ behaviour; incl. the predicted events of
+  `cl_predict_events` left out in M8).
+- **M11 menu redesign + server browser + public servers** (SPEC §4-5; master servers,
+  server info, HTTP map download, the in-game Browser tab, vanilla/old servers below).
+- **M12 Lua scripting for visuals.**
+- **M13 media player redesign** (last; it was not queued in PROGRESS.md before).
+
+The notes below are the original 2026-11-24 entries.
 
 - **Antiping: HIGH PRIORITY, required before playing on public servers.** Port the C++
   antiping exactly: `cl_antiping` and all its sub-settings (players, weapons, grenade,
@@ -1016,3 +1028,284 @@ the M5/M6 prediction tests still pass with `cl_antiping 0` (default path unchang
 3. **Verbatim copies + textual check script:** approved.
 4. **Settings layout:** approved (master toggle -> players/weapons/grenades -> detail
    view), in the design-system style.
+
+---
+
+## 13. M9 plan: feature parity with stock DDNet, in our style (draft for review, 2026-11-26)
+
+Goal: every client feature a stock DDNet player uses, behaving like C++ (same
+messages, timings, rules, files) and drawn in the DDNet-rs design system (§10.2,
+CLAUDE.md UI rules). Parts in the order you set; each ends with the gates, a commit and
+a short report. Localhost only, as before.
+
+How "behaves like C++" is checked, as in M8:
+- **Linked C++** in `rs_parity` where the code is in `game/` or `engine/shared` (demo
+  recorder/player, ghost files, localization, console).
+- **Word-for-word copies** (`scripts/gen_cpp_copies.py`, checked by
+  `cpp_copies_match_source`) for `CGameClient`/component members that cannot be linked.
+- **Message bytes** against the generated C++ packers (already golden-tested), and the
+  local server's log/state in live tests.
+- **UI**: the frontend-design skill, the CLAUDE.md UI rules, a gallery render per part for
+  your review. No pixel thresholds for our own-style UI (it is not the stock look).
+
+### 13.1 Chat (`components/chat.cpp`)
+
+C++: `Sv_Chat` → `AddLine` (chat.cpp:680): filters (`cl_show_chat_system`, friends only,
+team members only, foes), sanitising, repeat folding (same client/team/text → `[n]`
+counter), highlight on the local name (`LineShouldHighlight`, 614), team (`Team == 1`)
+and whisper (`Team >= 2`), 64-line ring, sounds rate-limited to one per 0.3 s per kind
+(server/highlight/client, 891-936). Lines fade 14-16 s after arrival unless the chat is
+open (1297-1306). Input: `+chat`/`+chat_team` modes, history, Tab completion of player
+names and of server commands from `Sv_CommandInfo`/`Sv_CommandInfoRemove` (sorted),
+`SendChatQueued` (1388: at most one `Cl_Say` per second, up to 3 queued), Esc cancels,
+`cl_chat_reset`. Saves from `/save` lines into `ddnet-saves.txt` (`StoreSave`, 640).
+`cl_showchat 0/1/2`, `cl_chat_old`, `cl_chat_size/width`, `cl_message_*` colours.
+
+Rust: `client/src/chat.rs`: line ring + filter/repeat/highlight/queue logic (pure,
+`now` as input), input box with history and completion; the server command list in
+`net/client.rs` alongside the other messages. Look: a bottom-left rounded-rect glass panel
+when open, plain lines with a soft shadow when closed; names in medium weight; team,
+whisper and server lines marked by a small icon (neutral), highlight in the accent.
+`StoreSave` writes to our own user dir (§13.12 q6).
+
+Verify: copies of `AddLine` (filters, folding, highlight), `LineShouldHighlight`,
+`SendChatQueued` and the completion code in a new `rs_parity chat`: random message
+streams, names and keystrokes → line ring, sends and completions identical (100%).
+Live: DDNet-rs and the C++ client on the local server chat both ways (all/team/whisper,
+a highlight); `Sv_CommandInfo` completion lists `/pause`, `/team`, ...
+
+### 13.2 Scoreboard (`components/scoreboard.cpp`)
+
+C++: `IsActive` (1206): `+scoreboard` held, dead with `cl_scoreboard_on_death`, or game
+over; hidden while the statboard is open. Order from `CGameClient::OnNewSnapshot`
+(gameclient.cpp:2174-2225): stable sort by name, then by score with
+`GetScoreComparator` (2479: time score, DDNet finish times, millis), then grouped by
+DDRace team. Rows: score or finish time (`DDNetPlayer` finish times, `str_time`), name,
+clan (same-clan colour), country flag, ping (clamped 0-999, ping colour); DDRace team
+blocks with team colours; spectators list; title with map/score/time limit; red/blue
+for team games; recording notification.
+
+Rust: the sort and the finish-time state in `ddnet` (pure, beside the snapshot code);
+`client/src/scoreboard.rs` draws a centred rounded-rect panel: rank, tee head
+(`teehead.rs`), name, clan, time/score, ping; DDRace teams as grouped sections with a
+neutral team label (team colour only as a small swatch); spectators as a compact row;
+country flags from `countryflags/` (data dir) on hover only (secondary info).
+
+Verify: `rs_parity scoreboard` with copies of the sort block and `GetScoreComparator`
+over random player sets (scores, unset/real finish times, teams, spectators) → identical
+orders (100%); `IsActive` cases as copies. Live: 4 headless bots in teams on a race map,
+side by side with the C++ scoreboard (same rows, same order, same times) for your review.
+
+### 13.3 Sound (`engine/client/sound.cpp`, `components/sounds.cpp`, `mapsounds.cpp`)
+
+C++: SDL audio at `snd_rate` (48000); samples decoded once (WavPack for `audio/*.wv`,
+Opus via opusfile for map sounds), resampled with `RateConvert` (424); `Mix` (58) mixes
+up to 256 voices in integers with per-channel volume/pan, listener distance falloff and
+circle/rectangle shapes for map sources, clamped to 16 bit. Channels and volumes
+(sounds.cpp:51): GUI (`snd_chat_volume`), world 0.9×game, global (game), map sound
+(`snd_ambient_volume`), music. Sample of a set: random but never the last one
+(`GetSampleId`, 83). Sources: `Sv_SoundGlobal`, `NETEVENTTYPE_SOUNDWORLD` events
+(gameclient.cpp:1469), the predicted jump/hook sounds (2728), chat sounds (13.1), weapon
+switch/no-ammo, menu music. Map sounds (`CMapSounds`): sound layers, source positions
+with position envelopes, loop, time delay from round-start game time (OnRender 150),
+falloff and shapes, `gfx_high_detail` sources. Settings: `snd_enable`, `snd_volume`,
+`snd_game/chat/servermessage/highlight/gun/long_pain`, `snd_nonactive_mute`,
+`snd_enable_music`.
+
+"The selected asset sounds": stock DDNet has no `cl_asset_*` for sounds; it loads
+`audio/*.wv` through the storage search order, so files in the user dir's `audio/`
+replace the defaults. We do the same (§13.12 q2).
+
+Rust: `client/src/sound.rs`: decode + `RateConvert` + `Mix` ported, output through
+`cpal` (WASAPI on Windows) in a callback that pulls from the mixer like SDL's;
+`components/sounds.cpp` and `mapsounds.cpp` logic next to it; every `Play` call site of
+C++ mapped to ours (a table in the commit). New dependencies (§13.12 q1).
+
+Verify: `rs_parity sounds`: PCM of every `data/audio/*.wv` (real libwavpack) and of
+every map sound in the 7 maps (real opusfile) → identical samples (100%; for Opus a
+bit-exact decoder is required, otherwise I report the deviation before going on);
+copies of `Mix`, `AdvanceVoice`, `RateConvert` and the map-sound source logic driven by
+scripted voices, positions and envelopes → identical 16-bit buffers (100%). Live:
+a listening check by you (jump, hook, weapons, chat, a map with ambient sounds).
+
+### 13.4 Crosshair and asset packs (`hud.cpp:609`, `gameclient.cpp` `Load*Skin`, `menus_settings_assets.cpp`)
+
+C++: `RenderCursor` draws `SPRITE_WEAPON_*_CURSOR` of the active (predicted) weapon from
+the game skin at the target position; spectators see the spectated player's cursor
+(`cl_spec_cursor`, `CCursorInfo`, clamped to the screen, half alpha). Asset packs:
+`cl_asset_game/particles/emoticons/hud/extras` and `cl_assets_entities`, each a
+`assets/<kind>/<name>.png` file or `assets/<kind>/<name>/<kind>.png` directory, default
+fallback, per-sprite fallback for fully transparent cells (`assets.rs` already ports the
+load chain); entities packs per mod (`gs_apModEntitiesNames`: ddnet, race, fng, vanilla,
+...). Lists come from `ListDirectory` over all storage paths.
+
+Rust: the cursor in `render/` (world space, like C++); `assets.rs` gains listing and
+switching at runtime (textures reloaded); the five values and `cl_assets_entities` read
+from `settings_ddnet.cfg` once, like name/skin. Entities packs only show with the
+entities overlay, so this part also ports `cl_overlay_entities` / the game-layer
+entities rendering (render_map's entities path with the mod's entities image) —
+otherwise the entities pack would do nothing. Asset picker on the settings page
+(thumbnails, like C++'s grid).
+
+Verify: `rs_parity assets` over every stock pack in `data/assets` and the packs in your
+`%APPDATA%\DDNet\assets` (read only): chosen file, fallbacks and per-sprite fallback
+masks identical to the real `CGameClient` loader code (copies, 100%); the cursor
+position/alpha maths as copies (100%). Screenshots against the C++ client with the same
+`cl_asset_*` values: tees, weapons, cursor, HUD and entities overlay (99.5% within
+8/255, as §9.7). Your folder also has a `cursor` pack: that is not a stock DDNet asset
+kind and is ignored.
+
+### 13.5 In-game Esc menu (`menus_ingame.cpp`, concept image)
+
+C++: Game page (45): Disconnect (confirm when recording/dummy), dummy connect/disconnect,
+record/stop demo, spectate / join red / blue / game, kill, pause (`say /pause`), auto
+camera; Players (492: mute/ignore, friends); Server info (622) + MOTD; Call vote (946:
+settings, kick, spec, reason, force with rcon); in-game Browser (1150); Ghost (1355).
+
+Ours, per the concept (`C:\ddnet-hud-refs\screenshots\002e9903-...png`; there is no
+`esc-menu-concept.png`): a compact rounded-rect glass bar across the top over the
+running game (game input paused like the 6.8 menu). Row 1: segmented control Game,
+Players, Info, Browser, Ghost, Vote; icon buttons on the right (demos, editor,
+settings, quit). Row 2 (Game tab): pills with Material Rounded icons — Spectate,
+Respawn (`Cl_Kill`), Pause, Record demo, Dummy control — a divider, Disconnect in muted
+red. Below the bar, centred, a small "Esc to close" pill with a key cap. Other tabs open a
+rounded panel under the bar. Each pill shows the C++ label state (Pause ↔ Join game,
+Record ↔ Stop record, Spectate ↔ Join game) and the C++ visibility rules.
+Tabs and pills whose feature lands in a later step stay hidden until then (Ghost → 13.8,
+Dummy → 13.6, Vote → 13.7); Browser stays hidden until M11 (§13.12 q4). The editor
+button is hidden: there is no editor.
+
+Rust: `client/src/esc_menu.rs` replacing the 6.8 Esc menu; Players and Info tabs here
+(mute/ignore/friend lists, server info, MOTD from `Sv_Motd`).
+
+Verify: gallery render of every tab and state for your review; the C++ visibility
+conditions as copies (`rs_parity` vectors over local-info/spectator/pause/team states,
+100%); live: each pill against the local server sends the C++ message (server log /
+state: spectator, kill, pause, chat `/pause`).
+
+### 13.6 Dummy (`client.cpp:816` `DummyConnect`, `SendInput` 350, gameclient dummy paths)
+
+C++: a second connection (`CONN_DUMMY`) with the same handshake and the dummy's own
+name/skin (`dummy_name`, ...); `cl_dummy` switches which tee the controls drive; inputs
+for both every tick (`cl_dummy_hammer`, `cl_dummy_copy_moves`, `cl_dummy_control`,
+`cl_dummy_resetonswitch`); `m_aLocalIds[2]`; prediction of the dummy
+(`PredictDummy()`, the "C++ dummy branch not ported" markers of M8); dummy-aware HUD
+and camera; `dummy_connect`/`dummy_disconnect`/`toggle_dummy` binds.
+
+Rust: `net/client.rs` holds two `Conn`s; the predictor fills the marked dummy branches;
+binds and settings.
+
+Verify: handshake and input packets of the dummy byte-identical to the main
+connection's path (golden-style, injected tokens); copies of the dummy part of
+`SendInput` (hammer/copy moves) → identical inputs (100%); `rs_parity antiping` gains a
+dummy in the world → 100% on all 7 maps. Live: both tees on the local server, swap,
+copy moves; `prediction_matches_server` for both.
+
+### 13.7 Votes, spectate, kill, pause, emotes
+
+C++: `CVoting` (voting.cpp:250): `Sv_VoteSet`/`Sv_VoteStatus`, option list
+add/remove/clear (in order), `Cl_Vote`, `Cl_CallVote` (option, kick, spec with reason,
+`CallvoteKick` 68), vote binds F3/F4, the vote HUD. `CSpectator`: `Cl_SetSpectatorMode`,
+next/prev/closest (36, 655), free view, the spectator selection wheel, the spectator
+camera, `cl_spec_cursor`. Kill: `SendKill` (`Cl_Kill`, kill bind). Pause: `say /pause`
+and the spectating-while-paused state. Emotes: `CEmoticon` wheel (+emote, angle →
+emoticon/eye emote, `Cl_Emoticon`, `/emote` eye emotes) and drawing the emoticons over
+tees (`cl_asset_emoticons`).
+
+Rust: `client/src/vote.rs` (vote state + an island-style vote notice with F3/F4 hints,
+the Vote tab), `spectate.rs` (logic + our style wheel), `emote.rs` (our style wheel);
+emoticon rendering over tees in `render/players.rs`.
+
+Verify: copies of `CVoting::OnMessage` and the spectator next/prev/closest choice, and
+of the wheel angle → selection maths → vectors (100%); message bytes for each `Cl_*`.
+Live: the local server with `add_vote` options: call/yes/no, kick-vote a bot; spectate
+next/free view; emote seen by the C++ client.
+
+### 13.8 Demos and ghost (`engine/shared/demo.cpp`, `engine/client/ghost.cpp`, `components/ghost.cpp`, `menus_demo.cpp`)
+
+C++: `CDemoRecorder` (header `TWDEMO`, version 6, map embedded with SHA256, snapshot
+deltas and messages in Huffman-compressed chunks, tick compression, markers,
+`cl_auto_demo_record/max`, race demos); `CDemoPlayer` (keyframes, seek, speed, pause,
+slice); the demo browser and player UI. Ghost: `CGhostRecorder`/`CGhostLoader` files
+(header, zlib-compressed `CGhostCharacter` chunks, map name/SHA check),
+`CGhost` (start/stop on race start/finish, `cl_race_ghost*`, best-only save, render with
+`cl_race_ghost_alpha`, mirror of the local tee's skin).
+
+Rust: `ddnet/src/demo.rs` (writer/reader; reuses snapshot delta + Huffman),
+`ddnet/src/ghost.rs`; the client plays demos through the same snapshot path as online
+(state `DemoPlayback`, which also turns on the M8 `STATE_DEMOPLAYBACK` checks); demo
+browser/player in our style (a bottom transport bar: play/pause, seek, speed, markers);
+Ghost tab in the Esc menu. Files go to our own user dir (§13.12 q6).
+
+Verify: `rs_parity demo` drives the real `CDemoRecorder` with a stream recorded from a
+live session → our file byte-identical (timestamps injected); the real `CDemoPlayer`
+reads our demo and ours reads C++ demos (recorded by `build-rs-client`) with identical
+per-tick snapshots/messages (100%), incl. seeks. Same for ghosts with the real
+`CGhostRecorder`/`CGhostLoader`. Live: the C++ client plays our demo and our ghost.
+
+### 13.9 Console (`components/console.cpp`, rcon in `client.cpp:293-350`)
+
+C++: local console (F1) and remote console (F2): backlog, history, search, completion of
+commands/settings (`PossibleSettings` 197) and of rcon commands from
+`Sv_RconCmdAdd/Rem`, rcon login (`RconAuth`, name+password), `Sv_RconLine`,
+`Sv_RconAuthStatus`, `Sv_RconCmdGroupStart/End`.
+
+Rust: `client/src/console_ui.rs` on top of `ddnet/src/console.rs` (already the C++ parser
+subset); rcon messages in `net/client.rs`. Look: a top sheet panel, monospace backlog,
+our tokens. Passwords are typed by you; never stored by us unless C++ stores them.
+
+Verify: completion/history/search as copies (100%); rcon packets byte-identical to C++
+packing; live: rcon login on the local server (scratch `sv_rcon_password`), command
+completion list equals the server's, `status` output shown.
+
+### 13.10 Full settings page (`menus_settings*.cpp`)
+
+C++ pages: Language, General, Player, Tee, Appearance, Controls, Graphics, Sound, DDNet,
+Assets. Ours: one settings page in our style with the same sections, holding every C++
+setting that DDNet-rs implements by then (the M7/M8 rows move in), C++ names, defaults
+and ranges; binds editor for all `CBinds` commands; tee/skin picker.
+
+Verify: a test parses `src/engine/shared/config_variables.h` and checks every C++-named
+variable we expose has the same default, range and save flag (100%); round trip through
+`settings.cfg`; UI review against the rules, gallery render for you.
+
+### 13.11 Localization (`game/localization.cpp`, `data/languages/`)
+
+C++: `index.txt` (file, name, country, alternative locales), `SelectDefaultLanguage`
+(124) from the OS locale, `Load` (183: `== translation` lines, `[context]` blocks),
+`Localize(str, context)` looked up by hash; `cl_languagefile`; plural forms are separate
+strings. Files loaded at runtime from the data dir.
+
+Rust: `client/src/localize.rs` with the same file parser and lookup; every UI string goes
+through `tr!("...")` with DDNet's English source text where DDNet has that string, so
+DDNet's files translate it unchanged; strings only DDNet-rs has (island, watermark,
+HUD editor, media) need our own file (§13.12 q5). Language picker in settings; Russian
+first, then every language DDNet ships.
+
+Verify: `rs_parity lang` links the real `CLocalizationDatabase`: every file in
+`data/languages` → every (string, context) lookup and the index/default-language choice
+for a list of locales identical (100%). A check that every `tr!` string we use either
+exists in DDNet's `russian.txt` or in our own file (no untranslated strings in Russian).
+
+### 13.12 Questions for review
+
+1. **Sound crates:** `cpal` for output; Opus: a pure-Rust decoder (`opus-decoder` + `ogg`,
+   decode-only, conformance-tested) or a libopus binding (C build); WavPack: no pure-Rust
+   decoder is established (the `wavpack` crate binds the C library and needs CMake), so I
+   would port a small WavPack decoder for the modes DDNet's files use (lossless, so 100%
+   against libwavpack is a clear bar). OK, or prefer the C bindings?
+2. **"Selected asset sounds":** stock DDNet has no sound asset setting; we use
+   `audio/*.wv` through the storage order (user dir first), like C++. OK?
+3. **Not in your list** but part of stock play: name plates, freeze bars, statboard,
+   spectator HUD, MOTD. MOTD goes into the Info tab (13.5). I propose name plates and
+   freeze bars with the scoreboard (13.2) and the statboard/spectator HUD in 13.7. OK?
+4. **Esc menu items before their feature exists:** hidden until their step lands; the
+   Browser tab hidden until M11 (it needs public server lists). OK?
+5. **DDNet-rs-only strings:** our own `rust-client/assets/languages/russian.txt` in
+   DDNet's format, written by me, loaded over DDNet's file. OK?
+6. **Files we write** (demos, ghosts, `ddnet-saves.txt`, screenshots): our own
+   `%APPDATA%\DDNet-rs\` (never `%APPDATA%\DDNet`); demos/ghosts in DDNet's dirs listed
+   read only in the browsers. OK?
+7. **Chat colours:** C++ colours team/server/whisper lines (`cl_message_*_color`). Our
+   rule is one accent: icons instead of colours, accent only for highlights. OK, or keep
+   the C++ colours as an option?
