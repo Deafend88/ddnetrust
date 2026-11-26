@@ -80,6 +80,12 @@ ICONS = [
 	("WHISPER", "material", "alternate_email"),  # a whisper
 	("FRIEND", "material", "favorite"),  # a friend
 	("CHAT", "material", "chat_bubble"),  # chat input
+	("DIR_LEFT", "material", "arrow_back"),  # a player presses left
+	("DIR_UP", "material", "arrow_upward"),  # a player jumps
+	("DIR_RIGHT", "material", "arrow_forward"),  # a player presses right
+	("HOOK_STRONG", "material", "arrow_circle_up"),  # their hook is stronger than ours
+	("HOOK_WEAK", "material", "arrow_circle_down"),  # their hook is weaker than ours
+	("SCOREBOARD", "material", "leaderboard"),  # scoreboard
 ]
 
 

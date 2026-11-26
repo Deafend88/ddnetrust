@@ -1213,9 +1213,29 @@ are final unless the user changes them:
   the server log), `/pa` shows the hint and Tab completes `/pause`, Up recalls the last
   line, a long line wraps. Captures: `docs/review/13.1/`.
 
+#### 13.2 (2026-11-27): scoreboard, name plates, freeze bars — done
+- `client/src/scoreboard.rs` (C++ `IsActive`, `GetTeamName`, the row and DDRace team walk
+  with the shared group-size state, score/time texts, map best time; our panel),
+  `nameplates.rs` (`RenderNamePlateGame` data, `OnRender` walk; text with a soft shadow,
+  C++ world sizes), `freezebars.rs` (`RenderFreezeBar`/`OnRender`; ice-blue pills).
+  `ddnet::clients` gained the map best time (`Sv_Record`, `MapBestTime`) and spectator
+  chars. `+scoreboard`, `PLAYERFLAG_SCOREBOARD`, chat narrows while it is open (C++).
+  20 C++ variables (`cl_nameplates*`, `cl_show_direction`, freeze bars, scoreboard on
+  death); 6 icons.
+- Verified: `rs_parity scoreboard` (new `src/tools/rs_parity_scoreboard.cpp`, 11 copies:
+  sorts, `GetScoreComparator`, `GetDDTeamColor`, `IsActive`/`GetTeamName`, the row walk,
+  name plates, freeze bars) on 300 random games; `client/tests/scoreboard.rs`: 100%;
+  12 of 12 mutations caught. Live (`scripts/scoreboard_check.ps1`): team 3 grouped in
+  the scoreboard, Bob's plate, Alice's freeze bar after rcon `freeze`. Captures:
+  `docs/review/13.2/`.
+- Not done: country flags on hover and the scoreboard cursor/popup
+  (`toggle_scoreboard_cursor`: friend/mute/spectate), left for 13.5/13.7; `--follow`
+  showed a grey world in the live check (not investigated).
+
 #### Exact next actions (next session starts here)
-State (2026-11-27): 13.1 chat done and pushed. Next: 13.2 scoreboard (with name plates
-and freeze bars, PLAN §13.13 answer 3), then stop for the user's review of 13.1-13.2.
+State (2026-11-27): 13.1 chat and 13.2 scoreboard/name plates/freeze bars done and
+pushed; stopped for the user's review of 13.1-13.2 (`docs/review/13.1`, `13.2`). Then:
+13.3 sound. Open: `/ponytail-review` was not run on the 13.2 diff (usage limit).
 
 Previous state: M8 (8.1-8.8) done and pushed; stopped for the user's review of
 8.5-8.8. Review material: `docs/review/8.7/` (gun/grenade/laser, DDNet-rs predicted vs

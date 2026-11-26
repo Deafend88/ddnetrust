@@ -918,12 +918,6 @@ mod view {
         color::TEXT.lerp_to_gamma(c, amount)
     }
 
-    /// C++ `ColorHSLA(h, s, l)` to RGB (as `GetDDTeamColor` builds it).
-    fn hsl(h: f32, s: f32, l: f32) -> Color32 {
-        let b = |f: f32| (f * 255.0).round() as u32;
-        rgb(hsl_packed_to_rgb((b(h) << 16) | (b(s) << 8) | b(l)))
-    }
-
     /// The colours of a line (C++ `OnPrepareLines`: name colour and text colour), tinted.
     fn colors(l: &Line, v: &View) -> (Color32, Color32) {
         let c = v.config;
@@ -941,9 +935,11 @@ mod view {
         } else if l.name_color == TEAM_SPECTATORS {
             rgb([0.75, 0.5, 0.75])
         } else if l.client_id >= 0 && c.cl_chat_teamcolors != 0 && (v.team)(l.client_id) != 0 {
-            // C++ GetDDTeamColor(team, 0.75): golden-angle hues
-            let team = (v.team)(l.client_id);
-            hsl(((team - 1) as f32 * 0.381_966).rem_euclid(1.0), 1.0, 0.75)
+            // C++ GetDDTeamColor(team, 0.75)
+            rgb(crate::nameplates::dd_team_color(
+                (v.team)(l.client_id),
+                0.75,
+            ))
         } else {
             color::TEXT
         };

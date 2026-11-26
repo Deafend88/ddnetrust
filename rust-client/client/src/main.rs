@@ -49,6 +49,7 @@ use ddnet_rs::style::{self, Glass};
 use ddnet_rs::teehead::TeeHeads;
 use ddnet_rs::ui::{Action, Menu, Ui};
 use ddnet_rs::watermark::Watermark;
+use ddnet_rs::{freezebars, nameplates, scoreboard};
 use winit::application::ApplicationHandler;
 use winit::event::{DeviceEvent, DeviceId, ElementState, KeyEvent, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
@@ -179,6 +180,157 @@ impl Session {
         }
     }
 
+    /// The first snapshot item of `type_id` (C++ `m_Snap.m_pGameInfoObj` and friends).
+    fn item(&self, type_id: i32) -> Option<&ddnet::protocol::snapshot::Item> {
+        self.client
+            .snapshot()
+            .iter()
+            .find(|it| it.type_id == type_id)
+    }
+
+    /// C++ `m_Snap.m_SpecInfo`: spectating, and the followed player (-1 free view).
+    fn spec_info(&self) -> (bool, i32) {
+        let spectating = self.predictor.as_ref().is_some_and(|p| p.spectating);
+        let id = (self.item(g::NETOBJTYPE_SPECTATORINFO)).map_or(-1, |it| {
+            g::ObjSpectatorInfo::from_ints(&it.data).spectator_id
+        });
+        (spectating, if spectating { id } else { -1 })
+    }
+
+    /// What C++ `CScoreboard::IsActive` reads (`held`: `+scoreboard`).
+    fn scoreboard_state(&self, held: bool, on_death: bool) -> scoreboard::ActiveState {
+        let local = self.clients.local_id;
+        scoreboard::ActiveState {
+            held,
+            statboard: false,
+            local_info: local >= 0,
+            spectating: self.spec_info().0,
+            local_character: (self.client.snapshot().iter())
+                .any(|it| it.type_id == g::NETOBJTYPE_CHARACTER && it.id == local),
+            on_death,
+            game_state_flags: (self.item(g::NETOBJTYPE_GAMEINFO))
+                .map(|it| g::ObjGameInfo::from_ints(&it.data).game_state_flags),
+        }
+    }
+
+    /// C++ `CControls::m_aTargetPos` (controls.cpp:424): where the mouse points in the
+    /// world.
+    fn target_pos(&self) -> ddnet::physics::vmath::Vec2 {
+        let mouse = self.controls.mouse_pos;
+        let spectating = self.spec_info().0;
+        if self.item(g::NETOBJTYPE_GAMEINFO).is_some() && !spectating {
+            let delta = self.camera.dyncam_target_offset - self.camera.dyncam_current_offset;
+            let (x, y) = self.center.unwrap_or((0.0, 0.0));
+            let zoom = self.camera.zoom;
+            vec2(x, y) + mouse - delta + vec2(delta.x / zoom, delta.y / zoom)
+        } else if let (true, Some(it)) = (spectating, self.item(g::NETOBJTYPE_SPECTATORINFO)) {
+            let s = g::ObjSpectatorInfo::from_ints(&it.data);
+            vec2(s.x as f32, s.y as f32) + mouse
+        } else {
+            mouse
+        }
+    }
+
+    /// The name plates and freeze bars of this frame (C++ `CNamePlates::OnRender`,
+    /// `CFreezeBars::OnRender`) for the world rect `screen` (top left, bottom right).
+    fn plates_and_bars(
+        &self,
+        rendered: &[Rendered],
+        config: &ddnet_rs::config::Config,
+        screen: (ddnet::physics::vmath::Vec2, ddnet::physics::vmath::Vec2),
+        now: i64,
+    ) -> (Vec<nameplates::Plate>, Vec<freezebars::Bar>) {
+        let Some(p) = &self.predictor else {
+            return Default::default();
+        };
+        let mut chars = vec![nameplates::CharView::default(); 128];
+        for r in rendered.iter().filter(|r| (0..128).contains(&r.id)) {
+            chars[r.id as usize] = nameplates::CharView {
+                active: true,
+                direction: r.cur.direction,
+                jumped: r.cur.jumped,
+                strong_weak_id: r.ext.map(|e| e.strong_weak_id),
+            };
+        }
+        let (team, other) = (|id| self.team(id), |id| self.is_other_team(id));
+        let c = config;
+        let input = self.client.input;
+        let ctx = nameplates::Ctx {
+            screen,
+            clients: &self.clients,
+            is_other_team: &other,
+            team: &team,
+            team_play: self.team_play(),
+            target_pos: self.target_pos(),
+            local_ids: [self.clients.local_id, -1],
+            dummy: 0,
+            inputs: [(input.direction, input.jump), (0, 0)],
+            chars: &chars,
+            spec: self.spec_info(),
+            config: nameplates::PlateConfig {
+                name_plates: c.cl_nameplates != 0,
+                own: c.cl_nameplates_own != 0,
+                friend_mark: c.cl_nameplates_friendmark != 0,
+                ids: c.cl_nameplates_ids != 0,
+                size: c.cl_nameplates_size,
+                ids_separate_line: c.cl_nameplates_ids_seperate_line != 0,
+                ids_size: c.cl_nameplates_ids_size,
+                clan: c.cl_nameplates_clan != 0,
+                clan_size: c.cl_nameplates_clan_size,
+                strong: c.cl_nameplates_strong,
+                strong_size: c.cl_nameplates_strong_size,
+                direction_size: c.cl_direction_size,
+                always: c.cl_nameplates_always != 0,
+                offset: c.cl_nameplates_offset,
+                show_others_alpha: c.cl_show_others_alpha,
+                teamcolors: c.cl_nameplates_teamcolors != 0,
+                show_direction: c.cl_show_direction,
+                debug: false,
+            },
+        };
+        let pos =
+            |id: i32| (rendered.iter().find(|r| r.id == id)).map_or(vec2(0.0, 0.0), |r| r.pos);
+        let plates = nameplates::plates(&ctx, &pos);
+        if c.cl_show_freeze_bars == 0 {
+            return (plates, Vec::new());
+        }
+        // C++ IsPlayerInfoAvailable: this and the previous snapshot have the player info
+        let prev = (self.client.prev_game_tick()).and_then(|t| self.client.snapshot_at(t));
+        let had_info = |id: i32| {
+            prev.is_some_and(|items| {
+                (items.iter()).any(|it| it.type_id == g::NETOBJTYPE_PLAYERINFO && it.id == id)
+            })
+        };
+        let timing = self.client.timing(now);
+        let prediction_tick = p.prediction_tick(&timing);
+        let mut tees: Vec<freezebars::Tee> = (rendered.iter())
+            .filter(|r| (0..128).contains(&r.id))
+            .map(|r| freezebars::Tee {
+                id: r.id,
+                core: &p.predicted[r.id as usize],
+                has_display_info: r.ext.is_some_and(|e| e.jumped_total != -1),
+                ext_freeze_end: r.ext.map_or(0, |e| e.freeze_end),
+                tick: if r.predicted_local {
+                    timing.pred_tick
+                } else if r.predicted {
+                    prediction_tick
+                } else {
+                    timing.game_tick
+                },
+                pos: r.pos,
+                other_team: self.is_other_team(r.id),
+                available: self.clients.infos[r.id as usize].is_some() && had_info(r.id),
+            })
+            .collect();
+        tees.sort_by_key(|t| t.id);
+        let cfg = freezebars::BarConfig {
+            alpha_inside_freeze: c.cl_freezebars_alpha_inside_freeze,
+            show_others_alpha: c.cl_show_others_alpha,
+        };
+        let bars = freezebars::bars(&tees, self.clients.local_id, screen, &cfg);
+        (plates, bars)
+    }
+
     /// C++ `IsTeamPlay()`: `GAMEFLAG_TEAMS` in the snapshot's game info.
     fn team_play(&self) -> bool {
         (self.client.snapshot().iter())
@@ -232,8 +384,10 @@ struct App {
     hud: Vec<Box<dyn Widget>>,
     /// C++ `CChat` (kept across connections like its sent history; reset on connect).
     chat: Chat,
-    /// Tee heads for the chat lines.
+    /// Tee heads for the chat lines and the scoreboard.
     chat_heads: TeeHeads,
+    /// C++ `CScoreboard::m_Active` (`+scoreboard` held).
+    scoreboard_held: bool,
     editor: Editor,
     /// The media thread (now playing, 7.10); `None` while `rs_media` is 0.
     media: Option<Media>,
@@ -419,8 +573,13 @@ impl App {
                 let (team, other) = (|id| s.team(id), |id| s.is_other_team(id));
                 let ctx = s.chat_ctx(config, &team, &other);
                 let now = net::now(self.start);
-                self.chat
-                    .on_key(k, shift, &ctx, config.cl_chat_reset != 0, now);
+                // C++ GameClient()->OnRelease(): the scoreboard lets go too
+                if self
+                    .chat
+                    .on_key(k, shift, &ctx, config.cl_chat_reset != 0, now)
+                {
+                    self.scoreboard_held = false;
+                }
             }
             return;
         }
@@ -459,6 +618,10 @@ impl App {
                 // C++: CChat::ConShowChat, the one chat command with a release
                 if command == "+show_chat" {
                     self.chat.show = stroke;
+                }
+                // C++: CScoreboard::ConKeyScoreboard
+                if command == "+scoreboard" {
+                    self.scoreboard_held = stroke;
                 }
                 if !stroke {
                     continue;
@@ -541,7 +704,9 @@ impl App {
         } else {
             PlayerState::Playing
         };
-        s.client.input = s.controls.snap_input(state, false, bug_input);
+        let on_death = config.cl_scoreboard_on_death != 0;
+        let scoreboard = scoreboard::is_active(&s.scoreboard_state(self.scoreboard_held, on_death));
+        s.client.input = s.controls.snap_input(state, scoreboard, bug_input);
         if let (Some(weapon), Some(shown)) = (self.options.fire, s.map_shown_at) {
             let elapsed = shown.elapsed().as_secs_f64();
             if elapsed > 2.0 && !std::mem::replace(&mut s.weapons_asked, true) {
@@ -645,12 +810,22 @@ impl App {
         let mut rendered = Vec::new();
         let mut events = Vec::new();
         let mut map_shown_at = None;
+        let mut world_view = None;
+        let (mut plates, mut bars) = (Vec::new(), Vec::new());
         if let Some(s) = &mut self.session {
             // C++: CGameClient::OnNewSnapshot/OnPredict, then UpdateRenderedCharacters
             let now = net::now(self.start);
             // this frame's game messages: C++ handles them as they arrive, before the
             // snapshot switch (CClient::Update pumps the network first)
             events = std::mem::take(&mut s.client.messages);
+            for msg in &events {
+                // C++: Sv_Record / Sv_RecordLegacy carry the map's best time
+                match msg {
+                    g::GameMsg::SvRecord(m) => s.clients.on_record(m.server_time_best),
+                    g::GameMsg::SvRecordLegacy(m) => s.clients.on_record(m.server_time_best),
+                    _ => {}
+                }
+            }
             {
                 let config = &self.settings.config;
                 let (team, other) = (|id| s.team(id), |id| s.is_other_team(id));
@@ -742,6 +917,22 @@ impl App {
                     (s.predictor.as_ref()).is_some_and(|p| p.antiping_gunfire()),
                 );
                 map.render_foreground(&mut batch, &view);
+                // the game layer's world rect (C++ Graphics()->GetScreen() there)
+                let aspect = size.width as f32 / size.height as f32;
+                let rect = ddnet_rs::render::map_screen_to_world(
+                    center.0,
+                    center.1,
+                    100.0,
+                    100.0,
+                    100.0,
+                    0.0,
+                    0.0,
+                    aspect,
+                    s.camera.zoom,
+                );
+                let screen = (vec2(rect[0], rect[1]), vec2(rect[2], rect[3]));
+                (plates, bars) = s.plates_and_bars(&rendered, &self.settings.config, screen, now);
+                world_view = Some(rect);
             }
         }
         let surface_frame = match r.surface.get_current_texture() {
@@ -803,7 +994,18 @@ impl App {
             let (menu, settings, widgets) = (&mut self.menu, &mut self.settings, &mut self.hud);
             let (editor, chat, heads) = (&mut self.editor, &mut self.chat, &mut self.chat_heads);
             let now = net::now(self.start);
+            let held = self.scoreboard_held;
+            let aspect = size.width as f32 / size.height as f32;
             r.ui.frame(&r.window, &r.gfx, &target, size, |ctx| {
+                // world things under the HUD: freeze bars, then name plates
+                if let (Some(world), Some(_)) = (world_view, chat_session) {
+                    let view = nameplates::WorldView {
+                        world,
+                        screen: ctx.content_rect(),
+                    };
+                    freezebars::show(ctx, &bars, &view);
+                    nameplates::show(ctx, &plates, &view);
+                }
                 match &data {
                     Some(data) if editor.open => {
                         editor_done = editor.show(ctx, widgets, data, &mut settings.hud);
@@ -815,13 +1017,40 @@ impl App {
                     && !editor.open
                 {
                     let team = |id| s.team(id);
+                    let on_death = settings.config.cl_scoreboard_on_death != 0;
+                    let board = scoreboard::is_active(&s.scoreboard_state(held, on_death));
+                    let glass = Glass::from_setting(settings.config.rs_glass);
+                    if board {
+                        let (spectating, followed) = s.spec_info();
+                        let local = s.clients.local_id;
+                        let mut view = scoreboard::View {
+                            glass,
+                            clients: &s.clients,
+                            ddteam: &team,
+                            max_team_size: s.predictor.as_ref().map_or(128, |p| p.max_team_size),
+                            time_score: s.predictor.as_ref().is_some_and(|p| p.time_score),
+                            game_info: (s.item(g::NETOBJTYPE_GAMEINFO))
+                                .map(|it| g::ObjGameInfo::from_ints(&it.data)),
+                            game_data: (s.item(g::NETOBJTYPE_GAMEDATA))
+                                .map(|it| g::ObjGameData::from_ints(&it.data)),
+                            map: s.client.map().map_or("", |m| m.name.as_str()),
+                            highlight: if spectating && followed >= 0 {
+                                followed
+                            } else {
+                                local
+                            },
+                            heads,
+                        };
+                        scoreboard::show(ctx, &mut view);
+                    }
                     let view = chat::View {
-                        glass: Glass::from_setting(settings.config.rs_glass),
+                        glass,
                         now,
                         config: &settings.config,
                         clients: &s.clients,
                         team: &team,
-                        scoreboard_open: false,
+                        // C++: only on a wide screen (aspect > 1.7)
+                        scoreboard_open: board && aspect > 1.7,
                     };
                     chat::show(ctx, chat, &view, heads);
                 }
@@ -1210,6 +1439,7 @@ fn main() {
         hud,
         chat: Chat::default(),
         chat_heads: TeeHeads::new(&storage),
+        scoreboard_held: false,
         editor: Editor::default(),
         media: None,
         player_open: false,

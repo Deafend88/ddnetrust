@@ -225,6 +225,8 @@ pub struct Predictor {
     /// C++ `m_GameInfo.m_TimeScore` and `m_AllowXSkins` (for the client list).
     pub time_score: bool,
     pub allow_x_skins: bool,
+    /// C++ `CGameClient::MaxTeamSize()`: the game info's, else `sv_max_team_size` (128).
+    pub max_team_size: i32,
     /// The latest prediction of the local character for each tick.
     history: BTreeMap<i32, ObjCharacterCore>,
     pub stats: Stats,
@@ -311,6 +313,7 @@ impl Predictor {
             hud_ddrace: false,
             time_score: false,
             allow_x_skins: false,
+            max_team_size: 128,
             allow_zoom: false,
             history: BTreeMap::new(),
             stats: Stats::default(),
@@ -675,6 +678,11 @@ impl Predictor {
             race
         };
         self.allow_x_skins = version >= 5 && flags2 & g::GAMEINFOFLAG2_ALLOW_X_SKINS != 0;
+        self.max_team_size = if version >= 12 && ex.max_team_size != 0 {
+            ex.max_team_size
+        } else {
+            128
+        };
         let city = version >= 5 && flags2 & g::GAMEINFOFLAG2_GAMETYPE_CITY != 0;
         self.allow_zoom = if version >= 2 {
             flags & g::GAMEINFOFLAG_ALLOW_ZOOM != 0

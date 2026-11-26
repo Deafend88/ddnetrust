@@ -142,6 +142,10 @@ pub struct Clients {
     /// C++ `m_Snap.m_apInfoByName`, `m_apInfoByScore`: client ids, players first.
     pub by_name: Vec<i32>,
     pub by_score: Vec<i32>,
+    /// C++ `m_MapBestTimeSeconds`, `m_MapBestTimeMillis` (`Sv_Record`, `MapBestTime`).
+    pub map_best: (i32, i32),
+    /// C++ `m_SpecCharPresent` and `m_SpecChar` per client (this snapshot).
+    pub spec_chars: Vec<Option<(f32, f32)>>,
 }
 
 impl Default for Clients {
@@ -155,6 +159,8 @@ impl Default for Clients {
             received_finish_times_millis: false,
             by_name: Vec::new(),
             by_score: Vec::new(),
+            map_best: (FINISH_UNSET, 0),
+            spec_chars: vec![None; MAX_CLIENTS],
         }
     }
 }
@@ -171,6 +177,7 @@ impl Clients {
     /// `time_score`: C++ `m_GameInfo.m_TimeScore`.
     pub fn on_new_snapshot(&mut self, items: &[Item], ctx: &SnapContext, time_score: bool) {
         self.infos.fill(None);
+        self.spec_chars.fill(None);
         self.local_id = -1;
         let (mut unset_finish, mut millis) = (false, false);
         for it in items {
@@ -231,6 +238,14 @@ impl Clients {
                         }
                     }
                 }
+                g::NETOBJTYPE_SPECCHAR if id < MAX_CLIENTS => {
+                    let s = g::ObjSpecChar::from_ints(&it.data);
+                    self.spec_chars[id] = Some((s.x as f32, s.y as f32));
+                }
+                g::NETOBJTYPE_MAPBESTTIME => {
+                    let b = g::ObjMapBestTime::from_ints(&it.data);
+                    self.map_best = (b.map_best_time_seconds, b.map_best_time_millis);
+                }
                 _ => {}
             }
         }
@@ -255,9 +270,16 @@ impl Clients {
         self.sort(time_score);
     }
 
+    /// C++: `Sv_Record` / `Sv_RecordLegacy` (gameclient.cpp:1246): the map's best time.
+    pub fn on_record(&mut self, server_time_best: i32) {
+        if server_time_best > 0 {
+            self.map_best = (server_time_best / 100, (server_time_best % 100) * 10);
+        }
+    }
+
     /// C++: the sorts at gameclient.cpp:2174-2200 (stable sorts over the 128 slots, empty
     /// slots last; only the players are kept here).
-    fn sort(&mut self, time_score: bool) {
+    pub fn sort(&mut self, time_score: bool) {
         let names: Vec<&[u8]> = self.clients.iter().map(|c| c.name.as_bytes()).collect();
         self.by_name = (0..MAX_CLIENTS as i32)
             .filter(|&i| self.infos[i as usize].is_some())

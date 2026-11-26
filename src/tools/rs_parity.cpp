@@ -113,6 +113,7 @@ int MovementMode(const char *pOutFile); // rs_parity_hud.cpp
 int MsgsMode(IMap *pMap, CCollision *pCollision, const char *pOutFile); // rs_parity_msgs.cpp
 int AntiPingMode(CCollision *pCollision, const char *pOutFile); // rs_parity_antiping.cpp
 int ChatMode(const char *pOutFile); // rs_parity_chat.cpp
+int ScoreboardMode(const char *pOutFile); // rs_parity_scoreboard.cpp
 
 typedef std::vector<unsigned char> Bytes;
 
@@ -3078,6 +3079,8 @@ int main(int argc, const char **argv)
 		return NetEntsMode(argv[2], argv[3]);
 	if(argc == 3 && str_comp(argv[1], "chat") == 0)
 		return ChatMode(argv[2]);
+	if(argc == 3 && str_comp(argv[1], "scoreboard") == 0)
+		return ScoreboardMode(argv[2]);
 	if(argc == 3 && str_comp(argv[1], "antiping-timing") == 0)
 		return AntiPingMode(nullptr, argv[2]);
 	if(argc == 4 && (str_comp(argv[1], "msgs") == 0 || str_comp(argv[1], "antiping") == 0))
@@ -3109,6 +3112,6 @@ int main(int argc, const char **argv)
 			return CoreMode(argv[2], argv[3], HookTele, Verbose);
 		return CollisionMode(argv[2], argv[3], HookTele, Verbose);
 	}
-	log_error(TOOL_NAME, "Usage: %s map <map file> <output file> <scratch dir> | collision|core|world|weapons <map file> <output file> [hooktele] [verbose] | doors|netents|mapimages|envelopes|items|msgs|antiping <map file> <output file> | envelopes-synthetic|screen|anims|colors|interp|camera|movement|antiping-timing|chat <output file> | png <output file> <dir>... | skins <output file> <dir>", argc > 0 ? argv[0] : TOOL_NAME);
+	log_error(TOOL_NAME, "Usage: %s map <map file> <output file> <scratch dir> | collision|core|world|weapons <map file> <output file> [hooktele] [verbose] | doors|netents|mapimages|envelopes|items|msgs|antiping <map file> <output file> | envelopes-synthetic|screen|anims|colors|interp|camera|movement|antiping-timing|chat|scoreboard <output file> | png <output file> <dir>... | skins <output file> <dir>", argc > 0 ? argv[0] : TOOL_NAME);
 	return -1;
 }

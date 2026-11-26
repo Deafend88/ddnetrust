@@ -103,9 +103,21 @@ pub const WHISPER: &str = "\u{e0e6}";
 pub const FRIEND: &str = "\u{e87e}";
 /// Material Symbols `chat_bubble`.
 pub const CHAT: &str = "\u{e0cb}";
+/// Material Symbols `arrow_back`.
+pub const DIR_LEFT: &str = "\u{e5c4}";
+/// Material Symbols `arrow_upward`.
+pub const DIR_UP: &str = "\u{e5d8}";
+/// Material Symbols `arrow_forward`.
+pub const DIR_RIGHT: &str = "\u{e5c8}";
+/// Material Symbols `arrow_circle_up`.
+pub const HOOK_STRONG: &str = "\u{f182}";
+/// Material Symbols `arrow_circle_down`.
+pub const HOOK_WEAK: &str = "\u{f181}";
+/// Material Symbols `leaderboard`.
+pub const SCOREBOARD: &str = "\u{f20c}";
 
 /// Every icon above, in order (the gallery shows them all).
-pub const ALL: [&str; 50] = [
+pub const ALL: [&str; 56] = [
     USER,
     FINGERPRINT,
     MONITOR,
@@ -156,4 +168,10 @@ pub const ALL: [&str; 50] = [
     WHISPER,
     FRIEND,
     CHAT,
+    DIR_LEFT,
+    DIR_UP,
+    DIR_RIGHT,
+    HOOK_STRONG,
+    HOOK_WEAK,
+    SCOREBOARD,
 ];
