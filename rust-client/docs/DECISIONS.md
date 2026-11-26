@@ -343,3 +343,30 @@ only matters for names so long that neither file can exist.
   world read-only.
 - Fixed on the way: a door laser's head time is the plain game tick in C++ (no intra
   tick added); DDNet-rs added `IntraGameTick`.
+
+## 2026-11-27 — M9 13.1: chat
+
+- The sent-chat history (C++ `CStaticRingBuffer<CHistoryEntry, 64 KiB, FLAG_RECYCLE>`)
+  recycles by a byte budget with the ring's block cost (entry + 24-byte header, rounded
+  to 24) instead of its block layout (`ponytail:` in `chat.rs`). They differ only after
+  ~64 KiB of sent chat, in which old lines Up still reaches; the parity data stays below.
+- Not ported: the desktop notification on a highlight (`Client()->Notify`), streamer
+  mode's censoring of `/login`, `/save` etc. (`cl_streamer_mode`), the chat censor (off
+  in C++ too), `cl_chat_old` and `cl_chat_size` (sizes come from our type scale, CLAUDE.md
+  UI rules; `cl_chat_width` and the C++ height limits are kept), video recording.
+- Chat sounds are decided exactly like C++ (rate limit, switches) and dropped until
+  sound support (13.3).
+- Look (user decision 2026-11-27): kind icons (server, client echo, whisper, team, friend)
+  plus subtle tints of the C++ `cl_message_*_color` values and name colours; highlights
+  use our accent instead of `cl_message_highlight_color`. Each line is a pill, a wrapped
+  line a rounded rectangle. Lines wrap under the name, not after it as in C++.
+- `ddnet-saves.txt` (`StoreSave`) is written to our own user dir, never DDNet's.
+- Friends and foes (`add_friend`, `add_foe`) are read from `settings_ddnet.cfg` and kept
+  in our `settings.cfg`; `IsFriend` compares strings without C++'s hashes (same result).
+- The client table (`ddnet::clients`, C++ `m_aClients`) keeps a name from a `ClientInfo`
+  without `PlayerInfo` forever, as C++ does (only active clients are reset).
+- Paste needs egui-winit's `clipboard` feature (`arboard`); C++ chat pastes through SDL.
+- `rs_parity chat`: 2 of 14 hand-made mutations are unobservable by construction: the
+  Shift+Tab `size_t` wrap (every command is tried before the index can wrap) and the
+  custom-colour check of repeat folding (lines that differ in it already differ in their
+  client id).

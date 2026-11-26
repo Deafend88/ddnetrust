@@ -9,7 +9,7 @@ use ddnet::protocol::generated as g;
 use ddnet::protocol::packer::Packer;
 use ddnet_rs::camera::{Camera, Frame};
 use ddnet_rs::config::{Config, Settings, VAR_NAMES};
-use ddnet_rs::controls::{Controls, GameState, MouseInputType};
+use ddnet_rs::controls::{Controls, GameState, MouseInputType, PlayerState};
 
 fn golden(name: &str) -> String {
     let path = format!("{}/../tests/golden/{name}", env!("CARGO_MANIFEST_DIR"));
@@ -294,7 +294,7 @@ fn menu_input_follows_cpp() {
         }
     }
     c.mouse_pos = vec2(100.0, -50.0);
-    let playing = c.snap_input(false, false);
+    let playing = c.snap_input(PlayerState::Playing, false, false);
     assert_eq!(
         (playing.direction, playing.jump, playing.fire, playing.hook),
         (-1, 1, 1, 1)
@@ -308,7 +308,7 @@ fn menu_input_follows_cpp() {
     }
     assert!(s.binds.on_input(a, true, false, true, none).is_empty());
     c.mouse_pos = vec2(30.0, 40.0);
-    let menu = c.snap_input(true, false);
+    let menu = c.snap_input(PlayerState::InMenu, false, false);
     assert_eq!(menu.player_flags & g::PLAYERFLAG_PLAYING, 0);
     assert_ne!(menu.player_flags & g::PLAYERFLAG_IN_MENU, 0);
     assert_eq!(
@@ -319,7 +319,7 @@ fn menu_input_follows_cpp() {
     // with the DDRace input bug the input is not reset
     let mut d = Controls::default();
     d.input.jump = 1;
-    assert_eq!(d.snap_input(true, true).jump, 1);
+    assert_eq!(d.snap_input(PlayerState::InMenu, false, true).jump, 1);
 }
 
 /// M6.8: our settings file reloads to the same settings, on top of any C++ file.

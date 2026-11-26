@@ -19,6 +19,15 @@ pub enum MouseInputType {
     Automated,
 }
 
+/// What the local player is doing, for C++ `SnapInput`'s player flags: chat first, then
+/// a menu (controls.cpp:244).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PlayerState {
+    Playing,
+    Chatting,
+    InMenu,
+}
+
 #[derive(Clone, Debug)]
 pub struct Controls {
     /// C++ `m_aMousePos[0]`: the aim, relative to the tee.
@@ -195,16 +204,26 @@ impl Controls {
         }
     }
 
-    /// C++: `CControls::SnapInput` (controls.cpp:241) without chat and scoreboard: the
-    /// input to send. Playing, the mouse position becomes the target; in a menu the
-    /// input is reset (unless the server has the DDRace input bug) and the copy to send
-    /// keeps the previous target, as in C++.
-    pub fn snap_input(&mut self, in_menu: bool, bug_ddrace_input: bool) -> g::ObjPlayerInput {
+    /// C++: `CControls::SnapInput` (controls.cpp:241): the input to send. Playing, the
+    /// mouse position becomes the target; chatting or in a menu the input is reset
+    /// (unless the server has the DDRace input bug) and the copy to send keeps the
+    /// previous target, as in C++. `scoreboard`: C++ `m_Scoreboard.IsActive()`.
+    pub fn snap_input(
+        &mut self,
+        state: PlayerState,
+        scoreboard: bool,
+        bug_ddrace_input: bool,
+    ) -> g::ObjPlayerInput {
+        let in_menu = state != PlayerState::Playing;
         let i = &mut self.input;
-        i.player_flags = if in_menu {
-            g::PLAYERFLAG_IN_MENU
+        i.player_flags = match state {
+            PlayerState::Chatting => g::PLAYERFLAG_CHATTING,
+            PlayerState::InMenu => g::PLAYERFLAG_IN_MENU,
+            PlayerState::Playing => g::PLAYERFLAG_PLAYING,
+        } | if scoreboard {
+            g::PLAYERFLAG_SCOREBOARD
         } else {
-            g::PLAYERFLAG_PLAYING
+            0
         } | match self.input_type {
             MouseInputType::Automated => g::PLAYERFLAG_INPUT_ABSOLUTE,
             MouseInputType::Absolute => g::PLAYERFLAG_INPUT_ABSOLUTE | g::PLAYERFLAG_INPUT_MANUAL,

@@ -89,6 +89,27 @@ pub struct Config {
     pub cl_antiping_preinput: i32,
     pub cl_prediction_margin: i32,
     pub cl_predict_freeze: i32,
+    /// C++ chat (config_variables.h:90-93, 357, 409-414, 628-653, 743-747).
+    pub cl_showchat: i32,
+    pub cl_show_chat_friends: i32,
+    pub cl_show_chat_team_members_only: i32,
+    pub cl_show_chat_system: i32,
+    pub cl_chat_reset: i32,
+    pub cl_chat_teamcolors: i32,
+    pub cl_chat_width: i32,
+    pub cl_show_ids: i32,
+    pub cl_message_friend: i32,
+    pub cl_friends_ignore_clan: i32,
+    pub snd_servermessage: i32,
+    pub snd_highlight: i32,
+    pub snd_team_chat: i32,
+    pub snd_chat: i32,
+    pub cl_message_system_color: u32,
+    pub cl_message_client_color: u32,
+    pub cl_message_highlight_color: u32,
+    pub cl_message_team_color: u32,
+    pub cl_message_color: u32,
+    pub cl_message_friend_color: u32,
     /// Ours (not a C++ variable): the DDNet data dir, used when neither `--data-dir`
     /// nor `DDNET_DATA_DIR` is given.
     pub rs_data_dir: String,
@@ -151,6 +172,26 @@ impl Default for Config {
             cl_antiping_preinput: 1,
             cl_prediction_margin: 10,
             cl_predict_freeze: 1,
+            cl_showchat: 1,
+            cl_show_chat_friends: 0,
+            cl_show_chat_team_members_only: 0,
+            cl_show_chat_system: 1,
+            cl_chat_reset: 1,
+            cl_chat_teamcolors: 1,
+            cl_chat_width: 200,
+            cl_show_ids: 0,
+            cl_message_friend: 1,
+            cl_friends_ignore_clan: 1,
+            snd_servermessage: 1,
+            snd_highlight: 1,
+            snd_team_chat: 1,
+            snd_chat: 1,
+            cl_message_system_color: 2817983,
+            cl_message_client_color: 9633471,
+            cl_message_highlight_color: 65471,
+            cl_message_team_color: 5636050,
+            cl_message_color: 255,
+            cl_message_friend_color: 65425,
             rs_data_dir: String::new(),
             rs_media_source: String::new(),
             rs_media: 1,
@@ -160,11 +201,12 @@ impl Default for Config {
     }
 }
 
-/// One config variable: C++ `SIntConfigVariable`, `SColorConfigVariable` (all ours
-/// use `CFGFLAG_COLLIGHT`, no alpha) or `SStringConfigVariable`.
+/// One config variable: C++ `SIntConfigVariable`, `SColorConfigVariable` (no alpha;
+/// with the darkest lighting: 0.5 for `CFGFLAG_COLLIGHT`, else 0) or
+/// `SStringConfigVariable`.
 enum Var<'a> {
     Int(&'a mut i32, i32, i32),
-    Color(&'a mut u32),
+    Color(&'a mut u32, f32),
     Str(&'a mut String, usize),
 }
 
@@ -200,8 +242,8 @@ impl Config {
             "player_name" => Str(&mut self.player_name, 16),
             "player_skin" => Str(&mut self.player_skin, 24),
             "player_use_custom_color" => Int(&mut self.player_use_custom_color, 0, 1),
-            "player_color_body" => Color(&mut self.player_color_body),
-            "player_color_feet" => Color(&mut self.player_color_feet),
+            "player_color_body" => Color(&mut self.player_color_body, 0.5),
+            "player_color_feet" => Color(&mut self.player_color_feet, 0.5),
             "inp_mousesens" => Int(&mut self.inp_mousesens, 1, 100000),
             "cl_dyncam" => Int(&mut self.cl_dyncam, 0, 1),
             "cl_dyncam_max_distance" => Int(&mut self.cl_dyncam_max_distance, 0, 2000),
@@ -243,6 +285,26 @@ impl Config {
             "cl_antiping_preinput" => Int(&mut self.cl_antiping_preinput, 0, 1),
             "cl_prediction_margin" => Int(&mut self.cl_prediction_margin, 1, 300),
             "cl_predict_freeze" => Int(&mut self.cl_predict_freeze, 0, 2),
+            "cl_showchat" => Int(&mut self.cl_showchat, 0, 2),
+            "cl_show_chat_friends" => Int(&mut self.cl_show_chat_friends, 0, 1),
+            "cl_show_chat_team_members_only" => Int(&mut self.cl_show_chat_team_members_only, 0, 1),
+            "cl_show_chat_system" => Int(&mut self.cl_show_chat_system, 0, 1),
+            "cl_chat_reset" => Int(&mut self.cl_chat_reset, 0, 1),
+            "cl_chat_teamcolors" => Int(&mut self.cl_chat_teamcolors, 0, 1),
+            "cl_chat_width" => Int(&mut self.cl_chat_width, 140, 400),
+            "cl_show_ids" => Int(&mut self.cl_show_ids, 0, 1),
+            "cl_message_friend" => Int(&mut self.cl_message_friend, 0, 1),
+            "cl_friends_ignore_clan" => Int(&mut self.cl_friends_ignore_clan, 0, 1),
+            "snd_servermessage" => Int(&mut self.snd_servermessage, 0, 1),
+            "snd_highlight" => Int(&mut self.snd_highlight, 0, 1),
+            "snd_team_chat" => Int(&mut self.snd_team_chat, 0, 1),
+            "snd_chat" => Int(&mut self.snd_chat, 0, 1),
+            "cl_message_system_color" => Color(&mut self.cl_message_system_color, 0.0),
+            "cl_message_client_color" => Color(&mut self.cl_message_client_color, 0.0),
+            "cl_message_highlight_color" => Color(&mut self.cl_message_highlight_color, 0.0),
+            "cl_message_team_color" => Color(&mut self.cl_message_team_color, 0.0),
+            "cl_message_color" => Color(&mut self.cl_message_color, 0.0),
+            "cl_message_friend_color" => Color(&mut self.cl_message_friend_color, 0.0),
             "rs_data_dir" => Str(&mut self.rs_data_dir, 512),
             "rs_media_source" => Str(&mut self.rs_media_source, 512),
             "rs_media" => Int(&mut self.rs_media, 0, 1),
@@ -261,7 +323,7 @@ impl Config {
         let mut a = Vec::new();
         let format = match var {
             Var::Int(..) => "?i",
-            Var::Color(_) => "?c",
+            Var::Color(..) => "?c",
             Var::Str(..) => "?r",
         };
         if !parse_args(args, format, &mut a) || a.is_empty() {
@@ -280,7 +342,7 @@ impl Config {
                 }
                 *v = value;
             }
-            Var::Color(v) => *v = color_pack_light(color_parse(&a[0]).unwrap_or(0)),
+            Var::Color(v, darkest) => *v = color_pack(color_parse(&a[0]).unwrap_or(0), darkest),
             Var::Str(v, size) => *v = str_copy(&a[0], size),
         }
         true
@@ -295,7 +357,7 @@ impl Config {
         for name in VAR_NAMES {
             let line = match (clone.var(name).unwrap(), def.var(name).unwrap()) {
                 (Var::Int(v, ..), Var::Int(dv, ..)) if all || v != dv => format!("{name} {v}"),
-                (Var::Color(v), Var::Color(dv)) if all || v != dv => format!("{name} {v}"),
+                (Var::Color(v, _), Var::Color(dv, _)) if all || v != dv => format!("{name} {v}"),
                 (Var::Str(v, _), Var::Str(dv, _)) if all || v != dv => {
                     format!("{name} \"{}\"", escape(v))
                 }
@@ -308,7 +370,7 @@ impl Config {
 }
 
 /// Every variable name `Config::var` knows.
-pub const VAR_NAMES: [&str; 51] = [
+pub const VAR_NAMES: [&str; 71] = [
     "player_name",
     "player_skin",
     "player_use_custom_color",
@@ -355,6 +417,26 @@ pub const VAR_NAMES: [&str; 51] = [
     "cl_antiping_preinput",
     "cl_prediction_margin",
     "cl_predict_freeze",
+    "cl_showchat",
+    "cl_show_chat_friends",
+    "cl_show_chat_team_members_only",
+    "cl_show_chat_system",
+    "cl_chat_reset",
+    "cl_chat_teamcolors",
+    "cl_chat_width",
+    "cl_show_ids",
+    "cl_message_friend",
+    "cl_friends_ignore_clan",
+    "snd_servermessage",
+    "snd_highlight",
+    "snd_team_chat",
+    "snd_chat",
+    "cl_message_system_color",
+    "cl_message_client_color",
+    "cl_message_highlight_color",
+    "cl_message_team_color",
+    "cl_message_color",
+    "cl_message_friend_color",
     "rs_data_dir",
     "rs_media_source",
     "rs_media",
@@ -370,14 +452,13 @@ fn str_copy(s: &str, size: usize) -> String {
     String::from_utf8_lossy(&b).into_owned()
 }
 
-/// C++: `ColorHSLA(Value, true).UnclampLighting(DARKEST_LGT)` then
-/// `Pack(DARKEST_LGT, false)`: what a colour variable stores for a packed number.
-fn color_pack_light(v: u32) -> u32 {
-    const DARKEST: f32 = 0.5;
+/// C++: `ColorHSLA(Value, true).UnclampLighting(Darkest)` then `Pack(Darkest, false)`:
+/// what a colour variable stores for a packed number.
+fn color_pack(v: u32, darkest: f32) -> u32 {
     let ch = |shift: u32| ((v >> shift) & 0xFF) as f32 / 255.0;
     let (h, s) = (ch(16), ch(8));
-    let l = DARKEST + ch(0) * (1.0 - DARKEST);
-    let l = ((l - DARKEST) / (1.0 - DARKEST)).clamp(0.0, 1.0);
+    let l = darkest + ch(0) * (1.0 - darkest);
+    let l = ((l - darkest) / (1.0 - darkest)).clamp(0.0, 1.0);
     let b = |f: f32| ddnet::physics::vmath::round_to_int(f * 255.0) as u32;
     (b(h) << 16).wrapping_add(b(s) << 8).wrapping_add(b(l))
 }
@@ -697,6 +778,9 @@ pub struct Settings {
     pub binds: Binds,
     /// HUD layout and widget settings (`hud_widget`, `hud_set`; ours, not C++).
     pub hud: crate::hud::HudConfig,
+    /// C++ `CFriends` of friends and foes (`add_friend`, `add_foe`).
+    pub friends: ddnet::clients::Friends,
+    pub foes: ddnet::clients::Friends,
     /// Config commands skipped because DDNet-rs does not use them (other stock DDNet
     /// settings, other clients' settings such as TClient's).
     pub skipped: usize,
@@ -708,6 +792,8 @@ impl Settings {
             config: Config::default(),
             binds: Binds::default(),
             hud: Default::default(),
+            friends: Default::default(),
+            foes: Default::default(),
             skipped: 0,
         };
         s.binds.set_defaults(&mut s.config);
@@ -743,6 +829,17 @@ impl Settings {
             text += &line;
             text.push('\n');
         }
+        // C++: CFriends::ConfigSaveCallback
+        for (command, list) in [("add_friend", &self.friends), ("add_foe", &self.foes)] {
+            for (name, clan) in &list.list {
+                text += &format!(
+                    "{command} \"{}\" \"{}\"
+",
+                    escape(name),
+                    escape(clan)
+                );
+            }
+        }
         text += "unbindall
 ";
         for line in self.binds.serialize() {
@@ -777,6 +874,21 @@ impl Settings {
                     }
                 }
                 "unbindall" => self.binds.map.clear(),
+                c @ ("add_friend" | "add_foe" | "remove_friend" | "remove_foe")
+                    if parse_args(&args, "s?s", &mut a) =>
+                {
+                    let list = if c.ends_with("friend") {
+                        &mut self.friends
+                    } else {
+                        &mut self.foes
+                    };
+                    let clan = a.get(1).map_or("", String::as_str);
+                    if c.starts_with("add") {
+                        list.add(&a[0], clan);
+                    } else {
+                        list.remove(&a[0], clan);
+                    }
+                }
                 "bind" | "unbind" => {}
                 _ => self.skipped += 1,
             }

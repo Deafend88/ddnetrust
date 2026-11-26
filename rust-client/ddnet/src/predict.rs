@@ -222,6 +222,9 @@ pub struct Predictor {
     pub allow_zoom: bool,
     /// C++ `m_GameInfo.m_HudDDRace`: the server wants the DDRace HUD (GameInfoEx 7+).
     pub hud_ddrace: bool,
+    /// C++ `m_GameInfo.m_TimeScore` and `m_AllowXSkins` (for the client list).
+    pub time_score: bool,
+    pub allow_x_skins: bool,
     /// The latest prediction of the local character for each tick.
     history: BTreeMap<i32, ObjCharacterCore>,
     pub stats: Stats,
@@ -306,6 +309,8 @@ impl Predictor {
             spectating: false,
             world_paused: false,
             hud_ddrace: false,
+            time_score: false,
+            allow_x_skins: false,
             allow_zoom: false,
             history: BTreeMap::new(),
             stats: Stats::default(),
@@ -664,6 +669,12 @@ impl Predictor {
         let no_weak = version >= 8 && flags2 & g::GAMEINFOFLAG2_NO_WEAK_HOOK != 0;
         self.hud_ddrace = version >= 7 && flags2 & g::GAMEINFOFLAG2_HUD_DDRACE != 0;
         let race = ddrace || fastcap || flags & g::GAMEINFOFLAG_GAMETYPE_RACE != 0;
+        self.time_score = if version >= 0 {
+            flags & g::GAMEINFOFLAG_TIMESCORE != 0
+        } else {
+            race
+        };
+        self.allow_x_skins = version >= 5 && flags2 & g::GAMEINFOFLAG2_ALLOW_X_SKINS != 0;
         let city = version >= 5 && flags2 & g::GAMEINFOFLAG2_GAMETYPE_CITY != 0;
         self.allow_zoom = if version >= 2 {
             flags & g::GAMEINFOFLAG_ALLOW_ZOOM != 0
@@ -1111,6 +1122,11 @@ impl Predictor {
     /// C++: `m_GameInfo.m_BugDDRaceInput`.
     pub fn bug_ddrace_input(&self) -> bool {
         self.world.config.bug_ddrace_input
+    }
+
+    /// C++: `m_Teams.Team(id)`.
+    pub fn team(&self, id: i32) -> i32 {
+        self.teams.team(id)
     }
 
     /// C++: `CGameClient::IsOtherTeam` for a playing (not spectating) local player.

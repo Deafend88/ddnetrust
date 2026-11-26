@@ -76,6 +76,10 @@ ICONS = [
 	("INFO", "material", "info"),  # information
 	("CARET_UP", "material", "keyboard_arrow_up"),  # move up
 	("CARET_DOWN", "material", "keyboard_arrow_down"),  # move down
+	("SERVER", "material", "dns"),  # a server chat line
+	("WHISPER", "material", "alternate_email"),  # a whisper
+	("FRIEND", "material", "favorite"),  # a friend
+	("CHAT", "material", "chat_bubble"),  # chat input
 ]
 
 

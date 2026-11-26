@@ -4,6 +4,7 @@ pub mod anim;
 pub mod assets;
 pub mod audio;
 pub mod camera;
+pub mod chat;
 pub mod config;
 pub mod controls;
 pub mod gallery;

@@ -95,9 +95,17 @@ pub const INFO: &str = "\u{e88e}";
 pub const CARET_UP: &str = "\u{e316}";
 /// Material Symbols `keyboard_arrow_down`.
 pub const CARET_DOWN: &str = "\u{e313}";
+/// Material Symbols `dns`.
+pub const SERVER: &str = "\u{e875}";
+/// Material Symbols `alternate_email`.
+pub const WHISPER: &str = "\u{e0e6}";
+/// Material Symbols `favorite`.
+pub const FRIEND: &str = "\u{e87e}";
+/// Material Symbols `chat_bubble`.
+pub const CHAT: &str = "\u{e0cb}";
 
 /// Every icon above, in order (the gallery shows them all).
-pub const ALL: [&str; 46] = [
+pub const ALL: [&str; 50] = [
     USER,
     FINGERPRINT,
     MONITOR,
@@ -144,4 +152,8 @@ pub const ALL: [&str; 46] = [
     INFO,
     CARET_UP,
     CARET_DOWN,
+    SERVER,
+    WHISPER,
+    FRIEND,
+    CHAT,
 ];

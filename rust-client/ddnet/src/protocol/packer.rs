@@ -236,7 +236,7 @@ fn byte_at(s: &[u8], pos: usize) -> u8 {
 /// C++: `str_utf8_decode` (str.cpp:971), WHATWG UTF-8 decoder. Returns the code
 /// point, 0 at the terminator, or -1 on error. On an invalid continuation byte the
 /// cursor is left on that byte.
-pub(crate) fn utf8_decode(s: &[u8], pos: &mut usize) -> i32 {
+pub fn utf8_decode(s: &[u8], pos: &mut usize) -> i32 {
     let mut lower: u8 = 0x80;
     let mut upper: u8 = 0xBF;
     let mut code_point: i32 = 0;
@@ -293,7 +293,7 @@ pub(crate) fn utf8_decode(s: &[u8], pos: &mut usize) -> i32 {
 
 /// C++: `str_utf8_encode` (str.cpp:926). Returns the bytes and their count
 /// (0 for code points above U+10FFFF).
-pub(crate) fn utf8_encode(chr: i32) -> ([u8; 4], usize) {
+pub fn utf8_encode(chr: i32) -> ([u8; 4], usize) {
     if chr <= 0x7F {
         ([chr as u8, 0, 0, 0], 1)
     } else if chr <= 0x7FF {
@@ -362,7 +362,7 @@ pub(crate) fn sanitize_cc(s: &mut [u8]) {
 }
 
 /// C++: `str_utf8_isspace` (str.cpp:1115).
-pub(crate) fn utf8_isspace(code: i32) -> bool {
+pub fn utf8_isspace(code: i32) -> bool {
     code <= 0x0020
         || code == 0x0085
         || code == 0x00A0
@@ -386,7 +386,7 @@ pub(crate) fn utf8_isspace(code: i32) -> bool {
 
 /// C++: `str_utf8_skip_whitespaces` (str.cpp:1211). Returns the byte offset of
 /// the first non-whitespace code point (or the end).
-pub(crate) fn utf8_skip_whitespaces(s: &[u8]) -> usize {
+pub fn utf8_skip_whitespaces(s: &[u8]) -> usize {
     let mut pos = 0;
     while byte_at(s, pos) != 0 {
         let old = pos;

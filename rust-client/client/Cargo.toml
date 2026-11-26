@@ -11,7 +11,7 @@ chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 ddnet = { path = "../ddnet" }
 egui = "0.37"
 egui-wgpu = { version = "0.37.0", default-features = false }
-egui-winit = { version = "0.37.0", default-features = false }
+egui-winit = { version = "0.37.0", default-features = false, features = ["clipboard"] }
 png = "0.18"
 wgpu = "30.0.2"
 winit = "0.30.13"

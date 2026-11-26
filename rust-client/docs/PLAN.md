@@ -1162,8 +1162,8 @@ record/stop demo, spectate / join red / blue / game, kill, pause (`say /pause`),
 camera; Players (492: mute/ignore, friends); Server info (622) + MOTD; Call vote (946:
 settings, kick, spec, reason, force with rcon); in-game Browser (1150); Ghost (1355).
 
-Ours, per the concept (`C:\ddnet-hud-refs\screenshots\002e9903-...png`; there is no
-`esc-menu-concept.png`): a compact rounded-rect glass bar across the top over the
+Ours, per the concept (`C:\ddnet-hud-refs\screenshots\esc-menu-concept.png`, renamed
+from an unnamed file on 2026-11-27): a compact rounded-rect glass bar across the top over the
 running game (game input paused like the 6.8 menu). Row 1: segmented control Game,
 Players, Info, Browser, Ghost, Vote; icon buttons on the right (demos, editor,
 settings, quit). Row 2 (Game tab): pills with Material Rounded icons — Spectate,
@@ -1309,3 +1309,20 @@ exists in DDNet's `russian.txt` or in our own file (no untranslated strings in R
 7. **Chat colours:** C++ colours team/server/whisper lines (`cl_message_*_color`). Our
    rule is one accent: icons instead of colours, accent only for highlights. OK, or keep
    the C++ colours as an option?
+
+### 13.13 Answers (2026-11-27; plan approved)
+
+1. **Sound crates:** approved. Our own WavPack decoder must match libwavpack byte for
+   byte on every `.wv` in DDNet's data. Opus: if a pure-Rust decoder cannot be bit-exact
+   with libopus, a tiny documented (inaudible) tolerance is allowed, verified against
+   libopus output.
+2. **Sounds** from `audio/` through the storage order: approved.
+3. **Name plates, freeze bars, statboard, spectator HUD, MOTD** placement: approved.
+4. **Hidden Esc-menu items** until their step (Browser until M11): approved.
+5. **Own Russian file** for DDNet-rs-only strings: approved.
+6. **Files we write** only under `%APPDATA%\DDNet-rs\`: approved.
+7. **Chat:** icons for team/whisper/server lines, plus subtle colour tints like DDNet's
+   so the kinds are recognisable at a glance.
+- The TClient `cursor` pack stays ignored; custom crosshair packs may come later as a
+  separate feature.
+- Work order: 13.1 chat, then 13.2 scoreboard, then stop for review.

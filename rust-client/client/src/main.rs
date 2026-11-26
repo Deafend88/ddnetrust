@@ -15,6 +15,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Instant;
 
+use ddnet::clients::{Clients, SnapContext};
 use ddnet::map::Map;
 use ddnet::net;
 use ddnet::net::client::{CameraState, Client, PlayerInfo, State};
@@ -24,11 +25,12 @@ use ddnet::predict::{Predictor, Rendered};
 use ddnet::protocol::generated as g;
 use ddnet_rs::assets;
 use ddnet_rs::camera::{self, Camera, Frame};
+use ddnet_rs::chat::{self, Chat};
 use ddnet_rs::config::{
-    KEY_ESCAPE, KEY_LAST, KEY_MOUSE_WHEEL_DOWN, KEY_MOUSE_WHEEL_LEFT, KEY_MOUSE_WHEEL_RIGHT,
-    KEY_MOUSE_WHEEL_UP, Settings, split_line,
+    KEY_ESCAPE, KEY_LAST, KEY_LSHIFT, KEY_MOUSE_WHEEL_DOWN, KEY_MOUSE_WHEEL_LEFT,
+    KEY_MOUSE_WHEEL_RIGHT, KEY_MOUSE_WHEEL_UP, KEY_RSHIFT, Settings, split_line,
 };
-use ddnet_rs::controls::{self, Controls, GameState};
+use ddnet_rs::controls::{self, Controls, GameState, PlayerState};
 use ddnet_rs::gfx::batch::Batch;
 use ddnet_rs::gfx::{self, Gfx, Size, block_on};
 use ddnet_rs::hud::{self, HudData, Widget};
@@ -44,6 +46,7 @@ use ddnet_rs::render::players::Players;
 use ddnet_rs::statusbar::StatusBar;
 use ddnet_rs::storage::{self, Storage};
 use ddnet_rs::style::{self, Glass};
+use ddnet_rs::teehead::TeeHeads;
 use ddnet_rs::ui::{Action, Menu, Ui};
 use ddnet_rs::watermark::Watermark;
 use winit::application::ApplicationHandler;
@@ -108,6 +111,10 @@ struct Session {
     controls: Controls,
     /// C++ `m_LocalCharacterPos` (or the followed tee's): kept while the tee is gone.
     center: Option<(f32, f32)>,
+    /// C++ `m_aClients` and the sorted player lists, updated on each new snapshot.
+    clients: Clients,
+    /// The snapshot tick `clients` was last updated for.
+    clients_tick: Option<i32>,
 }
 
 impl Session {
@@ -130,6 +137,8 @@ impl Session {
             camera,
             controls: Controls::default(),
             center: None,
+            clients: Clients::default(),
+            clients_tick: None,
         })
     }
 
@@ -139,6 +148,46 @@ impl Session {
     }
 
     /// What `CCamera`'s zoom commands and `UpdateCamera` read this frame.
+    /// C++ `m_Teams.Team(id)` (team 0 before the map loads).
+    fn team(&self, id: i32) -> i32 {
+        match &self.predictor {
+            Some(p) if id >= 0 => p.team(id),
+            _ => 0,
+        }
+    }
+
+    /// C++ `IsOtherTeam(id)`.
+    fn is_other_team(&self, id: i32) -> bool {
+        self.predictor.as_ref().is_some_and(|p| p.is_other_team(id))
+    }
+
+    /// The chat's view of the game (C++ `CChat` reading `CGameClient`).
+    fn chat_ctx<'a>(
+        &'a self,
+        config: &ddnet_rs::config::Config,
+        team: &'a dyn Fn(i32) -> i32,
+        other: &'a dyn Fn(i32) -> bool,
+    ) -> chat::Ctx<'a> {
+        chat::Ctx {
+            clients: &self.clients,
+            local_ids: [self.clients.local_id, -1],
+            team,
+            is_other_team: other,
+            team_play: self.team_play(),
+            demo: false,
+            config: chat::ChatConfig::new(config),
+        }
+    }
+
+    /// C++ `IsTeamPlay()`: `GAMEFLAG_TEAMS` in the snapshot's game info.
+    fn team_play(&self) -> bool {
+        (self.client.snapshot().iter())
+            .find(|it| it.type_id == g::NETOBJTYPE_GAMEINFO)
+            .is_some_and(|it| {
+                g::ObjGameInfo::from_ints(&it.data).game_flags & g::GAMEFLAG_TEAMS != 0
+            })
+    }
+
     fn camera_frame(&self, start: Instant, frame_time: f32) -> Frame {
         Frame {
             local_time: start.elapsed().as_secs_f32(),
@@ -181,6 +230,10 @@ struct App {
     menu: Menu,
     /// The HUD widgets.
     hud: Vec<Box<dyn Widget>>,
+    /// C++ `CChat` (kept across connections like its sent history; reset on connect).
+    chat: Chat,
+    /// Tee heads for the chat lines.
+    chat_heads: TeeHeads,
     editor: Editor,
     /// The media thread (now playing, 7.10); `None` while `rs_media` is 0.
     media: Option<Media>,
@@ -300,7 +353,11 @@ impl App {
         self.menu.error = None;
         self.menu.open = false;
         match Session::connect(addr, &self.settings, self.start) {
-            Ok(s) => self.session = Some(s),
+            Ok(s) => {
+                // C++: CChat::OnStateChange -> Reset
+                self.chat.reset();
+                self.session = Some(s)
+            }
             Err(e) => self.menu.error = Some(e),
         }
     }
@@ -336,6 +393,37 @@ impl App {
             }
             return;
         }
+        // C++: the chat comes before menus and binds in the input stack and takes every
+        // key event while it is open (chat.cpp:271); typing goes to its text field
+        if self.chat.is_active()
+            && let Some(s) = &self.session
+        {
+            if press {
+                self.pressed[key] = true;
+            }
+            if release {
+                self.pressed[key] = false;
+            }
+            if press {
+                let k = match key {
+                    43 => chat::Key::Tab,
+                    40 | 88 => chat::Key::Enter,
+                    KEY_ESCAPE => chat::Key::Escape,
+                    82 => chat::Key::Up,
+                    81 => chat::Key::Down,
+                    KEY_LSHIFT | KEY_RSHIFT => chat::Key::Shift,
+                    _ => chat::Key::Other,
+                };
+                let shift = self.pressed[KEY_LSHIFT] || self.pressed[KEY_RSHIFT];
+                let config = &self.settings.config;
+                let (team, other) = (|id| s.team(id), |id| s.is_other_team(id));
+                let ctx = s.chat_ctx(config, &team, &other);
+                let now = net::now(self.start);
+                self.chat
+                    .on_key(k, shift, &ctx, config.cl_chat_reset != 0, now);
+            }
+            return;
+        }
         if press && key == KEY_ESCAPE {
             if self.editor.open {
                 self.close_editor();
@@ -362,12 +450,34 @@ impl App {
                 .is_some_and(|p| p.bug_ddrace_input() && p.spectating),
         };
         let (mut edit_hud, mut player) = (false, false);
+        let now = net::now(self.start);
         for (stroke, line) in lines {
             let config = &self.settings.config;
             s.controls
                 .execute(stroke, &line, game, &mut s.camera, &frame, config);
-            for (command, args) in split_line(&line).into_iter().filter(|_| stroke) {
+            for (command, args) in split_line(&line) {
+                // C++: CChat::ConShowChat, the one chat command with a release
+                if command == "+show_chat" {
+                    self.chat.show = stroke;
+                }
+                if !stroke {
+                    continue;
+                }
+                let mut a = Vec::new();
                 match command.as_str() {
+                    // C++: CChat::ConChat, ConSay, ConSayTeam, ConEcho, ConClearChat
+                    "chat" if ddnet_rs::config::parse_args(&args, "s?r", &mut a) => {
+                        self.chat.con_chat(&a, config.cl_chat_reset != 0, false)
+                    }
+                    "say" | "say_team" if ddnet_rs::config::parse_args(&args, "r", &mut a) => self
+                        .chat
+                        .send_chat(i32::from(command == "say_team"), &a[0], now),
+                    "echo" if ddnet_rs::config::parse_args(&args, "r", &mut a) => {
+                        let (team, other) = (|id| s.team(id), |id| s.is_other_team(id));
+                        let ctx = s.chat_ctx(config, &team, &other);
+                        self.chat.echo(&a[0], &ctx, now);
+                    }
+                    "clear_chat" => self.chat.clear_lines(),
                     "hud_editor" => edit_hud = true,
                     "media_player" => player = true,
                     "media_play_pause" => {
@@ -423,7 +533,15 @@ impl App {
         }
         // C++: CClient::Update (sends SnapInput, OnNewSnapshot reports the camera)
         let bug_input = (s.predictor.as_ref()).is_some_and(|p| p.bug_ddrace_input());
-        s.client.input = s.controls.snap_input(menu_visible, bug_input);
+        // C++ SnapInput: chatting first, then a menu
+        let state = if self.chat.is_active() {
+            PlayerState::Chatting
+        } else if menu_visible {
+            PlayerState::InMenu
+        } else {
+            PlayerState::Playing
+        };
+        s.client.input = s.controls.snap_input(state, false, bug_input);
         if let (Some(weapon), Some(shown)) = (self.options.fire, s.map_shown_at) {
             let elapsed = shown.elapsed().as_secs_f64();
             if elapsed > 2.0 && !std::mem::replace(&mut s.weapons_asked, true) {
@@ -530,6 +648,19 @@ impl App {
         if let Some(s) = &mut self.session {
             // C++: CGameClient::OnNewSnapshot/OnPredict, then UpdateRenderedCharacters
             let now = net::now(self.start);
+            // this frame's game messages: C++ handles them as they arrive, before the
+            // snapshot switch (CClient::Update pumps the network first)
+            events = std::mem::take(&mut s.client.messages);
+            {
+                let config = &self.settings.config;
+                let (team, other) = (|id| s.team(id), |id| s.is_other_team(id));
+                let ctx = s.chat_ctx(config, &team, &other);
+                for msg in &events {
+                    if let Some(line) = self.chat.on_message(msg, &ctx, now) {
+                        store_save(&line, s.client.map().map_or("", |m| m.name.as_str()));
+                    }
+                }
+            }
             let local_freeze_end = match &mut s.predictor {
                 Some(p) => {
                     // C++ reads g_Config live
@@ -541,8 +672,27 @@ impl App {
                 }
                 None => None,
             };
-            // this frame's game messages go to the HUD (and do not pile up)
-            events = std::mem::take(&mut s.client.messages);
+            // C++: OnNewSnapshot's client data and player lists
+            if s.client.game_tick() != s.clients_tick
+                && let Some(p) = &s.predictor
+            {
+                s.clients_tick = s.client.game_tick();
+                let ctx = SnapContext {
+                    allow_x_skins: p.allow_x_skins,
+                    friends: &self.settings.friends,
+                    foes: &self.settings.foes,
+                    friends_ignore_clan: self.settings.config.cl_friends_ignore_clan != 0,
+                };
+                s.clients
+                    .on_new_snapshot(s.client.snapshot(), &ctx, p.time_score);
+            }
+            // C++: CChat::OnRender's queued send; the lines to send go out as Cl_Say
+            self.chat.on_render(now);
+            for (team, line) in self.chat.sends.drain(..) {
+                s.client.say(team, &line, now);
+            }
+            // ponytail: chat sounds are dropped until sound support (PLAN §13.3)
+            self.chat.sounds.clear();
             // C++: CGameClient::OnRender: UpdatePositions, UpdateCamera, CCamera::OnRender
             let local = s.local_pos(&rendered, self.options.follow);
             let frame = s.camera_frame(self.start, frame_time);
@@ -647,9 +797,12 @@ impl App {
                 }
             });
         let mut editor_done = false;
-        if menu_visible || data.is_some() {
+        // the chat draws once the map is there, over the HUD
+        let chat_session = self.session.as_ref().filter(|s| s.map.is_some());
+        if menu_visible || data.is_some() || chat_session.is_some() {
             let (menu, settings, widgets) = (&mut self.menu, &mut self.settings, &mut self.hud);
-            let editor = &mut self.editor;
+            let (editor, chat, heads) = (&mut self.editor, &mut self.chat, &mut self.chat_heads);
+            let now = net::now(self.start);
             r.ui.frame(&r.window, &r.gfx, &target, size, |ctx| {
                 match &data {
                     Some(data) if editor.open => {
@@ -658,12 +811,26 @@ impl App {
                     Some(data) => hud::show(ctx, widgets, data, &settings.hud),
                     None => {}
                 }
+                if let Some(s) = chat_session
+                    && !editor.open
+                {
+                    let team = |id| s.team(id);
+                    let view = chat::View {
+                        glass: Glass::from_setting(settings.config.rs_glass),
+                        now,
+                        config: &settings.config,
+                        clients: &s.clients,
+                        team: &team,
+                        scoreboard_open: false,
+                    };
+                    chat::show(ctx, chat, &view, heads);
+                }
                 if menu_visible {
                     action = menu.show(ctx, connected, settings);
                 }
             });
         }
-        if !menu_visible && !self.editor.open && !self.player_open {
+        if !menu_visible && !self.editor.open && !self.player_open && !self.chat.is_active() {
             r.ui.hidden();
         }
         r.window.pre_present_notify();
@@ -701,6 +868,49 @@ impl App {
             self.close_editor();
         }
     }
+}
+
+/// C++: the file part of `CChat::StoreSave` (chat.cpp:656): a "Team successfully saved"
+/// line appended to `ddnet-saves.txt` in our own save dir (PLAN §13.13 answer 6).
+fn store_save(line: &str, map: &str) {
+    let (Some((name, code)), Some(dir)) = (chat::parse_save(line), storage::save_dir()) else {
+        return;
+    };
+    let path = dir.join("ddnet-saves.txt");
+    let mut text = String::new();
+    if !path.exists() {
+        text += &chat::csv_line(&["Time", "Player", "Map", "Code"]);
+    }
+    let time = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    text += &chat::csv_line(&[&time, &name, map, &code]);
+    use std::io::Write;
+    let file = std::fs::create_dir_all(&dir).and_then(|()| {
+        std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+    });
+    if let Err(e) = file.and_then(|mut f| f.write_all(text.as_bytes())) {
+        eprintln!("saving the save code failed: {e}");
+    }
+}
+
+/// The keys `CChat::OnInput` handles itself (Tab, Enter, Escape, Up, Down): kept from
+/// the text field, which would otherwise move focus or the cursor with them.
+fn chat_key(event: &WindowEvent) -> bool {
+    use KeyCode::*;
+    matches!(
+        event,
+        WindowEvent::KeyboardInput {
+            event: KeyEvent {
+                physical_key: PhysicalKey::Code(
+                    Tab | Enter | NumpadEnter | Escape | ArrowUp | ArrowDown
+                ),
+                ..
+            },
+            ..
+        }
+    )
 }
 
 fn present_mode(vsync: bool) -> wgpu::PresentMode {
@@ -751,7 +961,8 @@ impl ApplicationHandler for App {
         // egui gets input only while a menu is drawn (and no key is being read), but the
         // window focus always: egui draws keyboard focus only in a focused window
         let to_egui = matches!(event, WindowEvent::Focused(_))
-            || (self.ui_active() && self.menu.reading_key.is_none());
+            || (self.ui_active() && self.menu.reading_key.is_none())
+            || (self.chat.is_active() && !chat_key(&event));
         if let Some(r) = &mut self.running
             && to_egui
         {
@@ -997,6 +1208,8 @@ fn main() {
     let mut app = App {
         menu: Menu::new(options.server, &storage),
         hud,
+        chat: Chat::default(),
+        chat_heads: TeeHeads::new(&storage),
         editor: Editor::default(),
         media: None,
         player_open: false,

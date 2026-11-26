@@ -1178,12 +1178,44 @@ are final unless the user changes them:
   CLAUDE.md UI rules (pills for single-line controls, tokens only, one accent,
   secondary text on hover).
 
+### M9 — feature parity with stock DDNet (plan: PLAN.md §13, approved 2026-11-27, answers §13.13)
+
+#### 13.1 (2026-11-27): chat — done
+- `client/src/chat.rs`: port of `CChat`'s logic (`AddLine` filters, trimming, repeat
+  folding, highlights, whisper/team/server/client lines, sound rate limits; `OnInput`
+  with name and command completion incl. C++'s `size_t` arithmetic, history, Enter/Esc;
+  `SendChatQueued` and the queued send of `OnRender`; `StoreSave` to our own
+  `ddnet-saves.txt`), and the view: per-line pills (rounded rectangles when wrapped) with
+  tee head, kind icon (server, echo, whisper, team, friend) and subtle C++ colour tints,
+  the input pill with mode, egui text field and the command hint. Keys: the chat takes
+  every key while open (C++ input stack order); Tab/Enter/Esc/Up/Down never reach the
+  text field. Binds: `chat`, `+show_chat`, `say`, `say_team`, `echo`, `clear_chat`.
+  `PLAYERFLAG_CHATTING` in `SnapInput` (`controls::PlayerState`).
+- `ddnet/src/clients.rs`: C++ `m_aClients` (name, clan, country, skin, team, active,
+  friend/foe, DDNet player flags, finish times) and the sorted lists, updated on each
+  new snapshot after the frame's messages (C++ order). `ddnet/src/text.rs`:
+  `str_utf8_find_nocase` with DDNet's own lowercase table (read from
+  `src/base/unicode/tolower_data.cpp`), ASCII `str_comp_nocase`, `str_copy` cutting.
+- Config: the chat variables, `cl_message_*_color` (colour variables now carry their
+  darkest lighting), `add_friend`/`add_foe`; 4 icons (server, whisper, friend, chat);
+  egui-winit `clipboard` for paste; `ddnet-headless --say TEXT`.
+- Verified: `rs_parity chat` (new `src/tools/rs_parity_chat.cpp`, 6 word-for-word
+  copies: `CLine::Reset`, `RegisterCommand`/`UnregisterCommand`, `OnInput` through
+  `LineShouldHighlight`, `AddLine`, `SendChat`/`SendChatQueued`, the queued send):
+  40 runs x 400 events (chat lines from server/players/unknown ids, long and
+  whitespace-only lines, save lines, command infos, Tab/Shift+Tab, Enter, Esc, Up/Down,
+  typing, quick sends, players leaving during completion, time at the 0.3 s / 1 s
+  limits); `client/tests/chat.rs` compares the whole state after every event: 100%.
+  12 of 14 hand-made mutations caught, the other 2 cannot change anything (DECISIONS).
+  `cpp_copies_match_source` checks 24 copies. Live (`scripts/chat_check.ps1`, local
+  server, DDNet-rs as Alice, headless Bob saying "hi Alice"): highlight and folding,
+  "bo"+Tab → "Bob: hello there" reaches the server, `Y` sends team chat (`teamchat` in
+  the server log), `/pa` shows the hint and Tab completes `/pause`, Up recalls the last
+  line, a long line wraps. Captures: `docs/review/13.1/`.
+
 #### Exact next actions (next session starts here)
-State (2026-11-26, later): M8 approved by the user (antiping tested live; C++ smoothing
-kept as is; no C++ antiping capture wanted). `scripts/gen_cpp_copies.py` committed. M9
-(feature parity) planned in PLAN §13 and the roadmap in §11 updated; stopped for the
-user's review of §13 (questions in §13.12). Next: record the answers in a §13.13, then
-start 13.1 (chat).
+State (2026-11-27): 13.1 chat done and pushed. Next: 13.2 scoreboard (with name plates
+and freeze bars, PLAN §13.13 answer 3), then stop for the user's review of 13.1-13.2.
 
 Previous state: M8 (8.1-8.8) done and pushed; stopped for the user's review of
 8.5-8.8. Review material: `docs/review/8.7/` (gun/grenade/laser, DDNet-rs predicted vs
@@ -1276,6 +1308,7 @@ Build the `rs_parity` target like `rs_golden`, then per map (repo root):
     build-rs/rs_parity.exe items data/maps/coverage.map rust-client/tests/golden/items.txt
     build-rs/rs_parity.exe camera rust-client/tests/golden/camera.txt
     build-rs/rs_parity.exe movement rust-client/tests/golden/movement.txt
+    build-rs/rs_parity.exe chat rust-client/tests/golden/chat.txt
     rust-client\scripts\cpp_settings.ps1   # needs build-rs-client\DDNet.exe (PowerShell)
 
 All modes are deterministic: the data regenerates byte for byte.
