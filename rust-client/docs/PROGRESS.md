@@ -1279,6 +1279,11 @@ All modes are deterministic: the data regenerates byte for byte.
     python rust-client/scripts/gen_content.py
     python rust-client/scripts/gen_keys.py
 
+Word-for-word C++ copies in `src/tools/rs_parity_{msgs,antiping}.cpp` come from a
+template with `//@@COPY <file> <a> <b>` lines (checked by `cpp_copies_match_source`):
+
+    python rust-client/scripts/gen_cpp_copies.py <template.cpp> src/tools/<tool>.cpp
+
 ## Known issues / blockers
 - Resend buffer is a byte budget, not C++'s ring buffer (differs only with ~32 KiB
   unacked data; `ponytail:` comment in `net/conn.rs`).
