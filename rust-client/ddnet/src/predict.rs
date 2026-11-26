@@ -17,11 +17,12 @@ use std::rc::Rc;
 use crate::console;
 use crate::map::Map;
 use crate::net::client::{self, Client, PredictMsg, Timing};
+use crate::net::conn::FREQ;
 use crate::physics::collision::Collision;
 use crate::physics::core::{CharacterCore, WorldCore, read_ddnet};
 use crate::physics::teams::{MAX_CLIENTS, NUM_DDRACE_TEAMS, TEAM_FLOCK, TeamsCore};
 use crate::physics::tuning::{Param, Tuning};
-use crate::physics::vmath::{Vec2, mix, vec2};
+use crate::physics::vmath::{Vec2, length, mix, vec2};
 use crate::physics::world::{
     GameWorld, NUM_TUNE_ZONES, TUNE_ZONE_OVERRIDE_NONE, WorldConfig, core_obj,
 };
@@ -1042,6 +1043,132 @@ impl Predictor {
         t.team(id) != t.team(local)
     }
 
+    /// C++: `CGameClient::GetSmoothPos` (gameclient.cpp:3951): where other tee `id` is
+    /// drawn with `cl_antiping_smooth`: between its predicted cores, per axis mixed into
+    /// the `pred_pos` history while a smoothing window runs.
+    pub fn smooth_pos(&self, id: usize, t: &Timing) -> Vec2 {
+        let mut pos = mix(
+            self.prev_predicted[id].pos,
+            self.predicted[id].pos,
+            t.pred_intra_tick,
+        );
+        for j in 0..2 {
+            let len = self.smooth_len[id][j].clamp(1, FREQ);
+            let passed = t.now.wrapping_sub(self.smooth_start[id][j]);
+            if !(0..len).contains(&passed) {
+                continue;
+            }
+            let mix_amount = 1.0 - (1.0 - passed as f32 / len as f32).powf(1.2);
+            let (tick, intra) = client::smooth_tick(t.game_now, t.pred_now, mix_amount);
+            let ring = |tick: i32| tick.rem_euclid(NUM_PRED_POS as i32) as usize;
+            let ticks = &self.pred_pos_tick[id];
+            if tick > 0
+                && ticks[ring(tick - 1)] >= t.prev_game_tick
+                && ticks[ring(tick)] <= t.pred_tick
+            {
+                let (a, b) = (
+                    self.pred_pos[id][ring(tick - 1)],
+                    self.pred_pos[id][ring(tick)],
+                );
+                set_axis(&mut pos, j, axis(a, j) + (axis(b, j) - axis(a, j)) * intra);
+            }
+        }
+        pos
+    }
+
+    /// C++: the `cl_antiping_smooth` block of `OnPredict` (gameclient.cpp:2754): when
+    /// another tee's prediction changed by a small error, start or extend a smoothing
+    /// window per axis. `before_render` is `GetSmoothPos` of every client before the
+    /// prediction. ponytail: C++ measures the window in µs (`1000 * PredTime` ms) against
+    /// `time_get()` in ns, so windows last 1000x shorter than meant; kept (DECISIONS.md).
+    fn smooth(&mut self, t: &Timing, before_render: &[Vec2]) {
+        if !(self.config.antiping_smooth
+            && self.predict_on()
+            && self.antiping_players() != 0
+            && self.new_tick
+            && self.predicted_tick >= 0 // MIN_TICK
+            && (self.predicted_tick - t.pred_tick).abs() <= 1
+            && (t.game_tick - t.prev_game_tick).abs() <= 2)
+        {
+            return;
+        }
+        let prediction_time = client::prediction_time(t.game_now, t.pred_now);
+        let pred_time = prediction_time.clamp(0, 800);
+        // smoothing pace (a lower value will make the smoothing quicker)
+        let pace = 4.0 - 1.5 * pred_time as f32 / 800.0;
+        let len = ((1000 * pred_time) as f32 * pace) as i64;
+        let freq = FREQ as f32;
+        for (i, &before) in before_render.iter().enumerate() {
+            let Some(c) = self.chars[i] else {
+                continue;
+            };
+            if i as i32 == self.local_id || !self.last_active[i] {
+                continue;
+            }
+            let (prev, pred) = (self.prev_predicted[i].pos, self.predicted[i].pos);
+            let new_pos = if self.predicted_tick == t.pred_tick {
+                pred
+            } else {
+                prev
+            };
+            let div = prediction_time.min(200) as f32;
+            let err = vec2(
+                (self.last_pos[i].x - new_pos.x) / div,
+                (self.last_pos[i].y - new_pos.y) / div,
+            );
+            let err_len = length(err);
+            if !(0.05..=5.0).contains(&err_len) {
+                continue;
+            }
+            let pred_pos = mix(prev, pred, t.pred_intra_tick);
+            let cur_pos = mix(
+                vec2(c.prev.x as f32, c.prev.y as f32),
+                vec2(c.cur.x as f32, c.cur.y as f32),
+                t.intra_tick,
+            );
+            let render_diff = pred_pos - before;
+            let pred_diff = pred_pos - cur_pos;
+            let mut amount = [0.0f32; 2];
+            for (j, a) in amount.iter_mut().enumerate() {
+                *a = 1.0;
+                if axis(err, j).abs() > 0.05 {
+                    *a = 0.0;
+                    if axis(render_diff, j).abs() > 0.01 {
+                        *a = 1.0 - (axis(render_diff, j) / axis(pred_diff, j)).clamp(0.0, 1.0);
+                        *a = 1.0 - (1.0 - *a).powf(1.0 / 1.2);
+                    }
+                }
+                let passed = t.now.wrapping_sub(self.smooth_start[i][j]);
+                if (0..len).contains(&passed) {
+                    *a = std_min(*a, (passed as f64 / len as f64) as f32);
+                }
+            }
+            for j in 0..2 {
+                if axis(render_diff, j).abs() < 0.01
+                    && axis(pred_diff, j).abs() < 0.01
+                    && (axis(prev, j) - axis(pred, j)).abs() < 0.01
+                    && amount[j] > amount[j ^ 1]
+                {
+                    amount[j] = amount[j ^ 1];
+                }
+            }
+            for j in 0..2 {
+                // don't smooth for longer than 700ms, or more than 300ms longer along one
+                // axis than the other axis
+                let remaining = std_min(
+                    std_min((1.0 - amount[j]) * len as f32, freq * 0.700),
+                    (1.0 - amount[j ^ 1]) * len as f32 + freq * 0.300,
+                ) as i64;
+                let start = t.now.wrapping_sub(len.wrapping_sub(remaining));
+                let (s, end) = (self.smooth_start[i][j], start.wrapping_add(len));
+                if !(s <= end && end <= s.wrapping_add(len)) {
+                    self.smooth_start[i][j] = start;
+                    self.smooth_len[i][j] = len;
+                }
+            }
+        }
+    }
+
     /// C++: `CGameClient::OnPredict` (called for sane prediction ticks only, see
     /// `update`).
     pub fn predict(&mut self, t: &Timing, input_at: &dyn Fn(i32) -> Option<ObjPlayerInput>) {
@@ -1055,6 +1182,7 @@ impl Predictor {
         }
         let local = self.local_id as usize;
         let before = self.predicted_char;
+        let before_render: Vec<Vec2> = (0..MAX_CLIENTS).map(|i| self.smooth_pos(i, t)).collect();
 
         let mut w = self.world.copy_world();
         // don't predict inactive players, or entities from other teams
@@ -1137,6 +1265,8 @@ impl Predictor {
             }
             store_pred_pos(&mut self.pred_pos, &mut self.pred_pos_tick, &w, tick);
         }
+        // detect mispredictions of other players and make corrections smoother
+        self.smooth(t, &before_render);
         for i in 0..MAX_CLIENTS {
             self.last_active[i] = self.chars[i].is_some();
             if self.last_active[i] {
@@ -1153,6 +1283,24 @@ impl Predictor {
         self.history = self.history.split_off(&(cur - TICK_SPEED));
         self.predicted_world = Some(w);
     }
+}
+
+/// C++: `vec2[j]`.
+fn axis(v: Vec2, j: usize) -> f32 {
+    if j == 0 { v.x } else { v.y }
+}
+
+fn set_axis(v: &mut Vec2, j: usize, value: f32) {
+    if j == 0 {
+        v.x = value;
+    } else {
+        v.y = value;
+    }
+}
+
+/// C++: `std::min` for floats (`b < a ? b : a`; differs from `f32::min` with NaN).
+fn std_min(a: f32, b: f32) -> f32 {
+    if b < a { b } else { a }
 }
 
 /// C++: `CGameClient::ApplyPreInputs` (gameclient.cpp:2540): the other players'

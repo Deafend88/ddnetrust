@@ -1898,7 +1898,13 @@ fn ddnet_fields(q: &mut Queries, c: &CharacterCore) {
 
 /// rs_parity antiping's `PrintState`: what UpdatePrediction and OnPredict leave behind.
 /// `seen`: the clients with a DDNetCharacter in a snapshot of this run.
-fn antiping_state(p: &ddnet::predict::Predictor, empty: &GameWorld, seen: &[bool]) -> String {
+/// `frame`: the timing of a frame line (GetSmoothPos of every client is compared too).
+fn antiping_state(
+    p: &ddnet::predict::Predictor,
+    empty: &GameWorld,
+    seen: &[bool],
+    frame: Option<&ddnet::net::client::Timing>,
+) -> String {
     use ddnet::physics::teams::MAX_CLIENTS;
     let in_world = |i| (p.predicted_world.as_ref()).is_some_and(|w| w.character(i).is_some());
     let mut cores = Queries::default();
@@ -1929,6 +1935,9 @@ fn antiping_state(p: &ddnet::predict::Predictor, empty: &GameWorld, seen: &[bool
         }
         smooth.vec(p.last_pos[i]);
         smooth.int(p.last_active[i]);
+        if let Some(t) = frame {
+            smooth.vec(p.smooth_pos(i, t));
+        }
     }
     let world = |w: Option<&GameWorld>| {
         let mut q = Queries::default();
@@ -1989,7 +1998,7 @@ fn check_antiping(name: &str, map: &Map, col: Rc<Collision>, text: &str) {
     let mut inputs: BTreeMap<i32, ObjPlayerInput> = BTreeMap::new();
     let (mut items, mut prev_items): (Vec<Item>, Vec<Item>) = (Vec::new(), Vec::new());
     let (mut tick, mut prev_tick) = (0, None);
-    let (mut frames, mut predicted) = (0, 0);
+    let (mut frames, mut predicted, mut smoothed) = (0, 0, 0);
     let mut seen = [false; ddnet::physics::teams::MAX_CLIENTS];
     for (n, line) in text.lines().enumerate() {
         let (input, want) = line.split_once(" = ").unwrap_or((line, ""));
@@ -2065,6 +2074,7 @@ fn check_antiping(name: &str, map: &Map, col: Rc<Collision>, text: &str) {
         }
         let pr = p.as_mut().unwrap();
         let input_at = |t: i32| inputs.range(..=t).next_back().map(|(_, i)| *i);
+        let mut frame = None;
         match w[0] {
             "update" => {
                 pr.on_new_snapshot(&items, &prev_items, prev_tick, tick, &input_at);
@@ -2086,14 +2096,17 @@ fn check_antiping(name: &str, map: &Map, col: Rc<Collision>, text: &str) {
                 pr.new_tick = w[9] == "1";
                 // CClient::Update: only sane predictions (MaxLatencyTicks 50)
                 if t.pred_tick > t.game_tick && t.pred_tick < t.game_tick + 50 {
+                    let windows = pr.smooth_start.clone();
                     pr.predict(&t, &input_at);
                     predicted += 1;
+                    smoothed += (pr.smooth_start != windows) as u32;
                 }
                 frames += 1;
+                frame = Some(t);
             }
             other => panic!("unknown line {other}"),
         }
-        let got = antiping_state(pr, &empty, &seen);
+        let got = antiping_state(pr, &empty, &seen, frame.as_ref());
         if got != want {
             // compare with `RS_VERBOSE=1 rs_parity antiping` (stderr)
             let w = pr.world();
@@ -2108,8 +2121,8 @@ fn check_antiping(name: &str, map: &Map, col: Rc<Collision>, text: &str) {
         assert_eq!(got, want, "{name}:{}: {input}", n + 1);
     }
     assert!(
-        frames > 1000 && predicted * 10 > frames * 9,
-        "{frames} {predicted}"
+        frames > 1000 && predicted * 10 > frames * 9 && smoothed > 20,
+        "{frames} {predicted} {smoothed}"
     );
 }
 

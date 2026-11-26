@@ -1119,12 +1119,27 @@ are final unless the user changes them:
   and `build-rs/rs_parity.exe antiping "data/maps/<name>.map" rust-client/tests/golden/maps/<name>.antiping.txt`
   (`RS_VERBOSE=1` prints each server-world character state to stderr).
 
+#### 8.6 (2026-11-26): smoothing — done
+- `predict.rs`: the `cl_antiping_smooth` block of `OnPredict` (`smooth`, run after the
+  prediction with `GetSmoothPos` of every client from before it) and `GetSmoothPos`
+  (`smooth_pos`, the per-axis mix into the `pred_pos` history); `std::min` with its NaN
+  behaviour.
+- Verified: `rs_parity antiping` with smoothing on in half the runs and a third of the
+  frames under 2 ms apart; every frame also compares `GetSmoothPos` of all 128 clients.
+  100% identical on all 7 maps (windows started in every map). 9 of 13 mutations
+  caught; the other 4 (the 700/300 ms caps, the window-extension bound, the running-
+  window minimum) cannot change anything: C++ sizes windows in µs against a ns clock,
+  so they end within ~3 ms (DECISIONS.md, suspected C++ bug, kept).
+- Live: `antiping_smoothing_steps` (dm1, a second tee changing direction/jumping at
+  random every 50-300 ms): largest per-frame step of its drawn position 12.61 px with
+  smoothing on and off alike, 12 windows in 10 s; the same consequence of that C++ bug.
+
 #### Exact next actions (next session starts here)
-State (2026-11-26): M8 8.1-8.5 done and pushed. Working through 8.6-8.8 without
+State (2026-11-26): M8 8.1-8.6 done and pushed. Working through 8.7-8.8 without
 stopping (user's instruction), then stop for review.
 1. Read CLAUDE.md, PLAN §12 (incl. §12.7), this file, `git log`.
-2. Next: 8.6 smoothing (the copied block already runs in `rs_parity antiping`; turn
-   `cl_antiping_smooth` on in some runs, port the block and `GetSmoothPos`).
+2. Next: 8.7 rendering (`UpdateRenderedCharacters` modes 0-3, items from
+   `prev_predicted_world`, predicted laser/projectile timing).
 
 #### Decisions and gotchas from 7.1
 - egui 0.37 panics in debug if a frame's `TexturesDelta` is dropped unapplied: drain

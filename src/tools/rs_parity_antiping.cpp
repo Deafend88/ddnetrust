@@ -1123,7 +1123,7 @@ static void DDNetFields(std::vector<int> &v, const CCharacterCore &c)
 }
 
 // `aSeen`: the clients with a DDNetCharacter in a snapshot of this run.
-static void PrintState(FILE *f, CGameClient &Gc, const bool *aSeen)
+static void PrintState(FILE *f, CGameClient &Gc, const bool *aSeen, bool Frame)
 {
 	std::vector<int> Cores;
 	for(int i = 0; i < MAX_CLIENTS; i++)
@@ -1163,6 +1163,12 @@ static void PrintState(FILE *f, CGameClient &Gc, const bool *aSeen)
 		Smooth.push_back(Bits(Gc.m_aLastPos[i].x));
 		Smooth.push_back(Bits(Gc.m_aLastPos[i].y));
 		Smooth.push_back(Gc.m_aLastActive[i]);
+		if(Frame)
+		{
+			const vec2 Pos = Gc.GetSmoothPos(i);
+			Smooth.push_back(Bits(Pos.x));
+			Smooth.push_back(Bits(Pos.y));
+		}
 	}
 	std::vector<int> World, Predicted, PrevPredicted;
 	NetWorldInts(World, Gc.m_GameWorld);
@@ -1273,7 +1279,7 @@ static int LoopMode(CCollision *pCollision, FILE *f)
 		g_Config.m_ClAntiPingGrenade = 1;
 		g_Config.m_ClAntiPingGunfire = 1;
 		g_Config.m_ClAntiPingPreInput = Run % 5 != 4;
-		g_Config.m_ClAntiPingSmooth = 0;
+		g_Config.m_ClAntiPingSmooth = Run % 2;
 		g_Config.m_ClAntiPingLimit = Run % 6 == 1 ? 20 + Rand() % 200 : 0;
 		g_Config.m_ClAntiPingPercent = Run % 6 == 2 ? Rand() % 101 : 100;
 		g_Config.m_ClPredictFreeze = Run % 3;
@@ -1548,7 +1554,7 @@ static int LoopMode(CCollision *pCollision, FILE *f)
 			Gc.m_NewTick = true;
 			Gc.UpdatePrediction();
 			fprintf(f, "update");
-			PrintState(f, Gc, aSeen);
+			PrintState(f, Gc, aSeen, false);
 			mem_copy(aPrevObj, aObj, sizeof(aObj));
 			mem_copy(aPrevIn, aIn, sizeof(aIn));
 			PrevSnapTick = SnapTick;
@@ -1582,7 +1588,8 @@ static int LoopMode(CCollision *pCollision, FILE *f)
 					fprintf(f, "\n");
 				}
 				SentUpTo = std::max(SentUpTo, PredTick);
-				RunTime += TickTime / 3 + Rand64() % TickTime;
+				// some frames come fast (high frame rates: smoothing windows last ~1 ms)
+				RunTime += Rand() % 3 == 0 ? 1 + Rand64() % (TickTime / 10) : TickTime / 3 + Rand64() % TickTime;
 				s_Now = RunTime;
 				CClient &Client = Gc.m_Client;
 				Client.m_PredGameTick = PredTick;
@@ -1597,7 +1604,7 @@ static int LoopMode(CCollision *pCollision, FILE *f)
 				const int MaxLatencyTicks = SERVER_TICK_SPEED + (10 * SERVER_TICK_SPEED) / 1000;
 				if(PredTick > SnapTick && PredTick < SnapTick + MaxLatencyTicks)
 					Gc.OnPredict();
-				PrintState(f, Gc, aSeen);
+				PrintState(f, Gc, aSeen, true);
 				Gc.m_NewTick = false;
 			}
 		}

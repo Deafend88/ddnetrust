@@ -316,3 +316,15 @@ only matters for names so long that neither file can exist.
   read before a prediction writes them. The parity dump leaves them out.
 - The `m_aPredPos` ring is indexed with `tick.rem_euclid(200)`: C++ `Tick % 200` is
   negative (out of bounds) for negative ticks, which a server never sends.
+
+## 2026-11-26 — Antiping 8.6: smoothing
+
+- Suspected C++ bug, kept: the `cl_antiping_smooth` block sizes a window as
+  `Len = 1000 * PredTime * SmoothPace` with `PredTime` in ms (µs units), but compares it
+  with `time_get()` deltas in ns (`time_freq()` is 1e9). Windows therefore last at most
+  ~3.2 ms instead of up to 3.2 s; the 700 ms / 300 ms caps (in ns) never bind, and a
+  window has always ended by the next snapshot frame. Measured live: the largest
+  per-frame step of a mispredicted tee is the same with smoothing on and off.
+- C++ `std::min`/`std::clamp` on floats are ported with their NaN behaviour
+  (`b < a ? b : a`), not `f32::min`. Float to `int64_t` casts of NaN or out-of-range
+  values (C++ UB) saturate in Rust; they need a NaN position to happen.

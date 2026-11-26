@@ -710,3 +710,85 @@ fn camera_messages_set_network_clipping() {
     }
     drop(server);
 }
+
+/// 8.6: `cl_antiping_smooth` on a second tee that changes direction and jumps at random
+/// every 50-300 ms (its preinputs come late or not at all, so it mispredicts). Logs the
+/// largest per-frame step of its drawn position with smoothing (`GetSmoothPos`) and
+/// without (between its predicted cores), and how many smoothing windows started.
+#[test]
+fn antiping_smoothing_steps() {
+    let Some(exe) = server_binary() else {
+        eprintln!("SKIPPED: no DDNet-Server (set DDNET_SERVER or build the game-server target)");
+        return;
+    };
+    let (server, port) = start_server(&exe, "dm1");
+    let addr = format!("127.0.0.1:{port}").parse().unwrap();
+    let start = Instant::now();
+    let (sa, sb) = (
+        net::connect_socket(addr).unwrap(),
+        net::connect_socket(addr).unwrap(),
+    );
+    let mut a = Client::new(PlayerInfo::default(), "", net::random_bytes);
+    let mut b = Client::new(PlayerInfo::default(), "", net::random_bytes);
+    a.connect(net::now(start));
+    b.connect(net::now(start));
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while Instant::now() < deadline && !(local_x(&a).is_some() && local_x(&b).is_some()) {
+        net::pump(&sa, &mut a, net::now(start)).unwrap();
+        net::pump(&sb, &mut b, net::now(start)).unwrap();
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let map = Map::load(a.map().unwrap().data.clone()).unwrap();
+    let mut pred = Predictor::new(Rc::new(Collision::new(&map)), &map);
+    pred.config.antiping = true;
+    pred.config.antiping_smooth = true;
+    let idb = b.local_id().unwrap() as usize;
+    let entered = net::now(start);
+    let mut seed = 12345u32;
+    let mut next_change = entered;
+    // (last smooth pos, last raw pos, max smooth step, max raw step, frames, windows)
+    let (mut last, mut max, mut frames, mut windows) = (None, (0f32, 0f32), 0u32, 0u32);
+    while net::now(start) - entered < 10 * FREQ {
+        let now = net::now(start);
+        net::scripted_input(&mut a.input, now - entered);
+        if now >= next_change {
+            seed = seed.wrapping_mul(1103515245).wrapping_add(12345);
+            b.input.direction = (seed >> 16) as i32 % 3 - 1;
+            b.input.jump = (seed >> 20).is_multiple_of(4) as i32;
+            next_change = now + FREQ / 20 + (seed >> 8) as i64 % (FREQ / 4);
+        }
+        net::pump(&sa, &mut a, now).unwrap();
+        net::pump(&sb, &mut b, now).unwrap();
+        let before = pred.smooth_start[idb];
+        pred.update(&mut a, now);
+        windows += (pred.smooth_start[idb] != before) as u32;
+        let in_world = (pred.predicted_world.as_ref()).is_some_and(|w| w.character(idb).is_some());
+        if !in_world {
+            last = None;
+            continue;
+        }
+        let t = a.timing(now);
+        let smooth = pred.smooth_pos(idb, &t);
+        let raw = ddnet::physics::vmath::mix(
+            pred.prev_predicted[idb].pos,
+            pred.predicted[idb].pos,
+            t.pred_intra_tick,
+        );
+        if let Some((ls, lr)) = last {
+            let step = |p: ddnet::physics::vmath::Vec2, q: ddnet::physics::vmath::Vec2| {
+                (p.x - q.x).hypot(p.y - q.y)
+            };
+            max = (max.0.max(step(smooth, ls)), max.1.max(step(raw, lr)));
+            frames += 1;
+        }
+        last = Some((smooth, raw));
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    eprintln!(
+        "other tee, largest per-frame step: smoothing on {:.2} px, off {:.2} px; {frames} frames, {windows} smoothing windows",
+        max.0, max.1
+    );
+    assert!(frames > 1000, "{frames}");
+    assert!(max.0.is_finite() && max.1.is_finite());
+    drop(server);
+}
