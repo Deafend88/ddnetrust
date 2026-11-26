@@ -1278,7 +1278,10 @@ fn cpp_copies_match_source() {
             .collect()
     };
     let mut copies = 0;
-    for tool in ["src/tools/rs_parity_msgs.cpp"] {
+    for tool in [
+        "src/tools/rs_parity_msgs.cpp",
+        "src/tools/rs_parity_antiping.cpp",
+    ] {
         let text = std::fs::read_to_string(repo_file(tool)).unwrap();
         let lines: Vec<&str> = text.lines().collect();
         let mut i = 0;
@@ -1305,7 +1308,7 @@ fn cpp_copies_match_source() {
             i = end + 1;
         }
     }
-    assert_eq!(copies, 8);
+    assert_eq!(copies, 15);
 }
 
 /// rs_parity's `WeaponZoneTuning`: `ZoneTuning` plus weapon parameters per zone.
@@ -1838,5 +1841,283 @@ fn netents() {
             Rc::new(Collision::from_layers(layers)),
             &golden_file(name, "netents"),
         );
+    }
+}
+
+/// `NetWorldInts` of rs_parity: every character and entity of a world.
+fn net_world_ints(w: &GameWorld, q: &mut Queries) {
+    for i in 0..ddnet::physics::teams::MAX_CLIENTS {
+        if let Some((ch, c)) = w.character(i) {
+            q.int(i as i32);
+            q.int(weapon_char_state(ch, c, &w.teams).crc());
+        }
+    }
+    for n in [
+        w.projectiles.len(),
+        w.lasers.len(),
+        w.doors().len(),
+        w.draggers.len(),
+        w.plasmas.len(),
+        w.pickups.len(),
+    ] {
+        q.int(n as i32);
+    }
+    q.int(weapon_entity_state(w).crc());
+}
+
+/// rs_parity antiping's `DDNetFields`: what `read_ddnet` sets.
+fn ddnet_fields(q: &mut Queries, c: &CharacterCore) {
+    for b in [
+        c.solo,
+        c.jetpack,
+        c.collision_disabled,
+        c.hammer_hit_disabled,
+        c.shotgun_hit_disabled,
+        c.grenade_hit_disabled,
+        c.laser_hit_disabled,
+        c.hook_hit_disabled,
+        c.super_,
+        c.invincible,
+        c.endless_hook,
+        c.endless_jump,
+        c.deep_frozen,
+        c.live_frozen,
+        c.has_telegun_grenade,
+        c.has_telegun_gun,
+        c.has_telegun_laser,
+    ] {
+        q.int(b);
+    }
+    for w in &c.weapons {
+        q.int(w.got);
+    }
+    q.int(c.freeze_end);
+    q.int(c.jumps);
+    q.int(c.jumped_total);
+}
+
+/// rs_parity antiping's `PrintState`: what UpdatePrediction and OnPredict leave behind.
+/// `seen`: the clients with a DDNetCharacter in a snapshot of this run.
+fn antiping_state(p: &ddnet::predict::Predictor, empty: &GameWorld, seen: &[bool]) -> String {
+    use ddnet::physics::teams::MAX_CLIENTS;
+    let in_world = |i| (p.predicted_world.as_ref()).is_some_and(|w| w.character(i).is_some());
+    let mut cores = Queries::default();
+    for (i, (prev, cur)) in p.prev_predicted.iter().zip(&p.predicted).enumerate() {
+        cores.vec(prev.pos);
+        cores.vec(cur.pos);
+        if in_world(i) {
+            cores.0.extend(core_state(prev).0);
+            cores.0.extend(core_state(cur).0);
+        } else if seen[i] {
+            ddnet_fields(&mut cores, cur);
+        }
+    }
+    let mut pred_pos = Queries::default();
+    for i in 0..MAX_CLIENTS {
+        for k in 0..200 {
+            pred_pos.vec(p.pred_pos[i][k]);
+            pred_pos.int(p.pred_pos_tick[i][k]);
+        }
+    }
+    let mut smooth = Queries::default();
+    for i in 0..MAX_CLIENTS {
+        for j in 0..2 {
+            for v in [p.smooth_start[i][j], p.smooth_len[i][j]] {
+                smooth.int(v as i32);
+                smooth.int((v >> 32) as i32);
+            }
+        }
+        smooth.vec(p.last_pos[i]);
+        smooth.int(p.last_active[i]);
+    }
+    let world = |w: Option<&GameWorld>| {
+        let mut q = Queries::default();
+        net_world_ints(w.unwrap_or(empty), &mut q);
+        q.crc()
+    };
+    format!(
+        "{:08x} {:08x} {:08x} {:08x} {:08x} {:08x} {}",
+        cores.crc(),
+        pred_pos.crc(),
+        smooth.crc(),
+        world(Some(p.world())),
+        world(p.predicted_world.as_ref()),
+        world(p.prev_predicted_world.as_ref()),
+        p.predicted_tick()
+    )
+}
+
+#[test]
+fn antiping_timing_matches_cpp() {
+    use ddnet::net::client::{prediction_tick, prediction_time, smooth_tick};
+    let path = format!(
+        "{}/../tests/golden/antiping-timing.txt",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let mut count = 0;
+    for line in text.lines() {
+        let (input, want) = line.split_once(" = ").unwrap();
+        let w: Vec<&str> = input.split(' ').collect();
+        let int = |i: usize| w[i].parse::<i64>().unwrap();
+        let (game_now, pred_now) = (int(3), int(4));
+        let mix = f32::from_bits(u32::from_str_radix(w[7], 16).unwrap());
+        let time = prediction_time(game_now, pred_now);
+        let tick = prediction_tick(
+            time,
+            int(5) as i32,
+            int(6) as i32,
+            int(1) as i32,
+            int(2) as i32,
+        );
+        let (smooth, intra) = smooth_tick(game_now, pred_now, mix);
+        let got = format!("{time} {tick} {smooth} {:08x}", intra.to_bits());
+        assert_eq!(got, want, "{input}");
+        count += 1;
+    }
+    assert_eq!(count, 3000);
+}
+
+/// The prediction loop (M8.5) against `rs_parity antiping`: snapshots into
+/// UpdatePrediction, then frames that predict ahead.
+fn check_antiping(name: &str, map: &Map, col: Rc<Collision>, text: &str) {
+    use ddnet::net::client::{PredictMsg, Timing};
+    use ddnet::predict::{PredictConfig, Predictor};
+    use ddnet::protocol::snapshot::Item;
+    let empty = GameWorld::new(Rc::clone(&col), WorldConfig::default());
+    let mut p: Option<Predictor> = None;
+    let mut inputs: BTreeMap<i32, ObjPlayerInput> = BTreeMap::new();
+    let (mut items, mut prev_items): (Vec<Item>, Vec<Item>) = (Vec::new(), Vec::new());
+    let (mut tick, mut prev_tick) = (0, None);
+    let (mut frames, mut predicted) = (0, 0);
+    let mut seen = [false; ddnet::physics::teams::MAX_CLIENTS];
+    for (n, line) in text.lines().enumerate() {
+        let (input, want) = line.split_once(" = ").unwrap_or((line, ""));
+        let w: Vec<&str> = input.split(' ').collect();
+        let v: Vec<i32> = w[1..].iter().map(|s| s.parse().unwrap_or(0)).collect();
+        match w[0] {
+            "run" => {
+                let mut pr = Predictor::new(Rc::clone(&col), map);
+                pr.world_mut().tunings = vec![Tuning::default(); NUM_TUNE_ZONES];
+                pr.config = PredictConfig {
+                    predict: true,
+                    antiping: v[2] != 0,
+                    antiping_players: v[3],
+                    antiping_weapons: v[4] != 0,
+                    antiping_preinput: v[5] != 0,
+                    antiping_smooth: v[6] != 0,
+                    antiping_limit: v[7],
+                    antiping_percent: v[8],
+                    predict_freeze: v[9],
+                    antiping_grenade: v[10] != 0,
+                    antiping_gunfire: v[11] != 0,
+                };
+                p = Some(pr);
+                inputs.clear();
+                items.clear();
+                seen = [false; ddnet::physics::teams::MAX_CLIENTS];
+                prev_tick = None;
+                continue;
+            }
+            "teams" => {
+                p.as_mut().unwrap().on_message(PredictMsg::TeamsState(v));
+                continue;
+            }
+            "pre" => {
+                p.as_mut()
+                    .unwrap()
+                    .on_message(PredictMsg::PreInput(g::MsgSvPreInput {
+                        direction: v[0],
+                        target_x: v[1],
+                        target_y: v[2],
+                        jump: v[3],
+                        fire: v[4],
+                        hook: v[5],
+                        wanted_weapon: v[6],
+                        next_weapon: v[7],
+                        prev_weapon: v[8],
+                        owner: v[9],
+                        intended_tick: v[10],
+                    }));
+                continue;
+            }
+            "snap" => {
+                prev_items = std::mem::take(&mut items);
+                tick = v[0];
+                continue;
+            }
+            "item" => {
+                if v[0] == g::NETOBJTYPE_DDNETCHARACTER {
+                    seen[v[1] as usize] = true;
+                }
+                items.push(Item {
+                    type_id: v[0],
+                    id: v[1],
+                    data: v[2..].to_vec(),
+                });
+                continue;
+            }
+            "input" => {
+                inputs.insert(v[0], ObjPlayerInput::from_ints(&v[1..]));
+                continue;
+            }
+            _ => {}
+        }
+        let pr = p.as_mut().unwrap();
+        let input_at = |t: i32| inputs.range(..=t).next_back().map(|(_, i)| *i);
+        match w[0] {
+            "update" => {
+                pr.on_new_snapshot(&items, &prev_items, prev_tick, tick, &input_at);
+                prev_tick = Some(tick);
+            }
+            "frame" => {
+                let long = |i: usize| w[i].parse::<i64>().unwrap();
+                let float = |i: usize| f32::from_bits(u32::from_str_radix(w[i], 16).unwrap());
+                let t = Timing {
+                    game_tick: v[0],
+                    prev_game_tick: v[1],
+                    pred_tick: v[2],
+                    game_now: long(4),
+                    pred_now: long(5),
+                    now: long(6),
+                    intra_tick: float(7),
+                    pred_intra_tick: float(8),
+                };
+                pr.new_tick = w[9] == "1";
+                // CClient::Update: only sane predictions (MaxLatencyTicks 50)
+                if t.pred_tick > t.game_tick && t.pred_tick < t.game_tick + 50 {
+                    pr.predict(&t, &input_at);
+                    predicted += 1;
+                }
+                frames += 1;
+            }
+            other => panic!("unknown line {other}"),
+        }
+        let got = antiping_state(pr, &empty, &seen);
+        if got != want {
+            // compare with `RS_VERBOSE=1 rs_parity antiping` (stderr)
+            let w = pr.world();
+            for i in 0..ddnet::physics::teams::MAX_CLIENTS {
+                if let Some((ch, c)) = w.character(i) {
+                    let q = weapon_char_state(ch, c, &w.teams).0;
+                    let q: Vec<String> = q.iter().map(|v| v.to_string()).collect();
+                    eprintln!("# {i} {}", q.join(" "));
+                }
+            }
+        }
+        assert_eq!(got, want, "{name}:{}: {input}", n + 1);
+    }
+    assert!(
+        frames > 1000 && predicted * 10 > frames * 9,
+        "{frames} {predicted}"
+    );
+}
+
+#[test]
+fn antiping_loop_matches_cpp() {
+    for name in MAPS {
+        let map = load(name);
+        let col = Rc::new(Collision::new(&map));
+        check_antiping(name, &map, col, &golden_file(name, "antiping"));
     }
 }

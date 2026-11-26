@@ -511,7 +511,10 @@ impl App {
             // C++: CGameClient::OnNewSnapshot/OnPredict, then UpdateRenderedCharacters
             let local_freeze_end = match &mut s.predictor {
                 Some(p) => {
-                    p.update(&mut s.client);
+                    // C++ reads g_Config live
+                    p.config = self.settings.config.predict_config();
+                    s.client.prediction_margin = self.settings.config.cl_prediction_margin;
+                    p.update(&mut s.client, net::now(self.start));
                     rendered = p.rendered(&s.client);
                     p.predicted_freeze_end()
                 }

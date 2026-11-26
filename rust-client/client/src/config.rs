@@ -76,6 +76,19 @@ pub struct Config {
     pub cl_showhud_time_cp_diff: i32,
     pub cl_show_broadcasts: i32,
     pub cl_showhud_spectator: i32,
+    /// C++ prediction and antiping (config_variables.h:15-27, 730).
+    pub cl_predict: i32,
+    pub cl_antiping_limit: i32,
+    pub cl_antiping_percent: i32,
+    pub cl_antiping: i32,
+    pub cl_antiping_players: i32,
+    pub cl_antiping_grenade: i32,
+    pub cl_antiping_weapons: i32,
+    pub cl_antiping_smooth: i32,
+    pub cl_antiping_gunfire: i32,
+    pub cl_antiping_preinput: i32,
+    pub cl_prediction_margin: i32,
+    pub cl_predict_freeze: i32,
     /// Ours (not a C++ variable): the DDNet data dir, used when neither `--data-dir`
     /// nor `DDNET_DATA_DIR` is given.
     pub rs_data_dir: String,
@@ -126,6 +139,18 @@ impl Default for Config {
             cl_showhud_time_cp_diff: 1,
             cl_show_broadcasts: 1,
             cl_showhud_spectator: 1,
+            cl_predict: 1,
+            cl_antiping_limit: 0,
+            cl_antiping_percent: 100,
+            cl_antiping: 0,
+            cl_antiping_players: 1,
+            cl_antiping_grenade: 1,
+            cl_antiping_weapons: 1,
+            cl_antiping_smooth: 0,
+            cl_antiping_gunfire: 1,
+            cl_antiping_preinput: 1,
+            cl_prediction_margin: 10,
+            cl_predict_freeze: 1,
             rs_data_dir: String::new(),
             rs_media_source: String::new(),
             rs_media: 1,
@@ -144,6 +169,23 @@ enum Var<'a> {
 }
 
 impl Config {
+    /// The prediction and antiping variables for the predictor.
+    pub fn predict_config(&self) -> ddnet::predict::PredictConfig {
+        ddnet::predict::PredictConfig {
+            predict: self.cl_predict != 0,
+            antiping: self.cl_antiping != 0,
+            antiping_players: self.cl_antiping_players,
+            antiping_grenade: self.cl_antiping_grenade != 0,
+            antiping_weapons: self.cl_antiping_weapons != 0,
+            antiping_smooth: self.cl_antiping_smooth != 0,
+            antiping_gunfire: self.cl_antiping_gunfire != 0,
+            antiping_preinput: self.cl_antiping_preinput != 0,
+            antiping_limit: self.cl_antiping_limit,
+            antiping_percent: self.cl_antiping_percent,
+            predict_freeze: self.cl_predict_freeze,
+        }
+    }
+
     /// An integer variable by its C++ name.
     pub fn int(&self, name: &str) -> Option<i32> {
         match self.clone().var(name)? {
@@ -189,6 +231,18 @@ impl Config {
             "cl_showhud_time_cp_diff" => Int(&mut self.cl_showhud_time_cp_diff, 0, 1),
             "cl_show_broadcasts" => Int(&mut self.cl_show_broadcasts, 0, 1),
             "cl_showhud_spectator" => Int(&mut self.cl_showhud_spectator, 0, 1),
+            "cl_predict" => Int(&mut self.cl_predict, 0, 1),
+            "cl_antiping_limit" => Int(&mut self.cl_antiping_limit, 0, 500),
+            "cl_antiping_percent" => Int(&mut self.cl_antiping_percent, 0, 100),
+            "cl_antiping" => Int(&mut self.cl_antiping, 0, 1),
+            "cl_antiping_players" => Int(&mut self.cl_antiping_players, 0, 3),
+            "cl_antiping_grenade" => Int(&mut self.cl_antiping_grenade, 0, 1),
+            "cl_antiping_weapons" => Int(&mut self.cl_antiping_weapons, 0, 1),
+            "cl_antiping_smooth" => Int(&mut self.cl_antiping_smooth, 0, 1),
+            "cl_antiping_gunfire" => Int(&mut self.cl_antiping_gunfire, 0, 1),
+            "cl_antiping_preinput" => Int(&mut self.cl_antiping_preinput, 0, 1),
+            "cl_prediction_margin" => Int(&mut self.cl_prediction_margin, 1, 300),
+            "cl_predict_freeze" => Int(&mut self.cl_predict_freeze, 0, 2),
             "rs_data_dir" => Str(&mut self.rs_data_dir, 512),
             "rs_media_source" => Str(&mut self.rs_media_source, 512),
             "rs_media" => Int(&mut self.rs_media, 0, 1),
@@ -254,7 +308,7 @@ impl Config {
 }
 
 /// Every variable name `Config::var` knows.
-pub const VAR_NAMES: [&str; 39] = [
+pub const VAR_NAMES: [&str; 51] = [
     "player_name",
     "player_skin",
     "player_use_custom_color",
@@ -289,6 +343,18 @@ pub const VAR_NAMES: [&str; 39] = [
     "cl_showhud_time_cp_diff",
     "cl_show_broadcasts",
     "cl_showhud_spectator",
+    "cl_predict",
+    "cl_antiping_limit",
+    "cl_antiping_percent",
+    "cl_antiping",
+    "cl_antiping_players",
+    "cl_antiping_grenade",
+    "cl_antiping_weapons",
+    "cl_antiping_smooth",
+    "cl_antiping_gunfire",
+    "cl_antiping_preinput",
+    "cl_prediction_margin",
+    "cl_predict_freeze",
     "rs_data_dir",
     "rs_media_source",
     "rs_media",

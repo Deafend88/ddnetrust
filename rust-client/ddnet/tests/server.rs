@@ -41,13 +41,14 @@ fn server_binary() -> Option<PathBuf> {
 }
 
 fn start_server(exe: &PathBuf, map: &str) -> (Server, u16) {
-    start_server_with(exe, map, &[])
+    start_server_with(exe, map, &[], &[])
 }
 
 /// `start_server` with `map_cfg` as the map's config (`maps/<map>.cfg`): the server
 /// imports it into the map's settings, so it runs after the game type reset the tuning,
 /// and clients load it too (`LoadMapSettings`).
-fn start_server_with(exe: &PathBuf, map: &str, map_cfg: &[&str]) -> (Server, u16) {
+/// `args` are extra server command-line settings.
+fn start_server_with(exe: &PathBuf, map: &str, map_cfg: &[&str], args: &[&str]) -> (Server, u16) {
     let port = UdpSocket::bind("127.0.0.1:0")
         .unwrap()
         .local_addr()
@@ -74,6 +75,7 @@ fn start_server_with(exe: &PathBuf, map: &str, map_cfg: &[&str]) -> (Server, u16
             &format!("sv_map {map}"),
             "sv_tee_historian 1",
         ])
+        .args(args)
         .stdout(Stdio::from(log.try_clone().unwrap()))
         .stderr(Stdio::from(log))
         .spawn()
@@ -175,7 +177,7 @@ fn local_server_session() {
 #[test]
 fn prediction_matches_server() {
     for map_name in ["dm1", "coverage"] {
-        let Some((pred, _, weak_col)) = check_prediction(map_name, &[], None) else {
+        let Some((pred, _, weak_col)) = check_prediction(map_name, &[], None, false) else {
             return;
         };
         // the collision lives exactly as long as the predictor and its world copies
@@ -207,7 +209,7 @@ fn prediction_matches_server_with_tuning_and_teams() {
     ];
     map_cfg.extend(zones.iter().map(String::as_str));
     for (map_name, chat) in [("dm1", None), ("coverage", Some("/team 7"))] {
-        let Some((mut pred, local, _)) = check_prediction(map_name, &map_cfg, chat) else {
+        let Some((mut pred, local, _)) = check_prediction(map_name, &map_cfg, chat, false) else {
             return;
         };
         let team = if chat.is_some() { 7 } else { 0 };
@@ -228,12 +230,19 @@ fn check_prediction(
     map_name: &str,
     map_cfg: &[&str],
     chat: Option<&str>,
+    antiping: bool,
 ) -> Option<(Predictor, i32, std::rc::Weak<Collision>)> {
     let Some(exe) = server_binary() else {
         eprintln!("SKIPPED: no DDNet-Server (set DDNET_SERVER or build the game-server target)");
         return None;
     };
-    let (server, port) = start_server_with(&exe, map_name, map_cfg);
+    // antiping: the rcon test command `weapons` gives every weapon
+    let args: &[&str] = if antiping {
+        &["sv_test_cmds 1", "sv_rcon_password test"]
+    } else {
+        &[]
+    };
+    let (server, port) = start_server_with(&exe, map_name, map_cfg, args);
     let socket = net::connect_socket(format!("127.0.0.1:{port}").parse().unwrap()).unwrap();
     let start = Instant::now();
     let mut client = Client::new(PlayerInfo::default(), "", net::random_bytes);
@@ -252,23 +261,51 @@ fn check_prediction(
     let col = Rc::new(col);
     let weak_col = Rc::downgrade(&col);
     let mut pred = Predictor::new(col, &map);
+    pred.config.antiping = antiping;
     let entered = net::now(start);
     if let Some(line) = chat {
         client.say(0, line, entered);
     }
+    let mut weapons_sent = 0;
     let mut zones = std::collections::BTreeSet::new();
+    // antiping: our projectiles and lasers in snapshots, and how many of them the
+    // prediction world holds (C++ FindMatch), per weapon
+    let (mut own, mut found) = ([0u32; 5], [0u32; 5]);
     while net::now(start) - entered < 10 * FREQ {
-        net::scripted_input(&mut client.input, net::now(start) - entered);
+        let elapsed = net::now(start) - entered;
+        // the rcon test command `weapons` once the tee has spawned, and every second
+        // (the map takes them away again)
+        if antiping && elapsed > FREQ && elapsed / FREQ > weapons_sent {
+            if weapons_sent == 0 {
+                client.rcon_auth("test", net::now(start));
+            }
+            client.rcon("weapons", net::now(start));
+            weapons_sent = elapsed / FREQ;
+        }
+        net::scripted_input(&mut client.input, elapsed);
+        if antiping {
+            fire_script(&mut client.input, elapsed, map_name == "coverage");
+        }
         net::pump(&socket, &mut client, net::now(start)).unwrap();
-        pred.update(&mut client);
+        let switched = !client.snapshot_switches.is_empty();
+        pred.update(&mut client, net::now(start));
         zones.insert(pred.tune_state().1);
+        if antiping && switched {
+            count_own_entities(&client, &pred, &mut own, &mut found);
+        }
+
         std::thread::sleep(Duration::from_millis(1));
     }
     let s = &pred.stats;
     eprintln!(
-        "{map_name} ({} map config lines, chat {chat:?}): {s:?}, tune zones {zones:?}",
+        "{map_name} ({} map config lines, chat {chat:?}): {s:?}, tune zones {zones:?}, own entities {own:?}, in the prediction world {found:?}",
         map_cfg.len()
     );
+    if antiping {
+        // gun, shotgun, grenade and laser all fired
+        assert!(own[1..].iter().all(|&n| n > 0), "{map_name}: {own:?}");
+        assert_eq!(own, found, "{map_name}");
+    }
     assert!(s.compared > 100, "{map_name}: {s:?}");
     assert_eq!(s.mismatched, 0, "{map_name}: {s:?}");
     assert_eq!(s.prediction_errors, 0, "{map_name}: {s:?}");
@@ -277,6 +314,66 @@ fn check_prediction(
     drop(server);
     let _ = fs::remove_dir_all(dir);
     Some((pred, local, weak_col))
+}
+
+/// Fire on top of the scripted movement: gun, shotgun, grenade and laser in turn
+/// (2 s each), fire toggled every 150 ms; with `down` aiming down half the time
+/// (grenade jumps; on dm1 they throw the tee into a death tile, which freezes it).
+fn fire_script(input: &mut g::ObjPlayerInput, elapsed: i64, down: bool) {
+    let weapon = 1 + (elapsed / (2 * FREQ)) % 4;
+    input.wanted_weapon = weapon as i32 + 1;
+    let presses = (elapsed / (FREQ * 15 / 100)) as i32;
+    input.fire = presses & ddnet::physics::core::INPUT_STATE_MASK;
+    if down && (elapsed / (FREQ / 2)) % 2 == 0 {
+        input.target_y = 150;
+    }
+}
+
+/// Counts the current snapshot's projectiles and lasers owned by the local player (by
+/// weapon) and those the prediction world holds (C++ `FindMatch`).
+fn count_own_entities(client: &Client, pred: &Predictor, own: &mut [u32; 5], found: &mut [u32; 5]) {
+    use ddnet::items::{extract_laser, extract_projectile};
+    let Some(local) = client.local_id() else {
+        return;
+    };
+    for it in client.snapshot() {
+        let weapon = if it.type_id == g::NETOBJTYPE_DDNETPROJECTILE {
+            let d = extract_projectile(it.type_id, &it.data, None, None);
+            (d.owner == local).then_some(d.type_)
+        } else if it.type_id == g::NETOBJTYPE_DDNETLASER {
+            let d = extract_laser(it.type_id, &it.data, None, None);
+            let laser = d.type_ == g::LASERTYPE_RIFLE || d.type_ == g::LASERTYPE_SHOTGUN;
+            let weapon = if d.type_ == g::LASERTYPE_SHOTGUN {
+                g::WEAPON_SHOTGUN
+            } else {
+                g::WEAPON_LASER
+            };
+            (laser && d.owner == local).then_some(weapon)
+        } else {
+            None
+        };
+        if let Some(w) = weapon
+            .and_then(|w| usize::try_from(w).ok())
+            .filter(|&w| w < 5)
+        {
+            own[w] += 1;
+            let mut data = it.data.clone();
+            data.resize(g::ObjDDNetLaser::NUM_INTS, 0);
+            found[w] += pred.world().find_match(it.id, it.type_id, &data).is_some() as u32;
+        }
+    }
+}
+
+/// 8.5: antiping on (`cl_antiping 1`: weapons, other players) while firing every
+/// weapon: the local tee still matches every snapshot, and every own projectile and
+/// laser of a snapshot is in the prediction world.
+#[test]
+fn prediction_matches_server_with_antiping() {
+    for map_name in ["dm1", "coverage"] {
+        if check_prediction(map_name, &[], None, true).is_none() {
+            return;
+        }
+    }
 }
 
 fn character(client: &Client, id: i32) -> Option<g::ObjCharacter> {
@@ -357,7 +454,7 @@ fn prediction_recovers_from_interference() {
             during = Some(pred.stats.clone());
         }
         net::pump(&sa, &mut a, now).unwrap();
-        pred.update(&mut a);
+        pred.update(&mut a, net::now(start));
         std::thread::sleep(Duration::from_millis(1));
     }
     let (during, end) = (during.unwrap(), pred.stats.clone());
@@ -430,7 +527,7 @@ fn rendered_positions_are_smooth() {
         net::scripted_input(&mut b.input, now - entered + FREQ);
         net::pump(&sa, &mut a, now).unwrap();
         net::pump(&sb, &mut b, now).unwrap();
-        pred.update(&mut a);
+        pred.update(&mut a, net::now(start));
         let rendered = pred.rendered(&a);
         // a tee that left the snapshot (out of range) starts over when it returns
         for (k, id) in [ida, idb].into_iter().enumerate() {

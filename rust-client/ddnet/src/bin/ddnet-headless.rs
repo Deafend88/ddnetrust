@@ -102,7 +102,7 @@ fn main() {
             }
         }
         if let Some(p) = &mut prediction {
-            p.update(&mut client);
+            p.update(&mut client, now);
         }
         if let Some(entered) = entered_at {
             let elapsed = now - entered;

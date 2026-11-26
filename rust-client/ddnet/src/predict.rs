@@ -1,7 +1,6 @@
 //! Client prediction driven by server snapshots. C++: the parts of
 //! `CGameClient::OnNewSnapshot`, `UpdatePrediction` and `OnPredict` (gameclient.cpp)
-//! that move characters, with the default client config (`cl_predict 1`,
-//! `cl_predict_freeze 1`, `cl_antiping 0`). Weapons are not predicted.
+//! with the prediction and antiping settings (`PredictConfig`).
 //!
 //! `rendered` ports `UpdateRenderedCharacters`: what the renderer draws between ticks.
 //!
@@ -9,8 +8,7 @@
 //! `UpdateLocalTuning` and the map's tune settings, `Sv_TeamsState`, `Sv_KillMsg`,
 //! `Sv_KillMsgTeam`, `Sv_PreInput`).
 //!
-//! Not ported yet: snapshot entities other than doors, the dummy, antiping smoothing and
-//! events.
+//! Not ported: the dummy (`PredictDummy()` branches), predicted events.
 
 use std::collections::BTreeMap;
 
@@ -18,9 +16,9 @@ use std::rc::Rc;
 
 use crate::console;
 use crate::map::Map;
-use crate::net::client::{Client, PredictMsg};
+use crate::net::client::{self, Client, PredictMsg, Timing};
 use crate::physics::collision::Collision;
-use crate::physics::core::{CharacterCore, WorldCore};
+use crate::physics::core::{CharacterCore, WorldCore, read_ddnet};
 use crate::physics::teams::{MAX_CLIENTS, NUM_DDRACE_TEAMS, TEAM_FLOCK, TeamsCore};
 use crate::physics::tuning::{Param, Tuning};
 use crate::physics::vmath::{Vec2, mix, vec2};
@@ -29,7 +27,7 @@ use crate::physics::world::{
 };
 use crate::protocol::generated::{
     self as g, MsgSvPreInput, ObjCharacter, ObjCharacterCore, ObjDDNetCharacter, ObjDDNetLaser,
-    ObjGameInfoEx, ObjSpectatorInfo, ObjSwitchState,
+    ObjGameInfoEx, ObjPlayerInput, ObjSpectatorInfo, ObjSwitchState,
 };
 use crate::protocol::snapshot::Item;
 
@@ -42,8 +40,47 @@ const TILE_SWITCHCLOSE: i32 = 25;
 const MAPITEMTYPE_INFO: i32 = 1;
 /// C++: `VANILLA_MAX_CLIENTS`.
 const VANILLA_MAX_CLIENTS: usize = 16;
-/// C++: the size of `CClientData::m_aPreInputs`.
+/// C++: the size of `CClientData::m_aPreInputs`, `m_aPredPos` and `m_aPredTick`.
 const NUM_PRE_INPUTS: usize = 200;
+const NUM_PRED_POS: usize = 200;
+
+/// C++: the prediction and antiping config variables (config_variables.h:15-27, 730),
+/// all but `cl_prediction_margin` (`Client::prediction_margin`). Defaults as in C++.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PredictConfig {
+    pub predict: bool,
+    pub antiping: bool,
+    /// 0 off, 1 all, 2 only interfering players, 3 = 2 and frozen players.
+    pub antiping_players: i32,
+    pub antiping_grenade: bool,
+    pub antiping_weapons: bool,
+    pub antiping_smooth: bool,
+    pub antiping_gunfire: bool,
+    pub antiping_preinput: bool,
+    /// ms; others are predicted only that far ahead when set.
+    pub antiping_limit: i32,
+    pub antiping_percent: i32,
+    /// 0 off, 1 on, 2 partial (the local tee may move in freeze the last 1-2 ticks).
+    pub predict_freeze: i32,
+}
+
+impl Default for PredictConfig {
+    fn default() -> Self {
+        Self {
+            predict: true,
+            antiping: false,
+            antiping_players: 1,
+            antiping_grenade: true,
+            antiping_weapons: true,
+            antiping_smooth: false,
+            antiping_gunfire: true,
+            antiping_preinput: true,
+            antiping_limit: 0,
+            antiping_percent: 100,
+            predict_freeze: 1,
+        }
+    }
+}
 
 /// C++: `CGameClient::LoadMapSettings` (gameclient.cpp:4208): every tune zone reset, then
 /// the map's settings run as console lines; only the commands registered with
@@ -148,17 +185,35 @@ pub struct Predictor {
     local_id: i32,
     /// C++: `m_PredictedChar` written as a net object, and `m_PredictedTick`.
     predicted_char: Option<ObjCharacterCore>,
-    /// C++: `m_aClients[local].m_PrevPredicted` and `m_Predicted`: the local core at
-    /// the start and the end of the last predicted tick.
-    prev_predicted_core: Option<CharacterCore>,
-    predicted_core: Option<CharacterCore>,
-    /// C++: `Predict()`: a local character to predict, not spectating, world not paused.
+    /// C++: `m_aClients[i].m_PrevPredicted` and `m_Predicted`: each character's core
+    /// before and after the prediction tick (the local one's: the predicted tick).
+    pub prev_predicted: Vec<CharacterCore>,
+    pub predicted: Vec<CharacterCore>,
+    /// C++: `m_aClients[i].m_aPredPos` and `m_aPredTick`, indexed by tick % 200.
+    pub pred_pos: Vec<[Vec2; NUM_PRED_POS]>,
+    pub pred_pos_tick: Vec<[i32; NUM_PRED_POS]>,
+    /// C++: `m_PredictedWorld` and `m_PrevPredictedWorld` (the world at the prediction
+    /// tick, items are drawn from it).
+    pub predicted_world: Option<GameWorld>,
+    pub prev_predicted_world: Option<GameWorld>,
+    /// C++: `m_aClients[i].m_aSmoothStart`, `m_aSmoothLen` (per axis, `FREQ` units),
+    /// `m_aLastPos`, `m_aLastActive`: the antiping smoothing state.
+    pub smooth_start: Vec<[i64; 2]>,
+    pub smooth_len: Vec<[i64; 2]>,
+    pub last_pos: Vec<Vec2>,
+    pub last_active: Vec<bool>,
+    /// C++: `m_NewTick`: a snapshot arrived this frame.
+    pub new_tick: bool,
+    /// C++: the `m_Snap.m_pLocalCharacter`, spectator and pause parts of `Predict()`.
     predicting: bool,
+    pub config: PredictConfig,
     /// C++: `m_aSwitchStateTeam`: the team of the only switch state object, else -1.
     switch_state_team: i32,
     predicted_tick: i32,
-    /// C++ `m_Snap.m_SpecInfo.m_Active`, `IsWorldPaused()` and `m_GameInfo.m_AllowZoom`
-    /// of the current snapshot.
+    /// C++: the pause test of `OnPredict` (`GAMESTATEFLAG_PAUSED` only).
+    game_paused: bool,
+    /// C++ `m_Snap.m_SpecInfo.m_Active`, `IsWorldPaused()` (paused or game over) and
+    /// `m_GameInfo.m_AllowZoom` of the current snapshot.
     pub spectating: bool,
     pub world_paused: bool,
     pub allow_zoom: bool,
@@ -176,6 +231,13 @@ pub struct Predictor {
     expecting_tuning_since: i32,
     /// C++: `m_aClients[i].m_aPreInputs`, indexed by intended tick % 200.
     pre_inputs: Vec<Vec<MsgSvPreInput>>,
+}
+
+/// C++: a `CClientData` core after `CCharacterCore::Reset` (`CClientData::Reset`).
+fn reset_core() -> CharacterCore {
+    let mut c = CharacterCore::new();
+    c.reset_fields();
+    c
 }
 
 /// C++: `CCharacterCore::Write` into a `CNetObj_Character` (all but the tick).
@@ -222,11 +284,22 @@ impl Predictor {
             chars: vec![None; MAX_CLIENTS],
             local_id: -1,
             predicted_char: None,
-            prev_predicted_core: None,
-            predicted_core: None,
+            prev_predicted: vec![reset_core(); MAX_CLIENTS],
+            predicted: vec![reset_core(); MAX_CLIENTS],
+            pred_pos: vec![[Vec2::default(); NUM_PRED_POS]; MAX_CLIENTS],
+            pred_pos_tick: vec![[0; NUM_PRED_POS]; MAX_CLIENTS],
+            predicted_world: None,
+            prev_predicted_world: None,
+            smooth_start: vec![[0; 2]; MAX_CLIENTS],
+            smooth_len: vec![[0; 2]; MAX_CLIENTS],
+            last_pos: vec![Vec2::default(); MAX_CLIENTS],
+            last_active: vec![false; MAX_CLIENTS],
+            new_tick: false,
             predicting: false,
+            config: PredictConfig::default(),
             switch_state_team: -1,
             predicted_tick: -1,
+            game_paused: false,
             spectating: false,
             world_paused: false,
             hud_ddrace: false,
@@ -244,17 +317,33 @@ impl Predictor {
 
     /// Handles everything the client did since the last call: each snapshot switch
     /// (`OnNewSnapshot` + `UpdatePrediction`), then `OnPredict` if a repredict is due.
-    pub fn update(&mut self, client: &mut Client) {
+    /// `now` is C++ `time_get()`.
+    pub fn update(&mut self, client: &mut Client, now: i64) {
         // C++ handles messages while pumping the network, before CClient::Update
         // switches snapshots
         for msg in std::mem::take(&mut client.predict_msgs) {
             self.on_message(msg);
         }
-        for (prev, cur) in std::mem::take(&mut client.snapshot_switches) {
-            self.on_new_snapshot(client, prev, cur);
+        self.new_tick = false; // C++: cleared at the end of the previous frame's OnRender
+        let switches = std::mem::take(&mut client.snapshot_switches);
+        let repredict = std::mem::take(&mut client.repredict);
+        let client = &*client;
+        let input_at = |t| client.input_at(t);
+        for (prev, cur) in switches {
+            let Some(items) = client.snapshot_at(cur) else {
+                continue;
+            };
+            let prev_items = prev.and_then(|t| client.snapshot_at(t)).unwrap_or(&[]);
+            self.on_new_snapshot(items, prev_items, prev, cur, &input_at);
         }
-        if std::mem::take(&mut client.repredict) {
-            self.predict(client);
+        // C++ CClient::Update: only sane predictions
+        let t = client.timing(now);
+        if repredict
+            && client.game_tick().is_some()
+            && t.pred_tick > t.game_tick
+            && t.pred_tick < t.game_tick + client.max_latency_ticks()
+        {
+            self.predict(&t, &input_at);
         }
     }
 
@@ -342,11 +431,7 @@ impl Predictor {
     /// C++: `m_aClients[id].m_aPreInputs[tick % 200]` if it was meant for `tick`
     /// (the test in `ApplyPreInputs`).
     pub fn pre_input(&self, id: usize, tick: i32) -> Option<&MsgSvPreInput> {
-        let p = self
-            .pre_inputs
-            .get(id)?
-            .get(usize::try_from(tick % NUM_PRE_INPUTS as i32).ok()?)?;
-        (p.intended_tick == tick).then_some(p)
+        pre_input(&self.pre_inputs, id, tick)
     }
 
     /// C++: `CGameClient::GetTuning(zone)`: the tuning list the prediction uses.
@@ -368,6 +453,11 @@ impl Predictor {
             self.expecting_tuning_for_zone,
             self.expecting_tuning_since,
         )
+    }
+
+    /// C++: `m_GameWorld`, the server-state world.
+    pub fn world(&self) -> &GameWorld {
+        &self.world
     }
 
     /// C++: `m_GameWorld`, the server-state world (for the parity tests).
@@ -445,13 +535,17 @@ impl Predictor {
         write_core(c, w.characters[0].as_ref().unwrap());
     }
 
-    /// C++: the prediction parts of `CGameClient::OnNewSnapshot`.
-    fn on_new_snapshot(&mut self, client: &Client, prev: Option<i32>, tick: i32) {
-        let Some(items) = client.snapshot_at(tick) else {
-            return;
-        };
-        let prev_items = prev.and_then(|t| client.snapshot_at(t)).unwrap_or(&[]);
-
+    /// C++: the prediction parts of `CGameClient::OnNewSnapshot` for a switch to the
+    /// snapshot `items` of `tick` from `prev_items` of `prev`. `input_at` is C++
+    /// `CClient::GetInput`.
+    pub fn on_new_snapshot(
+        &mut self,
+        items: &[Item],
+        prev_items: &[Item],
+        prev: Option<i32>,
+        tick: i32,
+        input_at: &dyn Fn(i32) -> Option<ObjPlayerInput>,
+    ) {
         self.local_id = items
             .iter()
             .filter(|it| it.type_id == g::NETOBJTYPE_PLAYERINFO)
@@ -460,6 +554,22 @@ impl Predictor {
             .map_or(-1, |p| p.client_id);
 
         self.chars = vec![None; MAX_CLIENTS];
+        // C++: every DDNetCharacter of the snapshot, active or not (gameclient.cpp:1887);
+        // ponytail: C++ indexes out of bounds with a negative id, those are skipped
+        for it in items
+            .iter()
+            .filter(|it| it.type_id == g::NETOBJTYPE_DDNETCHARACTER)
+        {
+            let Ok(id) = usize::try_from(it.id) else {
+                continue;
+            };
+            if id < MAX_CLIENTS {
+                let ext = ObjDDNetCharacter::from_ints(&ints(it, ObjDDNetCharacter::NUM_INTS));
+                read_ddnet(&mut self.predicted[id], &ext);
+                self.teams
+                    .set_solo(it.id, ext.flags & g::CHARACTERFLAG_SOLO != 0);
+            }
+        }
         let prev_tick = prev.unwrap_or(0);
         let ext_of = |items: &[Item], id: i32| {
             find(items, g::NETOBJTYPE_DDNETCHARACTER, id)
@@ -488,10 +598,6 @@ impl Predictor {
                 self.evolve(&mut cur, tick);
             }
             let ext = ext_of(items, it.id);
-            if let Some(ext) = ext {
-                self.teams
-                    .set_solo(it.id, ext.flags & g::CHARACTERFLAG_SOLO != 0);
-            }
             let prev_ext = ext_of(prev_items, it.id);
             self.chars[id] = Some(SnapChar {
                 prev,
@@ -502,10 +608,12 @@ impl Predictor {
         }
         // C++: m_SpecInfo.m_Active and IsWorldPaused
         let spectating = crate::net::client::spectating(items, Some(self.local_id));
-        let paused = items
+        let state = items
             .iter()
             .find(|it| it.type_id == g::NETOBJTYPE_GAMEINFO)
-            .is_some_and(|it| ints(it, 2)[1] & g::GAMESTATEFLAG_PAUSED != 0);
+            .map_or(0, |it| ints(it, 2)[1]);
+        let paused = state & (g::GAMESTATEFLAG_GAMEOVER | g::GAMESTATEFLAG_PAUSED) != 0;
+        self.game_paused = state & g::GAMESTATEFLAG_PAUSED != 0;
         self.predicting = self.local_char().is_some() && !spectating && !paused;
         (self.spectating, self.world_paused) = (spectating, paused);
 
@@ -537,6 +645,13 @@ impl Predictor {
             predict_tiles = flags & g::GAMEINFOFLAG_PREDICT_DDRACE_TILES != 0;
             bug_input = flags & g::GAMEINFOFLAG_BUG_DDRACE_INPUT != 0;
         }
+        let fastcap = flags & g::GAMEINFOFLAG_GAMETYPE_FASTCAP != 0;
+        let predict_vanilla = if version >= 2 {
+            flags & g::GAMEINFOFLAG_PREDICT_VANILLA != 0
+        } else {
+            flags & g::GAMEINFOFLAG_GAMETYPE_VANILLA != 0 || fastcap
+        };
+        let old_laser = version >= 12 && flags2 & g::GAMEINFOFLAG2_OLD_LASER != 0;
         let fng = flags & g::GAMEINFOFLAG_GAMETYPE_FNG != 0;
         let predict_fng = if version >= 2 {
             flags & g::GAMEINFOFLAG_PREDICT_FNG != 0
@@ -545,8 +660,7 @@ impl Predictor {
         };
         let no_weak = version >= 8 && flags2 & g::GAMEINFOFLAG2_NO_WEAK_HOOK != 0;
         self.hud_ddrace = version >= 7 && flags2 & g::GAMEINFOFLAG2_HUD_DDRACE != 0;
-        let race = ddrace
-            || flags & (g::GAMEINFOFLAG_GAMETYPE_RACE | g::GAMEINFOFLAG_GAMETYPE_FASTCAP) != 0;
+        let race = ddrace || fastcap || flags & g::GAMEINFOFLAG_GAMETYPE_RACE != 0;
         let city = version >= 5 && flags2 & g::GAMEINFOFLAG2_GAMETYPE_CITY != 0;
         self.allow_zoom = if version >= 2 {
             flags & g::GAMEINFOFLAG_ALLOW_ZOOM != 0
@@ -582,7 +696,11 @@ impl Predictor {
             got_switch_state_team = true;
         }
 
+        // C++: the world config part of UpdatePrediction
         let c = &mut self.world.config;
+        c.is_vanilla = predict_vanilla;
+        c.is_ddrace = predict_ddrace;
+        c.old_laser = old_laser;
         c.predict_ddrace = predict_ddrace;
         c.predict_tiles = predict_ddrace && predict_tiles;
         c.bug_ddrace_input = bug_input;
@@ -604,8 +722,9 @@ impl Predictor {
         let override_zone = ext_of(items, self.local_id).map(|e| e.tune_zone_override);
         self.update_local_tuning(local_pos, override_zone);
 
+        self.new_tick = true;
         self.compare_with_server(tick);
-        self.update_prediction(client, tick);
+        self.update_prediction(items, tick, input_at);
     }
 
     /// C++: the `NETOBJTYPE_SWITCHSTATE` part of `OnNewSnapshot`.
@@ -669,7 +788,16 @@ impl Predictor {
     }
 
     /// C++: `CGameClient::UpdatePrediction`.
-    fn update_prediction(&mut self, client: &Client, tick: i32) {
+    fn update_prediction(
+        &mut self,
+        items: &[Item],
+        tick: i32,
+        input_at: &dyn Fn(i32) -> Option<ObjPlayerInput>,
+    ) {
+        self.world.config.predict_freeze = self.config.predict_freeze != 0;
+        self.world.config.predict_weapons = self.antiping_weapons();
+        // C++ reads g_Config.m_ClAntiPingPlayers itself (interference)
+        self.world.config.antiping_players = self.config.antiping_players;
         let local = self.local_id;
         let Some(local_char) = self.local_char().copied() else {
             if local >= 0 {
@@ -709,28 +837,41 @@ impl Predictor {
         }
 
         // advance the server world to the snapshot tick
+        let pre = PreInputs {
+            enabled: self.config.antiping_preinput,
+            local: self.local_id,
+            ring: &self.pre_inputs,
+        };
         if has_local && (self.world.game_tick - tick).abs() < TICK_SPEED {
             for t in self.world.game_tick + 1..=tick {
-                let input = client.input_at(t);
+                let input = input_at(t);
                 if let Some(input) = &input {
                     self.world.on_direct_input(local, input);
                 }
+                pre.apply(t, true, &mut self.world);
                 self.world.game_tick = t;
                 if let Some(input) = &input {
                     self.world.on_predicted_input(local, input);
                 }
+                pre.apply(t, false, &mut self.world);
                 self.world.tick();
+                store_pred_pos(&mut self.pred_pos, &mut self.pred_pos_tick, &self.world, t);
             }
         } else {
             self.world.game_tick = tick;
-            if let Some(input) = client.input_at(tick) {
+            if let Some(input) = input_at(tick) {
                 self.world.set_input(local, &input);
             }
         }
+        store_pred_pos(
+            &mut self.pred_pos,
+            &mut self.pred_pos_tick,
+            &self.world,
+            tick,
+        );
 
         // update the server world with the new snapshot
         self.world.net_obj_begin(self.teams.clone(), self.local_id);
-        let items = client.snapshot_at(tick).unwrap_or(&[]);
         // C++: GameTeam = IsTeamPlay() ? m_aClients[i].m_Team : i. ponytail: C++ keeps a
         // client's team from older snapshots when its PlayerInfo is missing; here it is 0.
         let team_play = items
@@ -777,10 +918,8 @@ impl Predictor {
     /// `PredIntraGameTick`. Ordered by client id.
     pub fn rendered(&self, client: &Client) -> Vec<Rendered> {
         let pos = |c: &ObjCharacter| vec2(c.x as f32, c.y as f32);
-        let predicted = self
-            .prev_predicted_core
-            .as_ref()
-            .zip(self.predicted_core.as_ref());
+        let in_world =
+            |i: usize| (self.predicted_world.as_ref()).is_some_and(|w| w.character(i).is_some());
         (0..MAX_CLIENTS)
             .filter_map(|i| {
                 let c = self.chars[i]?;
@@ -793,14 +932,9 @@ impl Predictor {
                     ext: c.ext,
                     prev_ext: c.prev_ext,
                 };
-                // C++ also needs the character in the predicted world, where it is once
-                // a prediction ran (`predicted`)
-                if self.predicting
-                    && i as i32 == self.local_id
-                    && let Some((prev, cur)) = predicted
-                {
-                    write_core(&mut r.cur, cur);
-                    write_core(&mut r.prev, prev);
+                if self.predict_on() && i as i32 == self.local_id && in_world(i) {
+                    write_core(&mut r.cur, &self.predicted[i]);
+                    write_core(&mut r.prev, &self.prev_predicted[i]);
                     r.predicted = true;
                     r.pos = mix(pos(&r.prev), pos(&r.cur), client.pred_intra_tick);
                 }
@@ -813,9 +947,44 @@ impl Predictor {
     /// while predicting (other tees' cores come from their `DDNetCharacter`, see
     /// `physics::core::read_ddnet`).
     pub fn predicted_core(&self, id: i32) -> Option<&CharacterCore> {
-        (self.predicting && id == self.local_id)
-            .then_some(self.predicted_core.as_ref())
+        (self.predict_on() && id == self.local_id && self.predicted_world.is_some())
+            .then(|| self.predicted.get(id as usize))
             .flatten()
+    }
+
+    /// C++: `m_PredictedTick`: the predicted tick of the last `OnPredict`.
+    pub fn predicted_tick(&self) -> i32 {
+        self.predicted_tick
+    }
+
+    /// C++: `CGameClient::Predict()`.
+    pub fn predict_on(&self) -> bool {
+        self.config.predict && self.predicting
+    }
+
+    /// C++: `CGameClient::AntiPingPlayers()`: the `cl_antiping_players` mode, 0 if off.
+    pub fn antiping_players(&self) -> i32 {
+        let c = &self.config;
+        if c.antiping && c.antiping_players != 0 && !self.spectating {
+            c.antiping_players
+        } else {
+            0
+        }
+    }
+
+    /// C++: `CGameClient::AntiPingGrenade()`.
+    pub fn antiping_grenade(&self) -> bool {
+        self.config.antiping && self.config.antiping_grenade && !self.spectating
+    }
+
+    /// C++: `CGameClient::AntiPingWeapons()`.
+    pub fn antiping_weapons(&self) -> bool {
+        self.config.antiping && self.config.antiping_weapons && !self.spectating
+    }
+
+    /// C++: `CGameClient::AntiPingGunfire()`.
+    pub fn antiping_gunfire(&self) -> bool {
+        self.antiping_grenade() && self.antiping_weapons() && self.config.antiping_gunfire
     }
 
     /// The map's collision.
@@ -826,7 +995,9 @@ impl Predictor {
     /// C++: `m_aClients[local].m_Predicted.m_FreezeEnd`, the predicted freeze of the
     /// local tee (`None` before the first prediction).
     pub fn predicted_freeze_end(&self) -> Option<i32> {
-        self.predicted_core.as_ref().map(|c| c.freeze_end)
+        let local = usize::try_from(self.local_id).ok()?;
+        self.predicted_world.as_ref()?;
+        Some(self.predicted.get(local)?.freeze_end)
     }
 
     /// C++: `m_GameWorld.m_WorldConfig.m_UseTuneZones`.
@@ -871,21 +1042,22 @@ impl Predictor {
         t.team(id) != t.team(local)
     }
 
-    /// C++: `CGameClient::OnPredict` (only called for sane prediction ticks, like
-    /// `CClient::Update`).
-    fn predict(&mut self, client: &Client) {
-        let Some(cur) = client.game_tick() else {
+    /// C++: `CGameClient::OnPredict` (called for sane prediction ticks only, see
+    /// `update`).
+    pub fn predict(&mut self, t: &Timing, input_at: &dyn Fn(i32) -> Option<ObjPlayerInput>) {
+        let (cur, pred) = (t.game_tick, t.pred_tick);
+        if self.local_char().is_none() {
             return;
-        };
-        let pred = client.pred_tick();
-        if !(pred > cur && pred < cur + client.max_latency_ticks()) || self.local_char().is_none() {
+        }
+        // C++ only copies the snapshot's local character into m_PredictedChar (debug)
+        if self.game_paused {
             return;
         }
         let local = self.local_id as usize;
         let before = self.predicted_char;
 
         let mut w = self.world.copy_world();
-        // don't predict inactive players, or players from other teams
+        // don't predict inactive players, or entities from other teams
         for i in 0..MAX_CLIENTS {
             if let Some((ch, _)) = w.character(i)
                 && ((self.chars[i].is_none() && ch.snap_ticks > 10) || self.is_other_team(i as i32))
@@ -893,27 +1065,82 @@ impl Predictor {
                 w.remove_character(i);
             }
         }
+        w.projectiles.retain(|p| !self.is_other_team(p.owner));
         if w.character(local).is_none() {
+            self.predicted_world = Some(w);
             return;
         }
-        for t in cur + 1..=pred {
-            if t == pred {
-                self.prev_predicted_core = w.character(local).map(|c| c.1.clone());
+        let c = self.config;
+        let prediction_tick = client::prediction_tick(
+            client::prediction_time(t.game_now, t.pred_now),
+            c.antiping_limit,
+            c.antiping_percent,
+            cur,
+            pred,
+        );
+        let pre = PreInputs {
+            enabled: c.antiping_preinput,
+            local: self.local_id,
+            ring: &self.pre_inputs,
+        };
+        for tick in cur + 1..=pred {
+            // fetch the previous characters
+            if tick == prediction_tick {
+                for i in 0..MAX_CLIENTS {
+                    if let Some((_, core)) = w.character(i) {
+                        self.prev_predicted[i] = core.clone();
+                    }
+                }
             }
-            let input = client.input_at(t);
+            if tick == pred
+                && let Some((_, core)) = w.character(local)
+            {
+                self.prev_predicted[local] = core.clone();
+            }
+            // optionally allow some movement in freeze by not predicting freeze the last
+            // one to two ticks
+            if c.predict_freeze == 2
+                && pred - 1 - pred % 2 <= tick
+                && let Some(ch) = w.character_mut(local)
+            {
+                ch.can_move_in_freeze = true;
+            }
+            // apply inputs and tick
+            let input = input_at(tick);
             if let Some(input) = &input {
                 w.on_direct_input(local, input);
             }
-            w.game_tick = t;
+            pre.apply(tick, true, &mut w);
+            w.game_tick = tick;
             if let Some(input) = &input {
                 w.on_predicted_input(local, input);
             }
+            pre.apply(tick, false, &mut w);
             w.tick();
-            let core = w.character(local).unwrap().1.write();
-            self.history.insert(t, core);
-            if t == pred {
-                self.predicted_char = Some(core);
-                self.predicted_core = w.character(local).map(|c| c.1.clone());
+
+            // fetch the current characters
+            if tick == prediction_tick {
+                self.prev_predicted_world = Some(w.copy_world());
+                for i in 0..MAX_CLIENTS {
+                    if let Some((_, core)) = w.character(i) {
+                        self.predicted[i] = core.clone();
+                    }
+                }
+            }
+            if let Some((_, core)) = w.character(local) {
+                let obj = core.write();
+                self.history.insert(tick, obj);
+                if tick == pred {
+                    self.predicted_char = Some(obj);
+                    self.predicted[local] = core.clone();
+                }
+            }
+            store_pred_pos(&mut self.pred_pos, &mut self.pred_pos_tick, &w, tick);
+        }
+        for i in 0..MAX_CLIENTS {
+            self.last_active[i] = self.chars[i].is_some();
+            if self.last_active[i] {
+                self.last_pos[i] = self.predicted[i].pos;
             }
         }
         if self.predicted_tick == pred {
@@ -924,5 +1151,76 @@ impl Predictor {
         }
         self.predicted_tick = pred;
         self.history = self.history.split_off(&(cur - TICK_SPEED));
+        self.predicted_world = Some(w);
+    }
+}
+
+/// C++: `CGameClient::ApplyPreInputs` (gameclient.cpp:2540): the other players'
+/// `Sv_PreInput`s meant for a tick, as direct or predicted input.
+struct PreInputs<'a> {
+    /// C++: `cl_antiping_preinput`.
+    enabled: bool,
+    local: i32,
+    ring: &'a [Vec<MsgSvPreInput>],
+}
+
+impl PreInputs<'_> {
+    fn apply(&self, tick: i32, direct: bool, world: &mut GameWorld) {
+        if !self.enabled {
+            return;
+        }
+        for id in 0..MAX_CLIENTS {
+            // C++ dummy branch not ported (it skips the dummy's id too)
+            if world.character(id).is_none() || id as i32 == self.local {
+                continue;
+            }
+            let Some(p) = pre_input(self.ring, id, tick) else {
+                continue;
+            };
+            // convert preinput to input
+            let input = ObjPlayerInput {
+                direction: p.direction,
+                target_x: p.target_x,
+                target_y: p.target_y,
+                jump: p.jump,
+                fire: p.fire,
+                hook: p.hook,
+                wanted_weapon: p.wanted_weapon,
+                next_weapon: p.next_weapon,
+                prev_weapon: p.prev_weapon,
+                ..Default::default()
+            };
+            if direct {
+                world.on_direct_input(id, &input);
+            } else {
+                world.on_predicted_input(id, &input);
+            }
+        }
+    }
+}
+
+/// C++: `m_aClients[id].m_aPreInputs[tick % 200]` if it was meant for `tick`.
+fn pre_input(ring: &[Vec<MsgSvPreInput>], id: usize, tick: i32) -> Option<&MsgSvPreInput> {
+    let p = ring
+        .get(id)?
+        .get(usize::try_from(tick % NUM_PRE_INPUTS as i32).ok()?)?;
+    (p.intended_tick == tick).then_some(p)
+}
+
+/// C++: the `m_aPredPos`/`m_aPredTick` writes after a tick: every character's position.
+fn store_pred_pos(
+    pos: &mut [[Vec2; NUM_PRED_POS]],
+    ticks: &mut [[i32; NUM_PRED_POS]],
+    world: &GameWorld,
+    tick: i32,
+) {
+    // ponytail: C++ indexes with a negative remainder for a negative tick (UB); ticks
+    // from a server are positive
+    let slot = tick.rem_euclid(NUM_PRED_POS as i32) as usize;
+    for i in 0..MAX_CLIENTS {
+        if let Some((_, core)) = world.character(i) {
+            pos[i][slot] = core.pos;
+            ticks[i][slot] = tick;
+        }
     }
 }

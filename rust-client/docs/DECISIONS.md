@@ -297,3 +297,22 @@ only matters for names so long that neither file can exist.
   entity lookups use it.
 - `IsLocalTeam` without a local player (-1) indexes the C++ teams array out of bounds;
   DDNet-rs treats every owner as local then (as the door code already did).
+
+## 2026-11-26 — Antiping 8.5: prediction loop and settings
+
+- `CClient::GetSmoothTick` calls `std::clamp(v, GameTime, PredTime)`, which is undefined
+  when the predicted time is behind the game time. DDNet-rs follows MSVC's STL (the
+  reference build: the upper bound wins); libstdc++ lets the lower bound win.
+- `IsWorldPaused()` is paused *or game over* (C++ `GAMESTATEFLAG_GAMEOVER |
+  GAMESTATEFLAG_PAUSED`); DDNet-rs only checked paused until now (fixed: `world_paused`,
+  and `Predict()` through it). `OnPredict` itself only stops for paused, as in C++.
+- `OnPredict` while paused only copies the snapshot's local character into
+  `m_PredictedChar`, which only the ghost reads (not ported); DDNet-rs returns without it.
+- `OnNewSnapshot` reads every `DDNetCharacter` of a snapshot (active or not) into
+  `m_aClients[i].m_Predicted` and the solo state; DDNet-rs did this only for characters
+  present in both snapshots (fixed). Negative ids (C++ out-of-bounds write) are skipped.
+- `m_aClients[i].m_Predicted`/`m_PrevPredicted` start as a `CCharacterCore::Reset` core
+  (`CClientData::Reset`); fields `Reset` leaves unset are uninitialized in C++ and never
+  read before a prediction writes them. The parity dump leaves them out.
+- The `m_aPredPos` ring is indexed with `tick.rem_euclid(200)`: C++ `Tick % 200` is
+  negative (out of bounds) for negative ticks, which a server never sends.

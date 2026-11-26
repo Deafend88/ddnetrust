@@ -27,7 +27,6 @@ const MAX_MAP_SIZE: i32 = 1024 * 1024 * 1024; // C++: 1 GiB check in NETMSG_MAP_
 const NUM_INPUTS: usize = 200;
 const SHOW_OTHERS_DEFAULT: i32 = 0; // C++: cl_show_others
 const SHOW_SPECTATOR_COUNT_DEFAULT: i32 = 1; // C++: cl_showhud_spectator_count
-const PREDICTION_MARGIN_DEFAULT_MS: i64 = 10; // C++: cl_prediction_margin
 
 // System message ids. C++: `src/engine/shared/protocol.h`.
 const NETMSG_INFO: i32 = 1;
@@ -287,6 +286,72 @@ pub fn intra_ticks(prev_tick: i32, cur_tick: i32, game_now: i64, pred_now: i64) 
     }
 }
 
+/// C++: `CClient::GetPredictionTime` (client.cpp:5383) for the smoothed game and
+/// predicted times at `now`: how far ahead prediction runs, in ms.
+pub fn prediction_time(game_now: i64, pred_now: i64) -> i32 {
+    (((pred_now - game_now) * 1000) as f32 / FREQ as f32) as i32
+}
+
+/// C++: `CClient::GetPredictionTick` (client.cpp:5389): the tick other players are
+/// predicted to, from `cl_antiping_limit` (ms) and `cl_antiping_percent`.
+pub fn prediction_tick(
+    prediction_time: i32,
+    limit: i32,
+    percent: i32,
+    game_tick: i32,
+    pred_tick: i32,
+) -> i32 {
+    let tick_speed = TICK_SPEED as i32;
+    let prediction_tick = ((prediction_time * tick_speed) as f32 / 1000.0) as i32;
+    let mut prediction_min = ((limit * tick_speed) as f32 / 1000.0) as i32;
+    if limit == 0 {
+        let percentage = 1.0 - percent as f32 / 100.0;
+        prediction_min = (prediction_tick as f32 * percentage).floor() as i32;
+    }
+    if prediction_min > prediction_tick - 1 {
+        prediction_min = prediction_tick - 1;
+    }
+    if prediction_min <= 0 {
+        return pred_tick;
+    }
+    (pred_tick - prediction_min).max(game_tick + 1)
+}
+
+/// C++: `CClient::GetSmoothTick` (client.cpp:5418): the tick and intra tick at
+/// `mix` between the game and the predicted time.
+pub fn smooth_tick(game_now: i64, pred_now: i64, mix: f32) -> (i32, f32) {
+    let v = game_now + (mix * (pred_now - game_now) as f32) as i64;
+    // std::clamp as MSVC's STL does it: the upper bound wins when the bounds are
+    // reversed (predicted time behind game time; C++ UB, see DECISIONS.md)
+    let smooth_time = if pred_now < v {
+        pred_now
+    } else if v < game_now {
+        game_now
+    } else {
+        v
+    };
+    let tick = (smooth_time * TICK_SPEED / FREQ) as i32 + 1;
+    let intra =
+        (smooth_time - (tick - 1) as i64 * FREQ / TICK_SPEED) as f32 / (FREQ / TICK_SPEED) as f32;
+    (tick, intra)
+}
+
+/// What `CGameClient::OnPredict` and the rendering read from `CClient` at one moment.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Timing {
+    /// C++: `GameTick`, `PrevGameTick`, `PredGameTick`.
+    pub game_tick: i32,
+    pub prev_game_tick: i32,
+    pub pred_tick: i32,
+    /// C++: `IntraGameTick`, `PredIntraGameTick`.
+    pub intra_tick: f32,
+    pub pred_intra_tick: f32,
+    /// C++: `time_get()` and the smoothed game and predicted times at it.
+    pub now: i64,
+    pub game_now: i64,
+    pub pred_now: i64,
+}
+
 /// C++: `CSnapshotStorage::CHolder`.
 struct StoredSnapshot {
     tick: i32,
@@ -386,6 +451,8 @@ pub struct Client {
     /// C++: `Repredict` in `CClient::Update`: a new snapshot or prediction tick since the
     /// caller last cleared it.
     pub repredict: bool,
+    /// C++: `cl_prediction_margin` (ms), used when the server syncs weapon input.
+    pub prediction_margin: i32,
     random: fn() -> [u8; 16],
 }
 
@@ -459,6 +526,7 @@ impl Client {
             predict_msgs: Vec::new(),
             snapshot_switches: Vec::new(),
             repredict: false,
+            prediction_margin: 10,
             random,
         }
     }
@@ -561,6 +629,8 @@ impl Client {
         if self.state == State::Online {
             self.update_online(now);
         }
+        // C++: the end of CClient::Update
+        self.predicted_time.margin = self.prediction_margin_ms() * FREQ / 1000;
     }
 
     /// C++: `CNetClient::Recv` + `ProcessServerPacket` for connection-oriented packets.
@@ -1008,9 +1078,23 @@ impl Client {
     /// C++: `CClient::PredictionMargin`.
     fn prediction_margin_ms(&self) -> i64 {
         if self.caps.sync_weapon_input {
-            PREDICTION_MARGIN_DEFAULT_MS
+            self.prediction_margin as i64
         } else {
             10
+        }
+    }
+
+    /// The timing values `OnPredict` and the rendering read at `now`.
+    pub fn timing(&self, now: i64) -> Timing {
+        Timing {
+            game_tick: self.cur_tick.unwrap_or(0),
+            prev_game_tick: self.prev_tick.unwrap_or(0),
+            pred_tick: self.pred_tick,
+            intra_tick: self.intra_tick,
+            pred_intra_tick: self.pred_intra_tick,
+            now,
+            game_now: self.game_time.get(now),
+            pred_now: self.predicted_time.get(now),
         }
     }
 

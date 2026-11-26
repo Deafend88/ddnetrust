@@ -111,6 +111,7 @@ static constexpr const char *const TOOL_NAME = "rs_parity";
 int CameraMode(const char *pOutFile); // rs_parity_camera.cpp
 int MovementMode(const char *pOutFile); // rs_parity_hud.cpp
 int MsgsMode(IMap *pMap, CCollision *pCollision, const char *pOutFile); // rs_parity_msgs.cpp
+int AntiPingMode(CCollision *pCollision, const char *pOutFile); // rs_parity_antiping.cpp
 
 typedef std::vector<unsigned char> Bytes;
 
@@ -1518,6 +1519,39 @@ static void DumpNetWorld(FILE *f, const char *pTag, CGameWorld &World)
 	fprintf(f, " | %d %d %d %d %d %d %08x\n", EntityCount(World, CGameWorld::ENTTYPE_PROJECTILE), EntityCount(World, CGameWorld::ENTTYPE_LASER),
 		EntityCount(World, CGameWorld::ENTTYPE_DOOR), EntityCount(World, CGameWorld::ENTTYPE_DRAGGER),
 		EntityCount(World, CGameWorld::ENTTYPE_PLASMA), EntityCount(World, CGameWorld::ENTTYPE_PICKUP), E.Crc());
+}
+
+// For rs_parity_antiping.cpp: CoreState, and every character and entity of a world.
+void CoreStateInts(std::vector<int> &vValues, const CCharacterCore &Core)
+{
+	SQueries Q;
+	CoreState(Q, Core);
+	vValues.insert(vValues.end(), Q.m_vValues.begin(), Q.m_vValues.end());
+}
+
+void CharStateInts(std::vector<int> &vValues, CCharacter *pChar)
+{
+	SQueries Q;
+	WeaponCharState(Q, pChar);
+	vValues.insert(vValues.end(), Q.m_vValues.begin(), Q.m_vValues.end());
+}
+
+void NetWorldInts(std::vector<int> &vValues, CGameWorld &World)
+{
+	for(int Id = 0; Id < MAX_CLIENTS; Id++)
+		if(CCharacter *pChar = World.GetCharacterById(Id))
+		{
+			SQueries Q;
+			WeaponCharState(Q, pChar);
+			vValues.push_back(Id);
+			vValues.push_back((int)Q.Crc());
+		}
+	for(int Type : {CGameWorld::ENTTYPE_PROJECTILE, CGameWorld::ENTTYPE_LASER, CGameWorld::ENTTYPE_DOOR, CGameWorld::ENTTYPE_DRAGGER,
+		    CGameWorld::ENTTYPE_PLASMA, CGameWorld::ENTTYPE_PICKUP})
+		vValues.push_back(EntityCount(World, Type));
+	SQueries E;
+	WeaponEntityState(E, World);
+	vValues.push_back((int)E.Crc());
 }
 
 // Snapshot entities into the prediction world (M8.4): characters fire for real, and each
@@ -3041,7 +3075,9 @@ int main(int argc, const char **argv)
 		return DoorsMode(argv[2], argv[3]);
 	if(argc == 4 && str_comp(argv[1], "netents") == 0)
 		return NetEntsMode(argv[2], argv[3]);
-	if(argc == 4 && str_comp(argv[1], "msgs") == 0)
+	if(argc == 3 && str_comp(argv[1], "antiping-timing") == 0)
+		return AntiPingMode(nullptr, argv[2]);
+	if(argc == 4 && (str_comp(argv[1], "msgs") == 0 || str_comp(argv[1], "antiping") == 0))
 	{
 		std::unique_ptr<IStorage> pStorage = CreateLocalStorage();
 		std::unique_ptr<IMap> pMap = CreateMap();
@@ -3050,6 +3086,8 @@ int main(int argc, const char **argv)
 			return -1;
 		CCollision Collision;
 		Collision.Init(&Layers);
+		if(str_comp(argv[1], "antiping") == 0)
+			return AntiPingMode(&Collision, argv[3]);
 		return MsgsMode(pMap.get(), &Collision, argv[3]);
 	}
 	if(argc >= 4 && (str_comp(argv[1], "collision") == 0 || str_comp(argv[1], "core") == 0 || str_comp(argv[1], "world") == 0 || str_comp(argv[1], "weapons") == 0))
@@ -3068,6 +3106,6 @@ int main(int argc, const char **argv)
 			return CoreMode(argv[2], argv[3], HookTele, Verbose);
 		return CollisionMode(argv[2], argv[3], HookTele, Verbose);
 	}
-	log_error(TOOL_NAME, "Usage: %s map <map file> <output file> <scratch dir> | collision|core|world|weapons <map file> <output file> [hooktele] [verbose] | doors|netents|mapimages|envelopes|items|msgs <map file> <output file> | envelopes-synthetic|screen|anims|colors|interp|camera|movement <output file> | png <output file> <dir>... | skins <output file> <dir>", argc > 0 ? argv[0] : TOOL_NAME);
+	log_error(TOOL_NAME, "Usage: %s map <map file> <output file> <scratch dir> | collision|core|world|weapons <map file> <output file> [hooktele] [verbose] | doors|netents|mapimages|envelopes|items|msgs|antiping <map file> <output file> | envelopes-synthetic|screen|anims|colors|interp|camera|movement|antiping-timing <output file> | png <output file> <dir>... | skins <output file> <dir>", argc > 0 ? argv[0] : TOOL_NAME);
 	return -1;
 }
