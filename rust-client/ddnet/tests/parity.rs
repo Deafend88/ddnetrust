@@ -2168,3 +2168,32 @@ fn antiping_loop_matches_cpp() {
         check_antiping(name, &map, col, &golden_file(name, "antiping"));
     }
 }
+
+/// The antiping gates (gameclient.cpp:955-997, `AntiPingPlayers/Grenade/Weapons/Gunfire`)
+/// for every switch combination, spectating or not.
+#[test]
+fn antiping_gates() {
+    use ddnet::predict::{PredictConfig, Predictor};
+    let map = load("coverage");
+    let mut p = Predictor::new(Rc::new(Collision::new(&map)), &map);
+    for bits in 0..32u32 {
+        let on = |b: u32| bits & (1 << b) != 0;
+        for players in 0..4 {
+            p.config = PredictConfig {
+                antiping: on(0),
+                antiping_grenade: on(1),
+                antiping_weapons: on(2),
+                antiping_gunfire: on(3),
+                antiping_players: players,
+                ..Default::default()
+            };
+            p.spectating = on(4);
+            let active = on(0) && !on(4);
+            let want_players = if active && players != 0 { players } else { 0 };
+            assert_eq!(p.antiping_players(), want_players, "{bits} {players}");
+            assert_eq!(p.antiping_grenade(), active && on(1));
+            assert_eq!(p.antiping_weapons(), active && on(2));
+            assert_eq!(p.antiping_gunfire(), active && on(1) && on(2) && on(3));
+        }
+    }
+}

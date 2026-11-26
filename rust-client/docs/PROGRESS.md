@@ -991,7 +991,7 @@ are final unless the user changes them:
 - Verified: gates; live 800x600 / 1920x1080 / 640x480 window captures (local server,
   scratch APPDATA), kills via `statusbar_check.ps1 -Kills`.
 
-### M8 — antiping (plan: PLAN.md §12, approved 2026-11-25, answers §12.7)
+### M8 — antiping (plan: PLAN.md §12, approved 2026-11-25, answers §12.7; done 8.1-8.8)
 
 #### 8.1 (2026-11-25): messages the prediction world needs — done
 - `Sv_TuneParams` (C++ reads ints until the first unpack error, jetpack strength 0 by
@@ -1158,12 +1158,35 @@ are final unless the user changes them:
   C++ disables antiping while spectating). The C++ client cannot fire by itself, so a
   C++ antiping capture would need synthetic mouse input; not done.
 
+#### 8.8 (2026-11-26): settings and finish — done, waiting for the user's review
+- Settings page (`ui.rs`, `antiping_rows`): "Antiping" switch; when on, indented
+  "Other players" (Off / All / Interact), "Always predict frozen players" (Interact
+  only), "Weapons", "Grenade paths" (C++ menus_settings_ddnet.cpp:160 order). Below,
+  "Prediction details" (Show/Hide) with smoothing, predicted gunfire, early inputs
+  (preinputs), prediction limit, amount (only while the limit is 0), margin and
+  freeze; explanations on hover. Existing widgets and tokens only (toggle, segmented,
+  pill buttons, `space::L` indent, one accent). Review render:
+  `docs/review/8.8/settings_antiping.png` (gallery example, third path).
+- Frame time (`scripts/frame_time.ps1 -Antiping`, 2560x1440, dm1, DDNet-rs and 7
+  ddnet-headless bots all firing guns, 3 runs of 15 s each): antiping off 0.738 /
+  0.741 / 0.757 ms, on 0.762 / 0.766 / 0.760 ms (+0.02 ms; target was within 1 ms).
+  The script now raises the server's per-IP client and connection limits (4 and 5 by
+  default refused the 6th and later clients).
+- Verified: `antiping_gates` (every switch combination, spectating or not); the
+  settings variables round-trip through `settings.cfg`; full `cargo test` incl. the
+  M5/M6 live tests on the default `cl_antiping 0` path; UI checked against the
+  CLAUDE.md UI rules (pills for single-line controls, tokens only, one accent,
+  secondary text on hover).
+
 #### Exact next actions (next session starts here)
-State (2026-11-26): M8 8.1-8.7 done and pushed. 8.8 next (settings UI, frame time),
-then stop for the user's review.
+State (2026-11-26): M8 (8.1-8.8) done and pushed; stopped for the user's review of
+8.5-8.8. Review material: `docs/review/8.7/` (gun/grenade/laser, DDNet-rs predicted vs
+the C++ spectator view) and `docs/review/8.8/settings_antiping.png`. Open points for
+the user: the C++ smoothing unit quirk (DECISIONS 8.6: smoothing has no visible effect,
+in C++ too), and whether a C++-player antiping capture (synthetic mouse input) is
+wanted.
 1. Read CLAUDE.md, PLAN §12 (incl. §12.7), this file, `git log`.
-2. Next: 8.8 (Antiping group on the settings page, detail view, frame time with 8 tees
-   firing, all gates, M5/M6 tests with `cl_antiping 0`).
+2. If the review asks for changes, do those first; then PLAN §11 (roadmap after M8).
 
 #### Decisions and gotchas from 7.1
 - egui 0.37 panics in debug if a frame's `TexturesDelta` is dropped unapplied: drain

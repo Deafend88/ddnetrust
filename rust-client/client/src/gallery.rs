@@ -163,20 +163,21 @@ pub fn render(gfx: &mut Gfx) {
 /// needs a few passes to settle its layout and finish fade-ins; each pass redraws the
 /// backdrop first.
 pub fn render_with(gfx: &mut Gfx, glass: Glass, backdrop: impl FnMut(&mut Gfx)) {
-    render_page(gfx, glass, backdrop, |ctx| page(ctx, glass));
+    render_page(gfx, glass, 3, backdrop, |ctx| page(ctx, glass));
 }
 
-/// Draws `page` like the gallery: a few passes over `backdrop`, the clock moving on.
+/// Draws `page` like the gallery: `passes` passes over `backdrop`, the clock moving on.
 fn render_page(
     gfx: &mut Gfx,
     glass: Glass,
+    passes: u32,
     mut backdrop: impl FnMut(&mut Gfx),
     mut page: impl FnMut(&egui::Context),
 ) {
     let size = gfx.world_size();
     let mut painter = Painter::new(gfx, gfx.format, glass);
     // the clock moves on between passes so fade-ins finish (deterministically)
-    for pass in 0..3 {
+    for pass in 0..passes {
         backdrop(gfx);
         let input = egui::RawInput {
             screen_rect: Some(egui::Rect::from_min_size(
@@ -191,6 +192,23 @@ fn render_page(
     }
 }
 
+/// The settings page review (8.8): antiping on, "Interact" players, details open.
+pub const SETTINGS_SIZE: Size = Size {
+    width: 1280,
+    height: 1080,
+};
+
+/// Draws the settings page into the world target of `gfx` (sized `SETTINGS_SIZE`).
+pub fn render_settings(gfx: &mut Gfx, storage: &Storage) {
+    let mut menu = crate::ui::Menu::new(None, storage);
+    menu.open_settings(true);
+    let mut settings = crate::config::Settings::load(&[b"cl_antiping 1\ncl_antiping_players 2"]);
+    // a window takes its size from earlier frames: the tall page needs more passes
+    render_page(gfx, Glass::Subtle, 30, stripes, |ctx| {
+        menu.show(ctx, false, &mut settings);
+    });
+}
+
 /// The race status review page (7.7): every state, labelled.
 pub const STATUS_SIZE: Size = Size {
     width: 1280,
@@ -202,7 +220,7 @@ pub fn render_status(gfx: &mut Gfx, storage: &Storage) {
     let glass = Glass::Subtle;
     let mut icons = WeaponIcons::new(storage);
     let examples = statusview::examples();
-    render_page(gfx, glass, stripes, |ctx| {
+    render_page(gfx, glass, 3, stripes, |ctx| {
         egui::Area::new(egui::Id::unique("status_gallery"))
             .anchor(Align2::LEFT_TOP, [space::XL, space::XL])
             .show(ctx, |ui| {

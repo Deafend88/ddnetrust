@@ -5,7 +5,7 @@ use std::net::SocketAddr;
 
 use winit::window::Window;
 
-use crate::config::{Binds, Settings, escape};
+use crate::config::{Binds, Config, Settings, escape};
 use crate::gfx::{Gfx, Size};
 use crate::glass::{GlassFrame, GlassRenderer};
 use crate::icons;
@@ -199,6 +199,8 @@ pub struct Menu {
     /// The command waiting for a key press in the settings (C++ key reader).
     pub reading_key: Option<&'static str>,
     skins: Vec<String>,
+    /// The prediction details (secondary antiping settings) are shown.
+    prediction_details: bool,
 }
 
 impl Menu {
@@ -210,7 +212,15 @@ impl Menu {
             error: None,
             reading_key: None,
             skins: crate::assets::list_skins(storage),
+            prediction_details: false,
         }
+    }
+
+    /// Opens the settings page, with the prediction details shown or not (the gallery's
+    /// settings review).
+    pub fn open_settings(&mut self, prediction_details: bool) {
+        self.page = Page::Settings;
+        self.prediction_details = prediction_details;
     }
 
     /// The start screen (`connected` false) or the in-game menu, and the settings page.
@@ -357,6 +367,7 @@ impl Menu {
                         }
                         ui.end_row();
                     }
+                    self.antiping_rows(ui, c, &mut lines);
                     ui.label("Glass");
                     let mut glass = c.rs_glass.clamp(0, 2) as usize;
                     if w::segmented(ui, &mut glass, &["Off", "Subtle", "Full"]).clicked() {
@@ -397,5 +408,118 @@ impl Menu {
         for line in lines {
             s.execute_line(&line);
         }
+    }
+
+    /// The antiping group (C++ menus_settings_ddnet.cpp:160): the switch, then what it
+    /// predicts; the fine-tuning (smoothing, limits, margin, freeze) behind "Prediction
+    /// details". Rows of the settings grid; changes go to `lines`.
+    fn antiping_rows(&mut self, ui: &mut egui::Ui, c: &Config, lines: &mut Vec<String>) {
+        let toggle = |ui: &mut egui::Ui, lines: &mut Vec<String>, name: &str, value: i32| {
+            let mut on = value != 0;
+            if w::toggle(ui, &mut on).changed() {
+                lines.push(format!("{name} {}", on as i32));
+            }
+            ui.end_row();
+        };
+        // rows that belong to the row above sit indented
+        let sub = |ui: &mut egui::Ui, text: &str| {
+            ui.horizontal(|ui| {
+                ui.add_space(space::L);
+                ui.label(text)
+            })
+            .inner
+        };
+        ui.label("Antiping").on_hover_text(
+            "Shows other players and your shots ahead of the server, so your ping is hidden",
+        );
+        toggle(ui, lines, "cl_antiping", c.cl_antiping);
+        if c.cl_antiping != 0 {
+            sub(ui, "Other players").on_hover_text("Interact: only players you hook, hit or touch");
+            let mut players = c.cl_antiping_players.clamp(0, 2) as usize;
+            if w::segmented(ui, &mut players, &["Off", "All", "Interact"]).clicked() {
+                lines.push(format!("cl_antiping_players {players}"));
+            }
+            ui.end_row();
+            if c.cl_antiping_players >= 2 {
+                sub(ui, "Always predict frozen players");
+                let mut on = c.cl_antiping_players == 3;
+                if w::toggle(ui, &mut on).changed() {
+                    lines.push(format!("cl_antiping_players {}", 2 + on as i32));
+                }
+                ui.end_row();
+            }
+            sub(ui, "Weapons");
+            toggle(ui, lines, "cl_antiping_weapons", c.cl_antiping_weapons);
+            sub(ui, "Grenade paths");
+            toggle(ui, lines, "cl_antiping_grenade", c.cl_antiping_grenade);
+        }
+        ui.label("Prediction details");
+        let label = if self.prediction_details {
+            "Hide"
+        } else {
+            "Show"
+        };
+        if w::button(ui, None, label).clicked() {
+            self.prediction_details = !self.prediction_details;
+        }
+        ui.end_row();
+        if !self.prediction_details {
+            return;
+        }
+        sub(ui, "Smooth other players")
+            .on_hover_text("Eases out small corrections of other players' predicted moves");
+        toggle(ui, lines, "cl_antiping_smooth", c.cl_antiping_smooth);
+        sub(ui, "Predicted gunfire")
+            .on_hover_text("Your shots and their effects drawn from the prediction");
+        toggle(ui, lines, "cl_antiping_gunfire", c.cl_antiping_gunfire);
+        sub(ui, "Early inputs")
+            .on_hover_text("Uses other players' inputs the server forwards before their tick");
+        toggle(ui, lines, "cl_antiping_preinput", c.cl_antiping_preinput);
+        let mut drag =
+            |ui: &mut egui::Ui, label: &str, hover: &str, name: &str, value: i32, range, suffix| {
+                sub(ui, label).on_hover_text(hover);
+                let mut v = value;
+                let r = ui.add(egui::DragValue::new(&mut v).range(range).suffix(suffix));
+                if r.changed() {
+                    lines.push(format!("{name} {v}"));
+                }
+                ui.end_row();
+            };
+        drag(
+            ui,
+            "Prediction limit",
+            "Predicts others at most this far ahead; 0 uses the amount below",
+            "cl_antiping_limit",
+            c.cl_antiping_limit,
+            0..=500,
+            " ms",
+        );
+        if c.cl_antiping_limit == 0 {
+            drag(
+                ui,
+                "Prediction amount",
+                "How much of your ping others are predicted ahead",
+                "cl_antiping_percent",
+                c.cl_antiping_percent,
+                0..=100,
+                "%",
+            );
+        }
+        drag(
+            ui,
+            "Prediction margin",
+            "Extra time for ping jumps; adds this much delay (servers that sync weapon input)",
+            "cl_prediction_margin",
+            c.cl_prediction_margin,
+            1..=300,
+            " ms",
+        );
+        sub(ui, "Predict freeze")
+            .on_hover_text("Partial: you may still move for the last tick or two");
+        let mut freeze = c.cl_predict_freeze.clamp(0, 2) as usize;
+        if w::segmented(ui, &mut freeze, &["Off", "On", "Partial"]).clicked() {
+            lines.push(format!("cl_predict_freeze {freeze}"));
+        }
+        ui.end_row();
     }
 }

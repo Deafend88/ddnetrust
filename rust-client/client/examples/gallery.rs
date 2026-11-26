@@ -1,7 +1,8 @@
 //! Draws the design-system gallery (M7.1) headless and saves it as a PNG; with a second
-//! path, also the race status review page (7.7, needs the DDNet data dir for weapons).
+//! path, also the race status review page (7.7, needs the DDNet data dir for weapons);
+//! with a third, the settings page (8.8).
 //!
-//! Usage: cargo run -p ddnet-rs --example gallery -- [out.png] [status.png]
+//! Usage: cargo run -p ddnet-rs --example gallery -- [out.png] [status.png] [settings.png]
 
 fn main() {
     let mut args = std::env::args().skip(1);
@@ -18,6 +19,12 @@ fn main() {
             ddnet_rs::gfx::Gfx::headless(ddnet_rs::gallery::STATUS_SIZE).expect("graphics adapter");
         ddnet_rs::gallery::render_status(&mut gfx, &storage);
         save(&gfx, &status);
+        if let Some(settings) = args.next() {
+            let mut gfx = ddnet_rs::gfx::Gfx::headless(ddnet_rs::gallery::SETTINGS_SIZE)
+                .expect("graphics adapter");
+            ddnet_rs::gallery::render_settings(&mut gfx, &storage);
+            save(&gfx, &settings);
+        }
     }
 }
 
