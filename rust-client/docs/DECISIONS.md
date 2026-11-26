@@ -328,3 +328,18 @@ only matters for names so long that neither file can exist.
 - C++ `std::min`/`std::clamp` on floats are ported with their NaN behaviour
   (`b < a ? b : a`), not `f32::min`. Float to `int64_t` casts of NaN or out-of-range
   values (C++ UB) saturate in Rust; they need a NaN position to happen.
+
+## 2026-11-26 — Antiping 8.7: rendering
+
+- `m_NinjaJetpack` is only set by the vanilla `CCharacter::Read` path (no
+  `DDNetCharacter`), which is not ported, so the gunfire branches that read it in
+  `UpdateRenderedCharacters` see false.
+- `m_IsPredictedLocal` of a client that left the snapshot keeps its old value in C++;
+  the item renderer reads it for lasers' owners. DDNet-rs only knows it for active
+  clients (`Rendered::predicted_local`), so a laser whose owner just left is drawn from
+  the snapshot instead of not at all. Only the local tee is ever predicted-local.
+- `CItems` writes `m_LastRenderTick` into the server-state world's projectiles; only the
+  smoke-trail reconstruction reads it (particles, not ported), so the renderer keeps the
+  world read-only.
+- Fixed on the way: a door laser's head time is the plain game tick in C++ (no intra
+  tick added); DDNet-rs added `IntraGameTick`.

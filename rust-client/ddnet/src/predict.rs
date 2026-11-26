@@ -150,8 +150,10 @@ pub struct Rendered {
     pub prev: ObjCharacter,
     pub cur: ObjCharacter,
     pub pos: Vec2,
-    /// Drawn between the predicted ticks with `PredIntraGameTick` (the local tee).
+    /// C++ `m_IsPredicted`: drawn between the predicted ticks with `PredIntraGameTick`.
     pub predicted: bool,
+    /// C++ `m_IsPredictedLocal`: the local tee, predicted (weapons drawn predicted).
+    pub predicted_local: bool,
     pub ext: Option<ObjDDNetCharacter>,
     pub prev_ext: Option<ObjDDNetCharacter>,
 }
@@ -913,14 +915,14 @@ impl Predictor {
         self.world.net_obj_end();
     }
 
-    /// C++: `CGameClient::UpdateRenderedCharacters` (gameclient.cpp:3762) with
-    /// `cl_antiping 0`: every active character between the snapshots with
-    /// `IntraGameTick`; the local one, when predicting, between its predicted cores with
-    /// `PredIntraGameTick`. Ordered by client id.
-    pub fn rendered(&self, client: &Client) -> Vec<Rendered> {
+    /// C++: `CGameClient::UpdateRenderedCharacters` (gameclient.cpp:3762): every active
+    /// character between the snapshots with `IntraGameTick`; predicted ones (the local
+    /// tee, and others per `cl_antiping_players` unless in another team) between their
+    /// predicted cores with `PredIntraGameTick`, others with `GetSmoothPos` when
+    /// smoothing. Ordered by client id.
+    pub fn rendered(&self, t: &Timing) -> Vec<Rendered> {
         let pos = |c: &ObjCharacter| vec2(c.x as f32, c.y as f32);
-        let in_world =
-            |i: usize| (self.predicted_world.as_ref()).is_some_and(|w| w.character(i).is_some());
+        let antiping_players = self.antiping_players();
         (0..MAX_CLIENTS)
             .filter_map(|i| {
                 let c = self.chars[i]?;
@@ -928,16 +930,48 @@ impl Predictor {
                     id: i as i32,
                     prev: c.prev,
                     cur: c.cur,
-                    pos: mix(pos(&c.prev), pos(&c.cur), client.intra_tick),
+                    pos: mix(pos(&c.prev), pos(&c.cur), t.intra_tick),
                     predicted: false,
+                    predicted_local: false,
                     ext: c.ext,
                     prev_ext: c.prev_ext,
                 };
-                if self.predict_on() && i as i32 == self.local_id && in_world(i) {
-                    write_core(&mut r.cur, &self.predicted[i]);
-                    write_core(&mut r.prev, &self.prev_predicted[i]);
-                    r.predicted = true;
-                    r.pos = mix(pos(&r.prev), pos(&r.cur), client.pred_intra_tick);
+                let ch = (self.predicted_world.as_ref()).and_then(|w| w.character(i));
+                // C++ dummy branch not ported
+                let antiping_player = antiping_players == 1
+                    || (antiping_players >= 2 && ch.is_some_and(|(ch, _)| ch.interfering));
+                let local = i as i32 == self.local_id;
+                let Some((ch, _)) = ch else {
+                    return Some(r);
+                };
+                if !(self.predict_on()
+                    && (local || (antiping_player && !self.is_other_team(i as i32))))
+                {
+                    return Some(r);
+                }
+                write_core(&mut r.cur, &self.predicted[i]);
+                write_core(&mut r.prev, &self.prev_predicted[i]);
+                r.predicted = true;
+                r.pos = mix(pos(&r.prev), pos(&r.cur), t.pred_intra_tick);
+                if local {
+                    r.predicted_local = true;
+                    // C++ m_NinjaJetpack is only set by the vanilla Read path (not ported)
+                    let predicted_weapon = self.predicted[i].active_weapon;
+                    if self.antiping_gunfire()
+                        && (c.cur.weapon != g::WEAPON_NINJA || c.cur.weapon == predicted_weapon)
+                    {
+                        r.cur.attack_tick = ch.attack_tick;
+                        if c.cur.weapon != g::WEAPON_NINJA {
+                            r.cur.weapon = predicted_weapon;
+                        }
+                    }
+                } else {
+                    // use unpredicted values for other players
+                    r.prev.angle = c.prev.angle;
+                    r.cur.angle = c.cur.angle;
+                    if self.config.antiping_smooth {
+                        r.pos = self.smooth_pos(i, t);
+                    }
                 }
                 Some(r)
             })
@@ -951,6 +985,58 @@ impl Predictor {
         (self.predict_on() && id == self.local_id && self.predicted_world.is_some())
             .then(|| self.predicted.get(id as usize))
             .flatten()
+    }
+
+    /// C++: `CClient::GetPredictionTick` with this predictor's `cl_antiping_limit` and
+    /// `cl_antiping_percent`.
+    pub fn prediction_tick(&self, t: &Timing) -> i32 {
+        client::prediction_tick(
+            client::prediction_time(t.game_now, t.pred_now),
+            self.config.antiping_limit,
+            self.config.antiping_percent,
+            t.game_tick,
+            t.pred_tick,
+        )
+    }
+
+    /// C++: the flight time `Ct` of `CItems::RenderProjectile` (items.cpp:55): at the
+    /// prediction tick with antiping grenades (unless the owner is in another team),
+    /// else since the previous snapshot. `last_tick_time` is C++ `s_LastGameTickTime`.
+    pub fn projectile_time(
+        &self,
+        d: &crate::items::ProjectileData,
+        t: &Timing,
+        local_in_game: bool,
+        last_tick_time: f32,
+    ) -> f32 {
+        let is_other_team = d.extra_info && d.owner >= 0 && self.is_other_team(d.owner);
+        if self.predict_on() && self.antiping_grenade() && local_in_game && !is_other_team {
+            ((self.prediction_tick(t) - 1 - d.start_tick) as f32 + t.pred_intra_tick)
+                / TICK_SPEED as f32
+        } else {
+            (t.prev_game_tick - d.start_tick) as f32 / TICK_SPEED as f32 + last_tick_time
+        }
+    }
+
+    /// C++: `Ticks` and `TicksHead` of `CItems::RenderLaser` (items.cpp:313) for a laser
+    /// of (clamped) type `ty`, drawn `predicted` or from the snapshot.
+    pub fn laser_ticks(
+        &self,
+        d: &crate::items::LaserData,
+        ty: i32,
+        predicted: bool,
+        t: &Timing,
+    ) -> (f32, f32) {
+        let head = t.game_tick as f32;
+        if ty == g::LASERTYPE_DOOR {
+            (1.0, head)
+        } else if predicted {
+            let ticks = (self.prediction_tick(t) - d.start_tick) as f32 + t.pred_intra_tick;
+            (ticks, head + t.pred_intra_tick)
+        } else {
+            let ticks = (t.game_tick - d.start_tick) as f32 + t.intra_tick;
+            (ticks, head + t.intra_tick)
+        }
     }
 
     /// C++: `m_PredictedTick`: the predicted tick of the last `OnPredict`.
@@ -1199,13 +1285,7 @@ impl Predictor {
             return;
         }
         let c = self.config;
-        let prediction_tick = client::prediction_tick(
-            client::prediction_time(t.game_now, t.pred_now),
-            c.antiping_limit,
-            c.antiping_percent,
-            cur,
-            pred,
-        );
+        let prediction_tick = self.prediction_tick(t);
         let pre = PreInputs {
             enabled: c.antiping_preinput,
             local: self.local_id,

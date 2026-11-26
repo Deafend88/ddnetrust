@@ -4,7 +4,11 @@
 //! the menu go to our own `%APPDATA%\DDNet-rs\settings.cfg`. F12 saves a screenshot.
 //!
 //! Usage: ddnet-rs [server ip:port] [--data-dir PATH] [--vsync] [--size WxH] [--view X,Y]
-//!        [--follow CLIENT_ID] [--screenshot-after SECONDS] [--no-grab]
+//!        [--follow CLIENT_ID] [--screenshot-after SECONDS] [--no-grab] [--fire WEAPON]
+//!
+//! `--fire` (scripted captures): 2 s after the map shows, says `/weapons` (a practice
+//! command on a local test server) and then keeps shooting that weapon (0 hammer, 1 gun,
+//! ...) up and to the left, like `ddnet-headless --fire`.
 
 use std::net::{SocketAddr, UdpSocket};
 use std::rc::Rc;
@@ -69,6 +73,8 @@ struct Options {
     screenshot_after: Option<f64>,
     /// Never grab the mouse (scripted runs; also implied by `--view` and `--follow`).
     no_grab: bool,
+    /// Keep shooting this weapon (scripted captures).
+    fire: Option<i32>,
 }
 
 /// The window and what draws into it.
@@ -96,6 +102,8 @@ struct Session {
     predictor: Option<Predictor>,
     items: Items,
     map_shown_at: Option<Instant>,
+    /// `--fire`: `/weapons` was said.
+    weapons_asked: bool,
     camera: Camera,
     controls: Controls,
     /// C++ `m_LocalCharacterPos` (or the followed tee's): kept while the tee is gone.
@@ -118,6 +126,7 @@ impl Session {
             predictor: None,
             items: Items::default(),
             map_shown_at: None,
+            weapons_asked: false,
             camera,
             controls: Controls::default(),
             center: None,
@@ -415,6 +424,17 @@ impl App {
         // C++: CClient::Update (sends SnapInput, OnNewSnapshot reports the camera)
         let bug_input = (s.predictor.as_ref()).is_some_and(|p| p.bug_ddrace_input());
         s.client.input = s.controls.snap_input(menu_visible, bug_input);
+        if let (Some(weapon), Some(shown)) = (self.options.fire, s.map_shown_at) {
+            let elapsed = shown.elapsed().as_secs_f64();
+            if elapsed > 2.0 && !std::mem::replace(&mut s.weapons_asked, true) {
+                s.client.say(0, "/weapons", net::now(start));
+            }
+            // C++ CControls: the fire counter counts presses and releases
+            s.client.input.fire = (elapsed * 10.0) as i32 & ddnet::physics::core::INPUT_STATE_MASK;
+            s.client.input.wanted_weapon = weapon + 1;
+            // into the open: up and to the left
+            (s.client.input.target_x, s.client.input.target_y) = (-200, -60);
+        }
         s.client.camera = CameraState {
             zoom: s.camera.zoom,
             zooming: s.camera.zooming,
@@ -509,13 +529,14 @@ impl App {
         let mut map_shown_at = None;
         if let Some(s) = &mut self.session {
             // C++: CGameClient::OnNewSnapshot/OnPredict, then UpdateRenderedCharacters
+            let now = net::now(self.start);
             let local_freeze_end = match &mut s.predictor {
                 Some(p) => {
                     // C++ reads g_Config live
                     p.config = self.settings.config.predict_config();
                     s.client.prediction_margin = self.settings.config.cl_prediction_margin;
-                    p.update(&mut s.client, net::now(self.start));
-                    rendered = p.rendered(&s.client);
+                    p.update(&mut s.client, now);
+                    rendered = p.rendered(&s.client.timing(now));
                     p.predicted_freeze_end()
                 }
                 None => None,
@@ -556,6 +577,7 @@ impl App {
                             rendered: &rendered,
                             collision,
                             sprites: r.players.sprites(),
+                            timing: s.client.timing(now),
                         },
                     );
                 }
@@ -567,6 +589,7 @@ impl App {
                     collision,
                     &rendered,
                     local_freeze_end,
+                    (s.predictor.as_ref()).is_some_and(|p| p.antiping_gunfire()),
                 );
                 map.render_foreground(&mut batch, &view);
             }
@@ -837,10 +860,11 @@ fn parse_args() -> Result<Options, String> {
         follow: None,
         screenshot_after: None,
         no_grab: false,
+        fire: None,
     };
     let mut args = std::env::args().skip(1).peekable();
     if let Some(a) = args.next_if(|a| !a.starts_with("--")) {
-        let server: SocketAddr = a.parse().map_err(|_| "usage: ddnet-rs [server ip:port] [--data-dir PATH] [--vsync] [--size WxH] [--view X,Y] [--follow CLIENT_ID] [--screenshot-after SECONDS] [--no-grab]")?;
+        let server: SocketAddr = a.parse().map_err(|_| "usage: ddnet-rs [server ip:port] [--data-dir PATH] [--vsync] [--size WxH] [--view X,Y] [--follow CLIENT_ID] [--screenshot-after SECONDS] [--no-grab] [--fire WEAPON]")?;
         if !server.ip().is_loopback() {
             return Err(format!(
                 "refusing {server}: only local (loopback) servers are allowed for now"
@@ -871,6 +895,7 @@ fn parse_args() -> Result<Options, String> {
                     h.parse().map_err(|_| "--size WxH")?,
                 ));
             }
+            "--fire" => o.fire = Some(value()?.parse().map_err(|_| "--fire WEAPON")?),
             "--screenshot-after" => {
                 o.screenshot_after =
                     Some(value()?.parse().map_err(|_| "--screenshot-after SECONDS")?)

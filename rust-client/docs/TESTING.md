@@ -165,7 +165,9 @@ else this repo's `data\`, else next to the exe or Steam's default install) and `
 (C++ `gfx_vsync`, off by default). At start it prints its storage paths in search
 order, e.g. `%APPDATA%\DDNet` (your DDNet folder, only read, never written), the data
 dir and the current folder. More options: `--size WxH`, `--zoom Z`, `--view X,Y` (fixed
-camera), `--follow ID` (center on another player), `--screenshot-after SECONDS`.
+camera), `--follow ID` (center on another player), `--screenshot-after SECONDS`,
+`--fire WEAPON` (scripted captures on a local test server with `sv_test_cmds 1`: says
+`/weapons` after 2 s, then keeps shooting that weapon up and to the left).
 **F12** saves a screenshot to `%APPDATA%\DDNet-rs\screenshots\`.
 
 ## 6. Compare with the C++ client

@@ -668,6 +668,7 @@ fn movement_information_matches_cpp() {
             cur: ch(7),
             pos: Default::default(),
             predicted: false,
+            predicted_local: false,
             ext: (mode != 0).then(|| ext(i(17), i(18))),
             prev_ext: (mode == 2).then(|| ext(i(13), i(14))),
         };

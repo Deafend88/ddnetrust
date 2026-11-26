@@ -1308,7 +1308,7 @@ fn cpp_copies_match_source() {
             i = end + 1;
         }
     }
-    assert_eq!(copies, 15);
+    assert_eq!(copies, 18);
 }
 
 /// rs_parity's `WeaponZoneTuning`: `ZoneTuning` plus weapon parameters per zone.
@@ -1944,15 +1944,49 @@ fn antiping_state(
         net_world_ints(w.unwrap_or(empty), &mut q);
         q.crc()
     };
+    // UpdateRenderedCharacters
+    let mut render = Queries::default();
+    for r in frame.map(|t| p.rendered(t)).unwrap_or_default() {
+        render.int(r.id);
+        render.0.extend(r.prev.to_ints());
+        render.0.extend(r.cur.to_ints());
+        render.int(r.predicted);
+        render.int(r.predicted_local);
+        render.vec(r.pos);
+    }
+    // CItems: projectile and laser timings in both worlds
+    let mut item_time = Queries::default();
+    if let Some(t) = frame {
+        let local_in_game = t.pred_tick % 3 != 0;
+        let last_tick_time = t.pred_intra_tick * 0.02;
+        for w in [p.prev_predicted_world.as_ref().unwrap_or(empty), p.world()] {
+            for pr in &w.projectiles {
+                let ct = p.projectile_time(&pr.get_data(), t, local_in_game, last_tick_time);
+                item_time.0.push(ct.to_bits() as i32);
+            }
+            for l in &w.lasers {
+                let d = l.get_data();
+                for ty in [d.type_.clamp(-1, g::NUM_LASERTYPES - 1), g::LASERTYPE_DOOR] {
+                    for predicted in [false, true] {
+                        let (ticks, head) = p.laser_ticks(&d, ty, predicted, t);
+                        item_time.0.push(ticks.to_bits() as i32);
+                        item_time.0.push(head.to_bits() as i32);
+                    }
+                }
+            }
+        }
+    }
     format!(
-        "{:08x} {:08x} {:08x} {:08x} {:08x} {:08x} {}",
+        "{:08x} {:08x} {:08x} {:08x} {:08x} {:08x} {} {:08x} {:08x}",
         cores.crc(),
         pred_pos.crc(),
         smooth.crc(),
         world(Some(p.world())),
         world(p.predicted_world.as_ref()),
         world(p.prev_predicted_world.as_ref()),
-        p.predicted_tick()
+        p.predicted_tick(),
+        render.crc(),
+        item_time.crc()
     )
 }
 

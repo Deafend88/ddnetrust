@@ -36,6 +36,23 @@ pub struct Projectile {
 
 impl Projectile {
     /// C++: `CProjectile::GetPos`.
+    /// C++: `CProjectile::GetData` (projectile.cpp:214): what the renderer draws.
+    pub fn get_data(&self) -> ProjectileData {
+        ProjectileData {
+            start_pos: self.pos,
+            start_vel: self.direction,
+            type_: self.type_,
+            start_tick: self.start_tick,
+            extra_info: true,
+            owner: self.owner,
+            explosive: self.explosive,
+            bouncing: self.bouncing,
+            freeze: self.freeze,
+            switch_number: self.number,
+            tune_zone: self.tune_zone,
+        }
+    }
+
     pub fn get_pos(&self, tunings: &[Tuning], time: f32) -> Vec2 {
         let t = &tunings[self.tune_zone as usize];
         let (curvature, speed) = match self.type_ {

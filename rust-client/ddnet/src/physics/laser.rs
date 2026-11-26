@@ -28,6 +28,29 @@ pub struct Laser {
     pub marked_for_destroy: bool,
 }
 
+impl Laser {
+    /// C++: `CLaser::GetData` (laser.cpp:223). C++ copies `m_Number` into the switch
+    /// number, which is uninitialized for fired lasers; the renderer does not read it.
+    pub fn get_data(&self) -> crate::items::LaserData {
+        crate::items::LaserData {
+            from: self.from,
+            to: self.pos,
+            start_tick: self.eval_tick,
+            extra_info: true,
+            owner: self.owner,
+            type_: if self.type_ == g::WEAPON_SHOTGUN {
+                g::LASERTYPE_SHOTGUN
+            } else {
+                g::LASERTYPE_RIFLE
+            },
+            switch_number: 0,
+            subtype: -1,
+            tune_zone: self.tune_zone,
+            predict: true,
+        }
+    }
+}
+
 /// C++: `StackedLaserShotgunBugSpeed` (laser.cpp:35).
 const STACKED_LASER_SHOTGUN_BUG_SPEED: Vec2 = Vec2 {
     x: -2147483648.0,

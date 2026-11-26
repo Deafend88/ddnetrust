@@ -156,7 +156,8 @@ impl Players {
     }
 
     /// C++: `CPlayers::OnRender`, with the screen set to the world (game group).
-    /// `local_freeze_end`: the predicted freeze of the local tee, if predicted.
+    /// `local_freeze_end`: the predicted freeze of the local tee, if predicted;
+    /// `gunfire`: C++ `AntiPingGunfire()` (the local tee's attack drawn predicted).
     #[allow(clippy::too_many_arguments)]
     pub fn render(
         &mut self,
@@ -167,6 +168,7 @@ impl Players {
         collision: &Collision,
         rendered: &[Rendered],
         local_freeze_end: Option<i32>,
+        gunfire: bool,
     ) {
         let snap = client.snapshot();
         let prev_snap = client
@@ -283,7 +285,7 @@ impl Players {
         }
         // render everyone else's tee, then our own
         for p in ordered {
-            self.render_player(batch, client, collision, &screen, p, local);
+            self.render_player(batch, client, collision, &screen, p, local, gunfire);
         }
     }
 
@@ -365,6 +367,7 @@ impl Players {
     }
 
     /// C++: `CPlayers::RenderPlayer` (players.cpp:565).
+    #[allow(clippy::too_many_arguments)]
     fn render_player(
         &self,
         batch: &mut Batch,
@@ -373,6 +376,7 @@ impl Players {
         screen: &[f32; 4],
         p: &Drawn,
         local: Option<i32>,
+        gunfire: bool,
     ) {
         let (prev, player) = (&p.r.prev, &p.r.cur);
         let position = p.r.pos;
@@ -390,8 +394,13 @@ impl Players {
             client.intra_tick
         };
         let prev_tick = client.prev_game_tick().unwrap_or(0);
-        let attack_time =
-            (prev_tick - player.attack_tick) as f32 / TICK_SPEED + client.game_tick_time;
+        let attack_time = if p.r.predicted_local && gunfire {
+            // C++ PredictLocalWeapons (players.cpp:615)
+            (client.pred_intra_tick + (client.pred_tick() - 1 - player.attack_tick) as f32)
+                / TICK_SPEED
+        } else {
+            (prev_tick - player.attack_tick) as f32 / TICK_SPEED + client.game_tick_time
+        };
         let last_attack_time = attack_time; // not paused
         let attack_ticks_passed = attack_time * TICK_SPEED;
 

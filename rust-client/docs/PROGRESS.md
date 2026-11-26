@@ -1134,12 +1134,36 @@ are final unless the user changes them:
   random every 50-300 ms): largest per-frame step of its drawn position 12.61 px with
   smoothing on and off alike, 12 windows in 10 s; the same consequence of that C++ bug.
 
+#### 8.7 (2026-11-26): rendering — done, captures waiting for the user's look
+- `Predictor::rendered(&Timing)` is the whole `UpdateRenderedCharacters`: other tees
+  predicted per `cl_antiping_players` (1 all, 2/3 interfering) unless in another team,
+  with their snapshot aim and `GetSmoothPos` when smoothing; the local tee's attack tick
+  and weapon from prediction with gunfire (`Rendered::predicted_local`). Players: the
+  predicted attack time (players.cpp:615). Items: with `Predict() && AntiPingGunfire()`
+  projectiles, the local tee's lasers and moving pickups from `prev_predicted_world`,
+  matching snapshot items skipped (`FindMatch` in the server-state world), predicted
+  projectile flight time and laser timing (`Predictor::projectile_time`,
+  `laser_ticks`); `Projectile::get_data`, `Laser::get_data`.
+- Verified: `rs_parity antiping` gained word-for-word copies of
+  `UpdateRenderedCharacters` and of the timing lines of `RenderProjectile`/`RenderLaser`
+  (18 copies checked now); every frame compares every rendered character (render
+  cur/prev objects, predicted flags, position) and the timings of every projectile and
+  laser of both worlds: 100% on all 7 maps, 8 of 10 mutations caught (the other two
+  cannot change anything: other-team tees are never in the predicted world, and without
+  smoothing `GetSmoothPos` is the plain predicted mix).
+- Live captures (dm1, DDNet-rs playing with `cl_antiping 1` and the new dev flag
+  `--fire WEAPON`, the C++ client spectating it; `compare_screenshots.ps1` gained
+  `-RustArgs`/`-RustSettings` and fractional `-Wait`): `docs/review/8.7/` (gun,
+  grenade, laser; `*_cpp.png` is the C++ spectator view, which shows the server state:
+  C++ disables antiping while spectating). The C++ client cannot fire by itself, so a
+  C++ antiping capture would need synthetic mouse input; not done.
+
 #### Exact next actions (next session starts here)
-State (2026-11-26): M8 8.1-8.6 done and pushed. Working through 8.7-8.8 without
-stopping (user's instruction), then stop for review.
+State (2026-11-26): M8 8.1-8.7 done and pushed. 8.8 next (settings UI, frame time),
+then stop for the user's review.
 1. Read CLAUDE.md, PLAN §12 (incl. §12.7), this file, `git log`.
-2. Next: 8.7 rendering (`UpdateRenderedCharacters` modes 0-3, items from
-   `prev_predicted_world`, predicted laser/projectile timing).
+2. Next: 8.8 (Antiping group on the settings page, detail view, frame time with 8 tees
+   firing, all gates, M5/M6 tests with `cl_antiping 0`).
 
 #### Decisions and gotchas from 7.1
 - egui 0.37 panics in debug if a frame's `TexturesDelta` is dropped unapplied: drain

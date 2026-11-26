@@ -214,6 +214,11 @@ struct SClientData
 	bool m_Solo = false;
 	int m_Team = 0;
 	bool m_Paused = false;
+	CNetObj_Character m_RenderCur = {};
+	CNetObj_Character m_RenderPrev = {};
+	bool m_IsPredicted = false;
+	bool m_IsPredictedLocal = false;
+	vec2 m_RenderPos = vec2(0, 0);
 };
 
 struct SEffects
@@ -260,6 +265,7 @@ public:
 	SGhost m_Ghost;
 	CClient m_Client;
 	std::vector<CSnapEntities> m_vSnapEntities;
+	vec2 m_LocalCharacterPos = vec2(0, 0);
 
 	CGameClient()
 	{
@@ -293,6 +299,7 @@ public:
 	void UpdatePrediction();
 	vec2 GetSmoothPos(int ClientId);
 	bool IsOtherTeam(int ClientId) const;
+	void UpdateRenderedCharacters();
 };
 
 // C++ copy: game/client/gameclient.cpp:955-1006
@@ -994,6 +1001,65 @@ void CGameClient::UpdatePrediction()
 }
 // end of copy
 
+// C++ copy: game/client/gameclient.cpp:3762-3817
+void CGameClient::UpdateRenderedCharacters()
+{
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		if(!m_Snap.m_aCharacters[i].m_Active)
+			continue;
+		m_aClients[i].m_RenderCur = m_Snap.m_aCharacters[i].m_Cur;
+		m_aClients[i].m_RenderPrev = m_Snap.m_aCharacters[i].m_Prev;
+		m_aClients[i].m_IsPredicted = false;
+		m_aClients[i].m_IsPredictedLocal = false;
+		vec2 UnpredPos = mix(
+			vec2(m_Snap.m_aCharacters[i].m_Prev.m_X, m_Snap.m_aCharacters[i].m_Prev.m_Y),
+			vec2(m_Snap.m_aCharacters[i].m_Cur.m_X, m_Snap.m_aCharacters[i].m_Cur.m_Y),
+			Client()->IntraGameTick(g_Config.m_ClDummy));
+		vec2 Pos = UnpredPos;
+
+		CCharacter *pChar = m_PredictedWorld.GetCharacterById(i);
+		const bool IsDummy = PredictDummy() && i == m_aLocalIds[!g_Config.m_ClDummy];
+		bool AntiPingPlayer = AntiPingPlayers() == 1 || (AntiPingPlayers() >= 2 && (IsDummy || (pChar && pChar->IsInterfering())));
+		if(Predict() && (i == m_Snap.m_LocalClientId || (AntiPingPlayer && !IsOtherTeam(i))) && pChar)
+		{
+			m_aClients[i].m_Predicted.Write(&m_aClients[i].m_RenderCur);
+			m_aClients[i].m_PrevPredicted.Write(&m_aClients[i].m_RenderPrev);
+
+			m_aClients[i].m_IsPredicted = true;
+
+			Pos = mix(
+				vec2(m_aClients[i].m_RenderPrev.m_X, m_aClients[i].m_RenderPrev.m_Y),
+				vec2(m_aClients[i].m_RenderCur.m_X, m_aClients[i].m_RenderCur.m_Y),
+				m_aClients[i].m_IsPredicted ? Client()->PredIntraGameTick(g_Config.m_ClDummy) : Client()->IntraGameTick(g_Config.m_ClDummy));
+
+			if(i == m_Snap.m_LocalClientId || IsDummy)
+			{
+				m_aClients[i].m_IsPredictedLocal = true;
+				if(AntiPingGunfire() && ((pChar->m_NinjaJetpack && pChar->m_FreezeTime == 0) || m_Snap.m_aCharacters[i].m_Cur.m_Weapon != WEAPON_NINJA || m_Snap.m_aCharacters[i].m_Cur.m_Weapon == m_aClients[i].m_Predicted.m_ActiveWeapon))
+				{
+					m_aClients[i].m_RenderCur.m_AttackTick = pChar->GetAttackTick();
+					if(m_Snap.m_aCharacters[i].m_Cur.m_Weapon != WEAPON_NINJA && !(pChar->m_NinjaJetpack && pChar->Core()->m_ActiveWeapon == WEAPON_GUN))
+						m_aClients[i].m_RenderCur.m_Weapon = m_aClients[i].m_Predicted.m_ActiveWeapon;
+				}
+			}
+			else
+			{
+				// use unpredicted values for other players
+				m_aClients[i].m_RenderPrev.m_Angle = m_Snap.m_aCharacters[i].m_Prev.m_Angle;
+				m_aClients[i].m_RenderCur.m_Angle = m_Snap.m_aCharacters[i].m_Cur.m_Angle;
+
+				if(g_Config.m_ClAntiPingSmooth)
+					Pos = GetSmoothPos(i);
+			}
+		}
+		m_aClients[i].m_RenderPos = Pos;
+		if(Predict() && i == m_Snap.m_LocalClientId)
+			m_LocalCharacterPos = Pos;
+	}
+}
+// end of copy
+
 // C++ copy: game/client/gameclient.cpp:3951-3970
 vec2 CGameClient::GetSmoothPos(int ClientId)
 {
@@ -1048,6 +1114,81 @@ bool CGameClient::IsOtherTeam(int ClientId) const
 }
 
 // end of copy
+
+// The timing parts of CItems::RenderProjectile and CItems::RenderLaser.
+class CItems
+{
+public:
+	CGameClient *m_pGameClient;
+	CGameClient *GameClient() { return m_pGameClient; }
+	CClient *Client() { return &m_pGameClient->m_Client; }
+
+	float ProjectileTime(const CProjectileData *pCurrent, bool LocalPlayerInGame, float s_LastGameTickTime)
+	{
+// C++ copy: game/client/components/items.cpp:55-63
+	bool IsOtherTeam = (pCurrent->m_ExtraInfo && pCurrent->m_Owner >= 0 && GameClient()->IsOtherTeam(pCurrent->m_Owner));
+
+	int PredictionTick = Client()->GetPredictionTick();
+
+	float Ct;
+	if(GameClient()->Predict() && GameClient()->AntiPingGrenade() && LocalPlayerInGame && !IsOtherTeam)
+		Ct = ((float)(PredictionTick - 1 - pCurrent->m_StartTick) + Client()->PredIntraGameTick(g_Config.m_ClDummy)) / (float)Client()->GameTickSpeed();
+	else
+		Ct = (Client()->PrevGameTick(g_Config.m_ClDummy) - pCurrent->m_StartTick) / (float)Client()->GameTickSpeed() + s_LastGameTickTime;
+// end of copy
+		return Ct;
+	}
+
+	void LaserTicks(const CLaserData *pCurrent, int Type, bool IsPredicted, float *pTicks, float *pTicksHead)
+	{
+// C++ copy: game/client/components/items.cpp:313-329
+	float Ticks;
+	float TicksHead = Client()->GameTick(g_Config.m_ClDummy);
+	if(Type == LASERTYPE_DOOR)
+	{
+		Ticks = 1.0f;
+	}
+	else if(IsPredicted)
+	{
+		int PredictionTick = Client()->GetPredictionTick();
+		Ticks = (float)(PredictionTick - pCurrent->m_StartTick) + Client()->PredIntraGameTick(g_Config.m_ClDummy);
+		TicksHead += Client()->PredIntraGameTick(g_Config.m_ClDummy);
+	}
+	else
+	{
+		Ticks = (float)(Client()->GameTick(g_Config.m_ClDummy) - pCurrent->m_StartTick) + Client()->IntraGameTick(g_Config.m_ClDummy);
+		TicksHead += Client()->IntraGameTick(g_Config.m_ClDummy);
+	}
+// end of copy
+		*pTicks = Ticks;
+		*pTicksHead = TicksHead;
+	}
+};
+
+// The item timings for every projectile and laser of a world.
+static void ItemTimes(std::vector<int> &v, CGameClient &Gc, CGameWorld &World)
+{
+	CItems Items{&Gc};
+	const bool LocalPlayerInGame = Gc.m_Client.m_PredGameTick % 3 != 0;
+	const float LastGameTickTime = Gc.m_Client.m_PredIntraGameTick * 0.02f;
+	for(CEntity *pEnt = World.FindFirst(CGameWorld::ENTTYPE_PROJECTILE); pEnt; pEnt = pEnt->TypeNext())
+	{
+		const CProjectileData Data = static_cast<CProjectile *>(pEnt)->GetData();
+		v.push_back(Bits(Items.ProjectileTime(&Data, LocalPlayerInGame, LastGameTickTime)));
+	}
+	for(CEntity *pEnt = World.FindFirst(CGameWorld::ENTTYPE_LASER); pEnt; pEnt = pEnt->TypeNext())
+	{
+		const CLaserData Data = static_cast<CLaser *>(pEnt)->GetData();
+		for(int Type : {std::clamp(Data.m_Type, -1, NUM_LASERTYPES - 1), (int)LASERTYPE_DOOR})
+			for(bool IsPredicted : {false, true})
+			{
+				float Ticks, TicksHead;
+				Items.LaserTicks(&Data, Type, IsPredicted, &Ticks, &TicksHead);
+				v.push_back(Bits(Ticks));
+				v.push_back(Bits(TicksHead));
+			}
+	}
+}
 
 static constexpr int RUNS = 12;
 static constexpr int SNAPS = 60;
@@ -1149,7 +1290,14 @@ static void PrintState(FILE *f, CGameClient &Gc, const bool *aSeen, bool Frame)
 			PredPos.push_back(Bits(c.m_aPredPos[k].y));
 			PredPos.push_back(c.m_aPredTick[k]);
 		}
-	std::vector<int> Smooth;
+	std::vector<int> Smooth, Render, ItemTime;
+	if(Frame)
+	{
+		ItemTimes(ItemTime, Gc, Gc.m_PrevPredictedWorld);
+		ItemTimes(ItemTime, Gc, Gc.m_GameWorld);
+	}
+	if(Frame)
+		Gc.UpdateRenderedCharacters();
 	for(int i = 0; i < MAX_CLIENTS; i++)
 	{
 		const SClientData &c = Gc.m_aClients[i];
@@ -1168,6 +1316,17 @@ static void PrintState(FILE *f, CGameClient &Gc, const bool *aSeen, bool Frame)
 			const vec2 Pos = Gc.GetSmoothPos(i);
 			Smooth.push_back(Bits(Pos.x));
 			Smooth.push_back(Bits(Pos.y));
+		}
+		if(Frame && Gc.m_Snap.m_aCharacters[i].m_Active)
+		{
+			// UpdateRenderedCharacters
+			Render.push_back(i);
+			Render.insert(Render.end(), (const int *)&c.m_RenderPrev, (const int *)(&c.m_RenderPrev + 1));
+			Render.insert(Render.end(), (const int *)&c.m_RenderCur, (const int *)(&c.m_RenderCur + 1));
+			Render.push_back(c.m_IsPredicted);
+			Render.push_back(c.m_IsPredictedLocal);
+			Render.push_back(Bits(c.m_RenderPos.x));
+			Render.push_back(Bits(c.m_RenderPos.y));
 		}
 	}
 	std::vector<int> World, Predicted, PrevPredicted;
@@ -1188,8 +1347,8 @@ static void PrintState(FILE *f, CGameClient &Gc, const bool *aSeen, bool Frame)
 				fprintf(stderr, "\n");
 			}
 	// m_PredictedChar is left out: only the ghost reads it (not ported)
-	fprintf(f, " = %08x %08x %08x %08x %08x %08x %d\n", Crc(Cores), Crc(PredPos), Crc(Smooth), Crc(World), Crc(Predicted),
-		Crc(PrevPredicted), Gc.m_PredictedTick);
+	fprintf(f, " = %08x %08x %08x %08x %08x %08x %d %08x %08x\n", Crc(Cores), Crc(PredPos), Crc(Smooth), Crc(World), Crc(Predicted),
+		Crc(PrevPredicted), Gc.m_PredictedTick, Crc(Render), Crc(ItemTime));
 }
 
 // The tee inputs: each tee's input per tick, made in tick order like rs_parity netents.

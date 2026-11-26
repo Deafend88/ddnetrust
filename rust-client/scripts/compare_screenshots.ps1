@@ -13,6 +13,8 @@
 # -ServerArgs and -CppArgs add console commands for the server and the C++ client, e.g.
 # -ServerArgs 'sv_max_afk_time 0' -CppArgs 'player_skin bluekitty','cl_run_on_join "say /emote happy 999"'.
 # -Name sets the output file names (default: the map name).
+# -RustArgs adds ddnet-rs command-line arguments (e.g. "--fire","3"), -RustSettings adds
+# lines to its scratch settings_ddnet.cfg (e.g. "cl_antiping 1").
 # -Subject "<ddnet-headless args>" lets a release-built ddnet-headless join first as
 # "subject" (client id 0, e.g. -Subject "--fire 1"); the C++ client then spectates it
 # (cl_run_on_join spec subject) and DDNet-rs follows it, so both cameras sit on the same
@@ -24,9 +26,9 @@
 # shows (Cl_ShowDistance/Cl_CameraInfo), so leave sv_show_all_default off.
 #
 # Usage (repo root): rust-client\scripts\compare_screenshots.ps1 -Map dm1 [-Mask "340,240,460,340"]
-param([string]$Map = "dm1", [string[]]$Mask = @("340,240,460,340"), [int]$Wait = 5, [string]$OutDir = "$env:TEMP\ddnet-rs-compare",
+param([string]$Map = "dm1", [string[]]$Mask = @("340,240,460,340"), [double]$Wait = 5, [string]$OutDir = "$env:TEMP\ddnet-rs-compare",
     [string[]]$ServerArgs = @(), [string[]]$CppArgs = @(), [string]$Name = "", [string]$Subject = "",
-    [switch]$RustSubject)
+    [switch]$RustSubject, [string[]]$RustArgs = @(), [string[]]$RustSettings = @())
 $ErrorActionPreference = "Stop"
 $repo = Resolve-Path "$PSScriptRoot\..\.."
 $srvDir = "$OutDir\server"; $cDir = "$OutDir\cpp-client"
@@ -87,8 +89,8 @@ try {
     }
     Remove-Item "$OutDir\settings_ddnet.cfg" -ErrorAction SilentlyContinue
     if ($RustSubject) {
-        Set-Content -Path "$OutDir\settings_ddnet.cfg" -Value 'player_name "subject"' -Encoding ascii
-        $r = Start-Process -FilePath "$repo\rust-client\target\debug\ddnet-rs.exe" -ArgumentList "127.0.0.1:8303", "--size", "800x600", "--no-grab" -WorkingDirectory $OutDir -PassThru
+        Set-Content -Path "$OutDir\settings_ddnet.cfg" -Value (@('player_name "subject"') + $RustSettings) -Encoding ascii
+        $r = Start-Process -FilePath "$repo\rust-client\target\debug\ddnet-rs.exe" -ArgumentList (@("127.0.0.1:8303", "--size", "800x600", "--no-grab") + $RustArgs) -WorkingDirectory $OutDir -PassThru
         Start-Sleep -Seconds 3
         $CppArgs += 'cl_run_on_join spec subject'
     }
@@ -100,7 +102,7 @@ try {
     if (-not $RustSubject) {
         $r = Start-Process -FilePath "$repo\rust-client\target\debug\ddnet-rs.exe" -ArgumentList "127.0.0.1:8303", "--size", "800x600", "--follow", "0" -WorkingDirectory $OutDir -PassThru
     }
-    Start-Sleep -Seconds $Wait
+    Start-Sleep -Milliseconds ([int]($Wait * 1000))
     Save-ClientArea $c.Id "$OutDir\${name}_cpp.png"
     Save-ClientArea $r.Id "$OutDir\${name}_rust.png"
 } finally {

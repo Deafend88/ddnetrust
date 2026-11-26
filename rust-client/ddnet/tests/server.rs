@@ -528,7 +528,7 @@ fn rendered_positions_are_smooth() {
         net::pump(&sa, &mut a, now).unwrap();
         net::pump(&sb, &mut b, now).unwrap();
         pred.update(&mut a, net::now(start));
-        let rendered = pred.rendered(&a);
+        let rendered = pred.rendered(&a.timing(net::now(start)));
         // a tee that left the snapshot (out of range) starts over when it returns
         for (k, id) in [ida, idb].into_iter().enumerate() {
             if !rendered.iter().any(|r| r.id == id) {

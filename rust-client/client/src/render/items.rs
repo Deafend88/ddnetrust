@@ -1,6 +1,7 @@
 //! C++: `CItems` (game/client/components/items.cpp): projectiles, pickups, lasers
-//! (incl. doors, draggers, freeze lasers and guns) and flags from the snapshot, with the
-//! default config (`cl_antiping 0`, so nothing is weapon-predicted).
+//! (incl. doors, draggers, freeze lasers and guns) and flags from the snapshot; with
+//! antiping gunfire, projectiles, the local tee's lasers and moving pickups from the
+//! prediction world at the prediction tick instead.
 //!
 //! Not drawn: particles (smoke and bullet trails, powerup shine). Tuning per tune zone
 //! comes from the predictor (`CGameClient::GetTuning`).
@@ -11,8 +12,10 @@ use ddnet::items::{
     LaserData, ProjectileData, calc_pos, extract_laser, extract_pickup, extract_projectile, pad,
     snap_entities,
 };
-use ddnet::net::client::Client;
+use ddnet::net::client::{Client, Timing};
 use ddnet::physics::collision::Collision;
+use ddnet::physics::projectile::LAYER_SWITCH;
+use ddnet::physics::snap::EntityRef;
 use ddnet::physics::tuning::{Param, Tuning};
 use ddnet::physics::vmath::{PI, Vec2, angle, direction, distance, length, mix, vec2};
 use ddnet::predict::{Predictor, Rendered};
@@ -29,6 +32,20 @@ use super::tee::Sprites;
 use crate::gfx::batch::{Batch, ContainerQuad, FreeformItem};
 
 const TICK_SPEED: i32 = 50;
+
+/// C++ `LocalPlayerInGame` (items.cpp:46): the local player is not a spectator.
+fn local_in_game(client: &Client) -> bool {
+    let Some(id) = client.local_id() else {
+        return false;
+    };
+    client
+        .snapshot()
+        .iter()
+        .filter(|it| it.type_id == g::NETOBJTYPE_PLAYERINFO)
+        .map(|it| g::ObjPlayerInfo::from_ints(&pad(&it.data, g::ObjPlayerInfo::NUM_INTS)))
+        .find(|p| p.client_id == id)
+        .is_some_and(|p| p.team != g::TEAM_SPECTATORS)
+}
 /// C++ `cl_show_others_alpha` default.
 const SHOW_OTHERS_ALPHA: f32 = 40.0 / 100.0;
 /// C++ `cl_laser_*_outline_color` / `cl_laser_*_inner_color` defaults (packed HSL) for
@@ -113,6 +130,8 @@ pub struct Frame<'a> {
     pub rendered: &'a [Rendered],
     pub collision: &'a Collision,
     pub sprites: &'a Sprites,
+    /// The client's timing this frame (predicted ticks for antiping).
+    pub timing: Timing,
 }
 
 pub struct Items {
@@ -184,11 +203,61 @@ impl Items {
         };
         // C++ m_GameWorld.m_WorldConfig.m_UseTuneZones: what the predictor uses
         let tunes = f.predictor.use_tune_zones().then_some(f.collision);
+        let inactive = |number: i32| !is_super && f.predictor.switch_inactive(number);
+        // C++ m_aClients[Owner].m_IsPredictedLocal
+        let predicted_local = |owner: i32| {
+            owner >= 0
+                && f.rendered
+                    .iter()
+                    .any(|r| r.id == owner && r.predicted_local)
+        };
+        let use_predicted = f.predictor.predict_on() && f.predictor.antiping_gunfire();
+        let world = f.predictor.world();
+
+        // what the prediction world has at the prediction tick
+        if use_predicted && let Some(w) = &f.predictor.prev_predicted_world {
+            for p in &w.projectiles {
+                let blinking = if p.explosive {
+                    blinking_proj_ex
+                } else {
+                    blinking_proj
+                };
+                if inactive(p.number) && blinking {
+                    continue;
+                }
+                self.render_projectile(batch, f, &p.get_data(), p.id, &proj_rect);
+            }
+            for l in w.lasers.iter().filter(|l| predicted_local(l.owner)) {
+                let d = l.get_data();
+                if laser_inside(&d) {
+                    self.render_laser(batch, f, &d, true);
+                }
+            }
+            for p in &w.pickups {
+                if p.layer == LAYER_SWITCH && inactive(p.number) && blinking_pickup {
+                    continue;
+                }
+                // C++ InDDNetTile; GetEntity finds the first pickup with the id (itself)
+                if p.is_core_active
+                    && let Some(prev) = w.pickups.iter().find(|q| q.id == p.id)
+                {
+                    // C++ FillInfo: CNetObj_Pickup ints
+                    let cur = [p.pos.x as i32, p.pos.y as i32, p.type_, p.subtype];
+                    let prev = vec2(prev.pos.x as i32 as f32, prev.pos.y as i32 as f32);
+                    let intra = f.timing.pred_intra_tick;
+                    self.render_pickup(batch, f.sprites, prev, &cur, intra, p.flags);
+                }
+            }
+        }
 
         for (index, ex) in snap_entities(snap) {
             let item = &snap[index];
             let data = pad(&item.data, 10);
-            let inactive = |number: i32| !is_super && f.predictor.switch_inactive(number);
+            let found = || {
+                use_predicted
+                    .then(|| world.find_match(item.id, item.type_id, &data))
+                    .flatten()
+            };
             match item.type_id {
                 g::NETOBJTYPE_PROJECTILE
                 | g::NETOBJTYPE_DDRACEPROJECTILE
@@ -202,12 +271,23 @@ impl Items {
                     if inactive(d.switch_number) && blinking {
                         continue;
                     }
+                    // drawn from the prediction world unless its owner is in another team
+                    if let Some(EntityRef::Projectile(i)) = found()
+                        && !f.predictor.is_other_team(world.projectiles[i].owner)
+                    {
+                        continue;
+                    }
                     self.render_projectile(batch, f, &d, item.id, &proj_rect);
                 }
                 g::NETOBJTYPE_PICKUP | g::NETOBJTYPE_DDNETPICKUP => {
                     let d = extract_pickup(item.type_id, &data, ex.as_ref());
                     if !inside(&pickup_rect, d.pos)
                         || (inactive(d.switch_number) && blinking_pickup)
+                    {
+                        continue;
+                    }
+                    if let Some(EntityRef::Pickup(i)) = found()
+                        && world.pickups[i].is_core_active
                     {
                         continue;
                     }
@@ -222,6 +302,11 @@ impl Items {
                     }
                 }
                 g::NETOBJTYPE_LASER | g::NETOBJTYPE_DDNETLASER => {
+                    if let Some(EntityRef::Laser(i)) = found()
+                        && predicted_local(world.lasers[i].owner)
+                    {
+                        continue;
+                    }
                     let mut d = extract_laser(item.type_id, &data, tunes, ex.as_ref());
                     if !laser_inside(&d) {
                         continue;
@@ -245,7 +330,7 @@ impl Items {
                     if d.start_tick <= 0 && ent_start_tick != -1 {
                         d.start_tick = ent_start_tick;
                     }
-                    self.render_laser(batch, f, &d);
+                    self.render_laser(batch, f, &d, false);
                 }
                 _ => {}
             }
@@ -290,8 +375,9 @@ impl Items {
         let client = f.client;
         // C++ s_LastGameTickTime: GameTickTime while the world runs
         let last_tick_time = client.game_tick_time;
-        let prev_tick = client.prev_game_tick().unwrap_or(0);
-        let mut ct = (prev_tick - d.start_tick) as f32 / TICK_SPEED as f32 + last_tick_time;
+        let mut ct =
+            f.predictor
+                .projectile_time(d, &f.timing, local_in_game(client), last_tick_time);
         if ct < 0.0 {
             if ct > -last_tick_time / 2.0 {
                 ct = 0.0;
@@ -436,8 +522,8 @@ impl Items {
         }
     }
 
-    /// C++: `CItems::RenderLaser(const CLaserData *, bool)` (items.cpp:262), not predicted.
-    fn render_laser(&self, batch: &mut Batch, f: &Frame, d: &LaserData) {
+    /// C++: `CItems::RenderLaser(const CLaserData *, bool IsPredicted)` (items.cpp:262).
+    fn render_laser(&self, batch: &mut Batch, f: &Frame, d: &LaserData, predicted: bool) {
         let ty = d.type_.clamp(-1, g::NUM_LASERTYPES - 1);
         let (out, inn) = match ty {
             g::LASERTYPE_RIFLE => LASER_RIFLE,
@@ -459,14 +545,7 @@ impl Items {
             let [r, g, b] = hsl_to_rgb(unpack_hsl(packed as u32));
             [r, g, b, alpha]
         };
-        let game_tick = f.client.game_tick().unwrap_or(0);
-        let intra = f.client.intra_tick;
-        let ticks = if ty == g::LASERTYPE_DOOR {
-            1.0
-        } else {
-            (game_tick - d.start_tick) as f32 + intra
-        };
-        let mut ticks_head = game_tick as f32 + intra;
+        let (ticks, mut ticks_head) = f.predictor.laser_ticks(d, ty, predicted, &f.timing);
         if ty == g::LASERTYPE_DRAGGER {
             ticks_head *= (((d.subtype >> 1) % 3) as f32 * 4.0) + 1.0;
             ticks_head *= if d.subtype & 1 != 0 { -1.0 } else { 1.0 };
