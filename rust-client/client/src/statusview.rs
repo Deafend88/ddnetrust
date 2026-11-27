@@ -286,6 +286,8 @@ pub fn draw(
         if show_pill {
             let margin = Margin::symmetric(space::M as i8, space::XS as i8);
             let pill = w::hud_bar(ui, glass, radius::PILL, margin, ICON, |ui| {
+                // the freeze tint goes under the weapons (set below, once the size is known)
+                let tint_at = ui.painter().add(Shape::Noop);
                 ui.spacing_mut().item_spacing.x = space::S;
                 if freeze != Freeze::None {
                     let glyph = if freeze == Freeze::Live {
@@ -317,8 +319,9 @@ pub fn draw(
                         });
                     }
                 }
+                tint_at
             });
-            // freeze tints the whole pill; deep freeze also rings it
+            // freeze tints the whole pill behind its content; deep freeze also rings it
             let rect = pill.response.rect;
             let round = CornerRadius::same(radius::PILL);
             let (alpha, border) = match freeze {
@@ -328,8 +331,9 @@ pub fn draw(
                 Freeze::Live => (0.16, false),
             };
             if alpha > 0.0 {
+                let tint = color::FREEZE.gamma_multiply(alpha);
                 ui.painter()
-                    .rect_filled(rect, round, color::FREEZE.gamma_multiply(alpha));
+                    .set(pill.inner, Shape::rect_filled(rect, round, tint));
             }
             if border {
                 let stroke = Stroke::new(2.0, color::FREEZE);
