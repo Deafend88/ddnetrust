@@ -235,6 +235,7 @@ fn map_textures_are_freed() {
         width: 32,
         height: 32,
         envelope_time: 0,
+        overlay: 0,
     };
     last.render_background(&mut batch, &view);
     last.render_foreground(&mut batch, &view);

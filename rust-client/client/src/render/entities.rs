@@ -42,6 +42,54 @@ pub struct EntitiesInfo {
 }
 
 impl EntitiesInfo {
+    /// C++ `GetGameInfo`'s entity flags from the GameInfoEx (version, flags, flags2).
+    /// ponytail: without a GameInfoEx C++ guesses from the game type string; this takes
+    /// DDNet's then (`Predictor` does the same).
+    pub fn from_game_info((version, flags, flags2): (i32, i32, i32)) -> Self {
+        use ddnet::protocol::generated as g;
+        let has = |f: i32| flags & f != 0;
+        let (ddnet, fddrace) = if version < 1 {
+            (true, false)
+        } else {
+            (
+                has(g::GAMEINFOFLAG_GAMETYPE_DDNET),
+                version >= 6 && flags2 & g::GAMEINFOFLAG2_GAMETYPE_FDDRACE != 0,
+            )
+        };
+        let ddrace = version < 1 || has(g::GAMEINFOFLAG_GAMETYPE_DDRACE) || ddnet || fddrace;
+        let race = version < 1
+            || has(g::GAMEINFOFLAG_GAMETYPE_RACE)
+            || has(g::GAMEINFOFLAG_GAMETYPE_FASTCAP)
+            || ddrace;
+        let mut e = EntitiesInfo {
+            fddrace,
+            ddnet,
+            ddrace,
+            race,
+            bw: version >= 1 && has(g::GAMEINFOFLAG_GAMETYPE_BLOCK_WORLDS),
+            fng: version >= 1 && has(g::GAMEINFOFLAG_GAMETYPE_FNG),
+            vanilla: version >= 1 && has(g::GAMEINFOFLAG_GAMETYPE_VANILLA),
+            dont_mask: !ddnet,
+        };
+        if version >= 2 {
+            e.ddnet = has(g::GAMEINFOFLAG_ENTITIES_DDNET);
+            e.ddrace = has(g::GAMEINFOFLAG_ENTITIES_DDRACE);
+            e.race = has(g::GAMEINFOFLAG_ENTITIES_RACE);
+            e.fng = has(g::GAMEINFOFLAG_ENTITIES_FNG);
+            e.vanilla = has(g::GAMEINFOFLAG_ENTITIES_VANILLA);
+        }
+        if version >= 3 {
+            e.dont_mask = has(g::GAMEINFOFLAG_DONT_MASK_ENTITIES);
+        }
+        if version >= 4 {
+            e.bw = has(g::GAMEINFOFLAG_ENTITIES_BW);
+        }
+        if version >= 6 {
+            e.fddrace = flags2 & g::GAMEINFOFLAG2_ENTITIES_FDDRACE != 0;
+        }
+        e
+    }
+
     /// C++ `GetEntitiesModType`.
     pub fn mod_type(&self) -> usize {
         if self.fddrace {
@@ -195,15 +243,17 @@ fn grayscale_rect(img: &mut Image, x0: usize, y0: usize, w: usize, h: usize) {
     }
 }
 
-/// C++ `GetEntities`' texture build: [every layer but switch, switch], same size and
-/// format as `img`.
-pub fn build(mut img: Image, masked: bool, mod_type: usize) -> [Image; 2] {
+/// C++ `GetEntities`' texture build: [every layer but switch, switch, the tune colour
+/// map], same size and format as `img`.
+pub fn build(mut img: Image, masked: bool, mod_type: usize) -> [Image; 3] {
     let (cw, ch) = (img.width as usize / 16, img.height as usize / 16);
     let tune = TILE_TUNE as usize;
-    grayscale_rect(&mut img, (tune % 16) * cw, (tune / 16) * ch, cw, ch);
+    let (tx, ty) = ((tune % 16) * cw, (tune / 16) * ch);
+    grayscale_rect(&mut img, tx, ty, cw, ch);
     let px = img.format.channels();
     let row = img.width as usize * px;
-    [false, true].map(|switch| {
+    let tune_map = tune_map(&img, (tx, ty), (cw, ch));
+    let [all, switch] = [false, true].map(|switch| {
         let mut out = vec![0u8; img.data.len()];
         for i in 0..256 {
             if !is_valid_tile(switch, masked, mod_type, i) {
@@ -226,5 +276,40 @@ pub fn build(mut img: Image, masked: bool, mod_type: usize) -> [Image; 2] {
             format: img.format,
             data: out,
         }
-    })
+    });
+    [all, switch, tune_map]
+}
+
+/// C++ `normalized_golden_angle` (base/math.h).
+const NORMALIZED_GOLDEN_ANGLE: f32 = 137.50776 / 360.0;
+
+/// C++ `GetEntities`' tune map (mapimages.cpp:340): the gray tune tile in every cell but
+/// 0, each coloured with `ColorizeWithHueRect` at hue `(i - 1) * golden angle`, sat 0.75.
+fn tune_map(img: &Image, (tx, ty): (usize, usize), (cw, ch): (usize, usize)) -> Image {
+    let px = img.format.channels();
+    let row = img.width as usize * px;
+    let mut out = vec![0u8; img.data.len()];
+    for i in 1..256usize {
+        let hue = ((i - 1) as f32 * NORMALIZED_GOLDEN_ANGLE) % 1.0;
+        let (sx, sy) = ((i % 16) * cw, (i / 16) * ch);
+        for y in 0..ch {
+            let (src, dst) = ((ty + y) * row + tx * px, (sy + y) * row + sx * px);
+            out[dst..dst + cw * px].copy_from_slice(&img.data[src..src + cw * px]);
+            for p in out[dst..dst + cw * px].chunks_exact_mut(px) {
+                // C++ color_cast<ColorHSLA>: only the lightness survives the new h, s
+                let [r, g, b] = [p[0], p[1], p[2]].map(|c| c as f32 / 255.0);
+                let l = 0.5 * (r.max(g).max(b) + r.min(g).min(b));
+                let rgb = super::map::hsl_to_rgb([hue, 0.75, l]);
+                for (c, v) in p.iter_mut().zip(rgb) {
+                    *c = (v * 255.0) as u8;
+                }
+            }
+        }
+    }
+    Image {
+        width: img.width,
+        height: img.height,
+        format: img.format,
+        data: out,
+    }
 }

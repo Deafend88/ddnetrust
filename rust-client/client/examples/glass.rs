@@ -30,6 +30,7 @@ fn draw_map(gfx: &mut Gfx, render: &MapRender, center: (f32, f32)) {
         width: size.width,
         height: size.height,
         envelope_time: 0,
+        overlay: 0,
     };
     let mut batch = Batch::default();
     let [r, g, b] = hsl_packed_to_rgb(128); // C++ cl_background_color

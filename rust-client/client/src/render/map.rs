@@ -9,11 +9,13 @@ use ddnet::map::Map;
 use ddnet::map::images::MapImage;
 use ddnet::physics::vmath::PI;
 
+use super::entities::{self, EntitiesInfo};
 use super::envelope::Envelopes;
 use super::map_screen_to_world;
 use crate::gfx::Gfx;
 use crate::gfx::batch::{Batch, Blend, TextureId, Wrap};
 use crate::image::Image;
+use crate::storage::Storage;
 
 const MAPITEMTYPE_GROUP: i32 = 4;
 const MAPITEMTYPE_LAYER: i32 = 5;
@@ -117,10 +119,27 @@ struct QuadLayer {
     texture: Option<TextureId>,
 }
 
+/// An entity layer (C++ `CRenderLayerEntityGame`, `...Front`, `...Tele`, `...Switch`):
+/// its tiles as the entities texture shows them.
+struct EntityLayer {
+    /// The texture: 0 the entities of every layer but switch, 1 the switch layer's,
+    /// 2 the speedup arrows (`editor/speed_arrow_array.png`), 3 the tune colours.
+    texture: usize,
+    layer: TileLayer,
+}
+
+/// C++ `CMapImages`' entities textures [every layer but switch, switch, speedup arrows,
+/// tune colours] and the (pack, mod, masked) they were built for.
+struct EntityTextures {
+    key: (String, usize, bool),
+    textures: [Option<TextureId>; 4],
+}
+
 enum Entry {
     Group(Group),
     Tiles(TileLayer),
     Quads(QuadLayer),
+    Entity(EntityLayer),
 }
 
 /// Camera and time for one frame. C++: `CRenderLayerParams` plus the envelope clock.
@@ -133,6 +152,9 @@ pub struct View {
     pub height: u32,
     /// C++ `CEnvelopeState` time in ns.
     pub envelope_time: i64,
+    /// C++ `cl_overlay_entities` (0-100): entities opacity; design layers fade by it and
+    /// are not drawn at 100.
+    pub overlay: i32,
 }
 
 impl View {
@@ -147,6 +169,8 @@ pub struct MapRender {
     envelopes: Envelopes,
     /// The map images' textures (C++ `CMapImages::Unload` frees them).
     textures: Vec<TextureId>,
+    /// The entities tile arrays and what they were built for.
+    entities: Option<EntityTextures>,
 }
 
 fn fx2f(v: i32) -> f32 {
@@ -184,13 +208,58 @@ impl MapRender {
                 .flat_map(|&(a, f)| [a, f])
                 .flatten()
                 .collect(),
+            entities: None,
         }
+    }
+
+    /// C++ `CMapImages::GetEntities` for the game info's mod and mask with the entities
+    /// pack `pack` (`cl_assets_entities`); rebuilt when one of them changes.
+    pub fn set_entities(
+        &mut self,
+        gfx: &mut Gfx,
+        storage: &Storage,
+        pack: &str,
+        info: &EntitiesInfo,
+    ) {
+        let key = (pack.to_string(), info.mod_type(), !info.dont_mask);
+        if self.entities.as_ref().is_some_and(|e| e.key == key) {
+            return;
+        }
+        if let Some(old) = self.entities.take() {
+            old.textures
+                .into_iter()
+                .flatten()
+                .for_each(|t| gfx.free_texture(t));
+        }
+        let mut array = |i: &Image| {
+            (i.width.is_multiple_of(16) && i.height.is_multiple_of(16) && i.width > 0)
+                .then(|| gfx.create_tile_array(i.width, i.height, &i.to_rgba()))
+        };
+        let (_, image) = entities::load_image(storage, pack, key.1);
+        let [all, switch, tune] = image.map_or([None, None, None], |img| {
+            entities::build(img, key.2, key.1).map(|i| array(&i))
+        });
+        // C++ GetSpeedupArrow
+        let arrows = storage
+            .read("editor/speed_arrow_array.png")
+            .and_then(|b| crate::image::load_png_file(&b))
+            .and_then(|i| array(&i));
+        self.entities = Some(EntityTextures {
+            key,
+            textures: [all, switch, arrows, tune],
+        });
     }
 
     /// Frees the map's textures (C++: `CMapImages::Unload` on map change/disconnect).
     pub fn free(self, gfx: &mut Gfx) {
         for t in self.textures {
             gfx.free_texture(t);
+        }
+        if let Some(e) = self.entities {
+            e.textures
+                .into_iter()
+                .flatten()
+                .for_each(|t| gfx.free_texture(t));
         }
     }
 
@@ -214,8 +283,23 @@ impl MapRender {
                     }
                 }
                 _ if !do_render_group => {}
-                Entry::Tiles(t) => self.render_tiles(t, batch, view),
+                // C++: CRenderLayerTile::DoRender skips design layers at overlay 100 and
+                // GetRenderColor fades them by it
+                Entry::Tiles(_) | Entry::Quads(_) if view.overlay == 100 => {}
+                Entry::Tiles(t) => {
+                    let alpha = (100 - view.overlay) as f32 / 100.0;
+                    self.render_tiles(t, t.texture, alpha, batch, view)
+                }
                 Entry::Quads(q) => self.render_quads(q, batch, view),
+                // C++: CRenderLayerEntityBase: only with an overlay, alpha overlay / 100
+                Entry::Entity(e) if view.overlay != 0 => {
+                    let texture = self.entities.as_ref().and_then(|t| t.textures[e.texture]);
+                    if texture.is_some() {
+                        let alpha = view.overlay as f32 / 100.0;
+                        self.render_tiles(&e.layer, texture, alpha, batch, view);
+                    }
+                }
+                Entry::Entity(_) => {}
             }
         }
         batch.clip_disable();
@@ -235,8 +319,15 @@ impl MapRender {
     }
 
     /// C++: `CRenderLayerTile::Render` with `RenderTileLayer` and `RenderTileBorder`.
-    fn render_tiles(&self, t: &TileLayer, batch: &mut Batch, view: &View) {
-        batch.texture_set(t.texture);
+    fn render_tiles(
+        &self,
+        t: &TileLayer,
+        texture: Option<TextureId>,
+        alpha: f32,
+        batch: &mut Batch,
+        view: &View,
+    ) {
+        batch.texture_set(texture);
         batch.blend(Blend::Normal);
         // C++: GetRenderColor
         let mut env = [1.0; 4];
@@ -247,22 +338,27 @@ impl MapRender {
             &mut env,
             4,
         );
-        let color: [f32; 4] = std::array::from_fn(|i| t.color[i] * env[i]);
+        let mut color: [f32; 4] = std::array::from_fn(|i| t.color[i] * env[i]);
+        color[3] *= alpha;
         let colors = [color; 4];
         let [l, top, r, b] = batch.screen();
         let x0 = (l / 32.0).floor() as i32;
         let y0 = (top / 32.0).floor() as i32;
         let x1 = (r / 32.0).ceil() as i32;
         let y1 = (b / 32.0).ceil() as i32;
-        let tile = |x: i32, y: i32| t.tiles[(y * t.width + x) as usize];
+        // a tile is drawn when its index is set, or when it carries the arrow marker
+        // (`speedup_tile`: arrow 0 of the array still draws)
+        let tile = |x: i32, y: i32| {
+            let (index, flags) = t.tiles[(y * t.width + x) as usize];
+            (index > 0 || flags & ARROW != 0).then_some((index, flags & !ARROW))
+        };
 
         // visible tiles
         let (cx0, cx1) = (x0.max(0), x1.clamp(0, t.width));
         let (cy0, cy1) = (y0.max(0), y1.clamp(0, t.height));
         for y in cy0..cy1 {
             for x in cx0..cx1 {
-                let (index, flags) = tile(x, y);
-                if index > 0 {
+                if let Some((index, flags)) = tile(x, y) {
                     let q = tile_quad(x, y, (0, 0), index, flags);
                     batch.quad_raw(q.pos, q.uv, colors);
                 }
@@ -278,8 +374,7 @@ impl MapRender {
         let (w, h) = (t.width, t.height);
         let mut edge =
             |x: i32, y: i32, at: (i32, i32), offset: (i32, i32), o: (f32, f32), s: (f32, f32)| {
-                let (index, flags) = tile(x, y);
-                if index > 0 {
+                if let Some((index, flags)) = tile(x, y) {
                     draw(&border_quad(
                         &tile_quad(at.0, at.1, offset, index, flags),
                         o,
@@ -379,6 +474,8 @@ impl MapRender {
                     4,
                 );
             }
+            // C++: RenderQuadLayer's alpha, (100 - overlay) / 100
+            color[3] *= (100 - view.overlay) as f32 / 100.0;
             if color[3] <= 0.0 {
                 continue; // C++ draws it fully transparent
             }
@@ -510,6 +607,8 @@ fn load(
                     && let Some(t) = tile_layer(map, l, textures)
                 {
                     entries.push(Entry::Tiles(t));
+                } else if let Some(e) = entity_layer(map, l) {
+                    entries.push(Entry::Entity(e));
                 }
             } else if l[1] == LAYERTYPE_QUADS
                 && let Some(q) = quad_layer(map, l, textures)
@@ -520,6 +619,88 @@ fn load(
     }
     entries
 }
+
+/// A physics layer as its entity layer draws it (C++ `GetTileData` of
+/// `CRenderLayerEntityGame`/`Front`/`Tele`/`Speedup`/`Switch`/`Tune`).
+fn entity_layer(map: &Map, l: &[i32]) -> Option<EntityLayer> {
+    let (width, height, flags) = (l[4], l[5], l[6]);
+    let count = (width as usize).checked_mul(height as usize)?;
+    // tile data index and bytes per tile of each kind
+    // (tile data index, bytes per tile, texture)
+    let (index, size, texture) = match flags {
+        f if f & 1 != 0 => (l[14], 4, 0),        // game
+        f if f & 8 != 0 => (*l.get(20)?, 4, 0),  // front
+        f if f & 2 != 0 => (*l.get(18)?, 2, 0),  // tele
+        f if f & 4 != 0 => (*l.get(19)?, 6, 2),  // speedup
+        f if f & 16 != 0 => (*l.get(21)?, 4, 1), // switch
+        f if f & 32 != 0 => (*l.get(22)?, 2, 3), // tune
+        _ => return None,
+    };
+    // C++ CTuneColorMapper: colour indices in order of first use, per layer
+    let mut tune_colors = [0u8; 255];
+    let mut next_tune_color = 0u8;
+    let data = map.data(index)?;
+    let data = data.get(..count * size)?;
+    let tiles = data
+        .chunks_exact(size)
+        .map(|t| match (flags & 2 != 0, texture) {
+            // CTeleTile: number, type
+            (true, _) => (t[1], 0),
+            // CSwitchTile: number, type, flags, delay; the timed-open tile shows tile 8
+            (_, 1) => (if t[1] == 22 { 8 } else { t[1] }, t[2] & !ARROW),
+            // CSpeedupTile: force, max speed, type, padding, angle
+            (_, 2) => speedup_tile(t[0], t[1], t[2], i16::from_le_bytes([t[4], t[5]])),
+            // CTuneTile: number, type
+            (_, 3) if t[0] == 0 => (0, 0),
+            (_, 3) => {
+                let c = &mut tune_colors[t[0] as usize - 1];
+                if *c == 0 {
+                    next_tune_color = next_tune_color.wrapping_add(1);
+                    *c = next_tune_color;
+                }
+                (*c, 0)
+            }
+            // CTile: index, flags
+            _ => (t[0], t[1] & !ARROW),
+        })
+        .collect();
+    Some(EntityLayer {
+        texture,
+        layer: TileLayer {
+            width,
+            height,
+            color: [1.0; 4],
+            color_env: -1,
+            color_env_offset: 0,
+            texture: None,
+            tiles,
+        },
+    })
+}
+
+/// C++ `CRenderLayerEntitySpeedup::GetTileData` with `FillTmpTileSpeedup`: an arrow of
+/// the arrow array, index `angle % 90`, turned by quarters through the tile flags; none
+/// without force (and max speed) or for other tiles.
+fn speedup_tile(force: u8, max_speed: u8, type_: u8, angle: i16) -> (u8, u8) {
+    let shown = !((force == 0 && type_ == 28) || (force == 0 && max_speed == 0 && type_ == 29))
+        && (type_ == 28 || type_ == 29);
+    if !shown {
+        return (0, 0);
+    }
+    let a = angle % 360;
+    let rotation = match a {
+        270.. => 11, // ROTATION_270
+        180.. => 3,  // ROTATION_180
+        90.. => 8,   // ROTATION_90
+        _ => 0,
+    };
+    // the texture index (unsigned char in C++); 0 still draws (AddTile checked the type)
+    ((angle % 90) as u8, rotation | ARROW)
+}
+
+/// A marker in a tile's flags (a bit no tile flag uses, cleared from map data on load):
+/// draw the tile even with index 0.
+const ARROW: u8 = 0x80;
 
 /// A design tile layer (`CMapItemLayerTilemap`, upgraded by `Map::load`), or `None` if
 /// its data is invalid (C++ `IsValid`).
@@ -536,7 +717,7 @@ fn tile_layer(
         .as_chunks::<4>()
         .0
         .iter()
-        .map(|t| (t[0], t[1]))
+        .map(|t| (t[0], t[1] & !ARROW))
         .collect();
     Some(TileLayer {
         width,

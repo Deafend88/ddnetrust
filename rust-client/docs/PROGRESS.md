@@ -1328,8 +1328,17 @@ User review: chat approved; fixes before sound.
 - Piece b (started): `render/entities.rs` builds the entities textures like C++
   `CMapImages::GetEntities` (pack/mod lookup, gray tune tile, per-layer masks).
   `rs_parity entities` (copies of `GetEntitiesModType`, `IsValidTile`, `GetEntities`):
-  identical for the stock packs (28 cases) and the user's (42). Next: draw the entity
-  layers (game/front/tele/speedup/switch/tune) with `cl_overlay_entities`.
+  identical for the stock packs (28 cases) and the user's (42).
+- Piece b part 2 (2026-11-28): the entity layers drawn with `cl_overlay_entities` (C++
+  `CRenderLayerEntity*`: game, front, tele, speedup arrows with C++'s angle/quarter
+  rotation, switch, tune with `CTuneColorMapper` and the golden-angle tune colour map),
+  design layers faded by the overlay and hidden at 100, `cl_background_entities_color`.
+  Screenshots against C++ (`-Subject`, overlay 100 and 50, text off): LearnToPlay differs
+  only in our name plates/chat and the C++ spectator cursor; coverage
+  (`docs/review/13.4/entities_*`) shows the same tiles (tele, speed-up, switch) but the
+  subject drifts on a speed-up lane, so the pictures are 4 px apart.
+  Next: the `cl_text_entities` number overlays (C++ `CMapImages::InitOverlayTextures`),
+  then the asset picker and runtime switching.
 
 #### Exact next actions (next session starts here)
 State (2026-11-27): 13.1, 13.2 and the 13.2 review fixes done and pushed; stopped for

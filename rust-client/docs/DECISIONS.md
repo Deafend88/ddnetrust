@@ -431,4 +431,7 @@ only matters for names so long that neither file can exist.
 - The spectated player's cursor (`CCursorInfo`: polynomial interpolation of the
   spectated tee's aim, `cl_spec_cursor`) comes with spectating (13.7); until then a
   spectator sees no cursor.
+- Entities overlay: the game layer's blinking kill-tile border (C++ `RenderKillTileBorder`)
+  is not drawn: it starts 201 tiles outside the map, where no camera goes in play.
+  ponytail: add it with a free camera (spectating, 13.7) if it matters.
 

@@ -73,6 +73,7 @@ fn main() {
             width: size.width,
             height: size.height,
             envelope_time: 0,
+            overlay: 0,
         };
         let mut batch = Batch::default();
         let [r, g, b] = hsl_packed_to_rgb(128);

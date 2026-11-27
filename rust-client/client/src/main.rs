@@ -842,7 +842,12 @@ impl App {
         }
         let Some(r) = &mut self.running else { return };
         let mut batch = Batch::default();
-        let [cr, cg, cb] = hsl_packed_to_rgb(BACKGROUND_COLOR);
+        // C++ OnRender's clear colour: cl_background_entities_color with an entities overlay
+        let bg = match self.settings.config.cl_overlay_entities {
+            0 => BACKGROUND_COLOR,
+            _ => self.settings.config.cl_background_entities_color,
+        };
+        let [cr, cg, cb] = hsl_packed_to_rgb(bg);
         batch.clear(cr, cg, cb);
         let mut center = None;
         let mut rendered = Vec::new();
@@ -980,6 +985,12 @@ impl App {
             map_shown_at = s.map_shown_at;
             self.shown_frames += map_shown_at.is_some() as u32;
             let size = size_of(&r.config);
+            // C++: CMapImages::GetEntities with the server's mod and mask
+            if let (Some((map, _)), Some(p)) = (&mut s.map, &s.predictor) {
+                let info = ddnet_rs::render::entities::EntitiesInfo::from_game_info(p.game_info);
+                let pack = &self.settings.config.cl_assets_entities;
+                map.set_entities(&mut r.gfx, &self.storage, pack, &info);
+            }
             if let (Some((map, collision)), Some(center)) = (&s.map, center) {
                 let view = View {
                     center,
@@ -987,6 +998,7 @@ impl App {
                     width: size.width,
                     height: size.height,
                     envelope_time: s.envelope_time(),
+                    overlay: self.settings.config.cl_overlay_entities,
                 };
                 map.render_background(&mut batch, &view);
                 if let Some(predictor) = &s.predictor {

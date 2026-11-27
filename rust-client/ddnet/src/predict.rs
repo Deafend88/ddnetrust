@@ -277,6 +277,8 @@ pub struct Predictor {
     pub intra_tick: f32,
     /// This frame's sounds, drained by the client.
     pub sound_events: Vec<SoundEvent>,
+    /// The snapshot's GameInfoEx as C++ `GetGameInfo` reads it: (version, flags, flags2).
+    pub game_info: (i32, i32, i32),
 }
 
 /// C++: a `CClientData` core after `CCharacterCore::Reset` (`CClientData::Reset`).
@@ -360,6 +362,7 @@ impl Predictor {
             last_new_predicted_tick: -1,
             intra_tick: 0.0,
             sound_events: Vec::new(),
+            game_info: (-1, 0, 0),
             tuning: Tuning::default(),
             received_tuning: false,
             local_tune_zone: -1,
@@ -692,6 +695,7 @@ impl Predictor {
             if version >= 0 { ex.flags } else { 0 },
             if version >= 5 { ex.flags2 } else { 0 },
         );
+        self.game_info = (version, flags, flags2);
         let ddrace = flags & (g::GAMEINFOFLAG_GAMETYPE_DDRACE | g::GAMEINFOFLAG_GAMETYPE_DDNET)
             != 0
             || (version >= 6 && flags2 & g::GAMEINFOFLAG2_GAMETYPE_FDDRACE != 0);

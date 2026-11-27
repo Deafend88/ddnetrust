@@ -126,6 +126,7 @@ pub struct Config {
     pub cl_asset_hud: String,
     pub cl_asset_extras: String,
     pub cl_spec_cursor: i32,
+    pub cl_background_entities_color: u32,
     pub cl_overlay_entities: i32,
     pub cl_text_entities: i32,
     pub cl_text_entities_size: i32,
@@ -256,6 +257,7 @@ impl Default for Config {
             cl_asset_hud: "default".into(),
             cl_asset_extras: "default".into(),
             cl_spec_cursor: 1,
+            cl_background_entities_color: 128,
             cl_overlay_entities: 0,
             cl_text_entities: 1,
             cl_text_entities_size: 100,
@@ -420,6 +422,7 @@ impl Config {
             "cl_asset_hud" => Str(&mut self.cl_asset_hud, 50),
             "cl_asset_extras" => Str(&mut self.cl_asset_extras, 50),
             "cl_spec_cursor" => Int(&mut self.cl_spec_cursor, 0, 1),
+            "cl_background_entities_color" => Color(&mut self.cl_background_entities_color, 0.0),
             "cl_overlay_entities" => Int(&mut self.cl_overlay_entities, 0, 100),
             "cl_text_entities" => Int(&mut self.cl_text_entities, 0, 1),
             "cl_text_entities_size" => Int(&mut self.cl_text_entities_size, 20, 100),
@@ -519,7 +522,7 @@ impl Config {
 }
 
 /// Every variable name `Config::var` knows.
-pub const VAR_NAMES: [&str; 117] = [
+pub const VAR_NAMES: [&str; 118] = [
     "player_name",
     "player_skin",
     "player_use_custom_color",
@@ -602,6 +605,7 @@ pub const VAR_NAMES: [&str; 117] = [
     "cl_asset_hud",
     "cl_asset_extras",
     "cl_spec_cursor",
+    "cl_background_entities_color",
     "cl_overlay_entities",
     "cl_text_entities",
     "cl_text_entities_size",
