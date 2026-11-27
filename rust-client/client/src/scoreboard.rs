@@ -226,6 +226,8 @@ pub struct View<'a> {
     /// The highlighted row: the local player, or the followed one while spectating.
     pub highlight: i32,
     pub heads: &'a mut crate::teehead::TeeHeads,
+    /// C++ `cl_enable_ping_color`.
+    pub ping_color: bool,
 }
 
 mod view {
@@ -408,10 +410,11 @@ mod view {
                 skin: c.skin.clone(),
                 custom_color: c.use_custom_color != 0,
                 color_body: c.color_body,
+                color_feet: c.color_feet,
             };
             let ctx = ui.ctx().clone();
             if let Some(t) = v.heads.get(&ctx, &look) {
-                let s = size::ICON_LARGE.min(row_h - space::XS);
+                let s = size::TEE.min(row_h - space::XS);
                 let r = Rect::from_center_size(pos2(tee_x + s / 2.0, mid), vec2(s, s));
                 ui.painter().image(
                     t.id(),
@@ -443,6 +446,13 @@ mod view {
             );
             // C++: the latency clamped to 0..999
             let ping = info.latency.clamp(0, 999).to_string();
+            // C++: CRenderTools::GetPingTextColor (render.cpp:596), green 0 to red 300
+            let ping_color = if v.ping_color {
+                let hue = (300.0 - info.latency.clamp(0, 300) as f32) / 1000.0;
+                rgb(crate::render::map::hsl_to_rgb([hue, 1.0, 0.5]))
+            } else {
+                weak
+            };
             text(
                 ui,
                 pos2(ping_r, mid),
@@ -450,22 +460,22 @@ mod view {
                 &ping,
                 size,
                 Weight::Regular,
-                weak,
+                ping_color,
             );
             y += row_h;
             if let Some(n) = r.group_size
                 && let Some((top, at)) = group_top.take()
             {
-                // the DDRace team: a faint tint of its C++ colour behind its rows, and
-                // its label under them
-                let tint = rgb(dd_team_color(r.ddteam, 0.5));
+                // the DDRace team: a pastel tint of its C++ hue behind its rows (white
+                // text stays readable), and its label under them
+                let tint = rgb(dd_team_color(r.ddteam, 0.8));
                 let group =
                     Rect::from_min_max(pos2(rect.left(), top), pos2(rect.right(), y + label_h))
                         .expand2(vec2(space::XS, 0.0));
                 let shape = egui::Shape::rect_filled(
                     group,
                     CornerRadius::same(radius::SMALL),
-                    tint.gamma_multiply(0.16),
+                    tint.gamma_multiply(0.24),
                 );
                 ui.painter().set(at, shape);
                 let l = label(r.ddteam, n, v.max_team_size);

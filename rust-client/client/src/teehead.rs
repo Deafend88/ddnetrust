@@ -1,6 +1,6 @@
-//! A tee's head as an egui image (the killfeed's tees): the skin's body outline, body and
-//! two eyes looking right, placed like C++ `CRenderTools::RenderTee` (render.cpp) draws
-//! an idle tee, tinted with the custom body colour like C++.
+//! A tee icon as an egui image (killfeed, chat, scoreboard): the whole idle tee (feet,
+//! body, eyes looking right) as C++ `CRenderTools::RenderIdleTeeAtCenter` (render.cpp:267)
+//! draws it, tinted with the custom colours like C++.
 
 use std::collections::HashMap;
 
@@ -8,8 +8,10 @@ use egui::{ColorImage, TextureHandle};
 
 use crate::assets;
 use crate::image::Image;
+use crate::render::anim::AnimState;
 use crate::render::content::{
-    SPRITE_TEE_BODY, SPRITE_TEE_BODY_OUTLINE, SPRITE_TEE_EYE_NORMAL, SPRITES,
+    SPRITE_TEE_BODY, SPRITE_TEE_BODY_OUTLINE, SPRITE_TEE_EYE_NORMAL, SPRITE_TEE_FOOT,
+    SPRITE_TEE_FOOT_OUTLINE, SPRITES,
 };
 use crate::render::tee::skin_color;
 use crate::skin::{SkinData, load_skin_data, sprite_image};
@@ -21,12 +23,13 @@ pub struct TeeLook {
     pub skin: String,
     pub custom_color: bool,
     pub color_body: i32,
+    pub color_feet: i32,
 }
 
-/// The head image, `SIZE` pixels square, showing the middle `VIEW` units of a 64 unit
-/// tee (body quad 64, eyes 25.6): the body fills about two thirds of its quad.
+/// The icon, `SIZE` pixels square, showing the middle `VIEW` units around a 64 unit tee's
+/// rendered centre (C++ size 64: the visible tee is about 46 units wide).
 const SIZE: usize = 64;
-const VIEW: f32 = 48.0;
+const VIEW: f32 = 52.0;
 
 /// Samples `img` at (`u`, `v`) in 0..1 (nearest), tinted.
 fn sample(img: &Image, u: f32, v: f32, tint: [f32; 4]) -> [f32; 4] {
@@ -45,23 +48,94 @@ fn sample(img: &Image, u: f32, v: f32, tint: [f32; 4]) -> [f32; 4] {
     ]
 }
 
-/// Composes the head: outline, body, then the eyes (the right one mirrored), with the
-/// direction (1, 0): separation 0.065, offset (0.125, -0.05) of the size (C++ RenderTee).
+/// C++: `GetRenderTeeOffsetToRenderedTee` (render.cpp:202) for a 0.6 skin at size 64
+/// (anim scale 1, `cl_fat_skins` 0): the y offset that centres the rendered tee.
+fn offset_to_mid(skin: &SkinData, anim: &AnimState) -> f32 {
+    let feet_y = anim.front_foot.y.max(anim.back_foot.y);
+    let body_h = skin.body.height_normalized() * 64.0;
+    let mut min_y = -32.0;
+    min_y += anim.body.y;
+    min_y += skin.body.offset_y_normalized() * 64.0;
+    let (feet_off, feet_h) = (
+        skin.feet.offset_y_normalized() * 32.0,
+        skin.feet.height_normalized() * 32.0,
+    );
+    let max_y = (min_y + body_h).max((-16.0 + feet_y) + feet_off + feet_h);
+    let full = max_y - min_y;
+    -(min_y + full / 2.0)
+}
+
+/// One quad of the tee: its image, centre and size in tee units, mirrored or not.
+struct Layer {
+    image: Image,
+    center: (f32, f32),
+    size: (f32, f32),
+    mirror: bool,
+    tint: [f32; 4],
+}
+
+/// Composes the idle tee in C++ `RenderTee6` order (render.cpp:494): outlines (back foot,
+/// body, front foot), then fillings (back foot, body, eyes, front foot), direction (1, 0).
 pub fn compose(skin: &SkinData, look: &TeeLook) -> ColorImage {
-    let (source, tint) = if look.custom_color {
-        (&skin.grayscale, skin_color(look.color_body))
+    let (source, body_tint, feet_tint) = if look.custom_color {
+        (
+            &skin.grayscale,
+            skin_color(look.color_body),
+            skin_color(look.color_feet),
+        )
     } else {
-        (&skin.image, [1.0; 4])
+        (&skin.image, [1.0; 4], [1.0; 4])
     };
     let part = |sprite: usize| sprite_image(source, None, &SPRITES[sprite]);
-    let (outline, body, eye) = (
-        part(SPRITE_TEE_BODY_OUTLINE),
-        part(SPRITE_TEE_BODY),
-        part(SPRITE_TEE_EYE_NORMAL),
-    );
+    let anim = AnimState::idle();
+    let mid = offset_to_mid(skin, &anim);
+    let body = (anim.body.x, anim.body.y + mid);
+    let foot = |back: bool, outline: bool| {
+        let k = if back {
+            &anim.back_foot
+        } else {
+            &anim.front_foot
+        };
+        let sprite = if outline {
+            SPRITE_TEE_FOOT_OUTLINE
+        } else {
+            SPRITE_TEE_FOOT
+        };
+        Layer {
+            image: part(sprite),
+            center: (k.x, k.y + mid),
+            size: (64.0, 32.0),
+            mirror: false,
+            tint: feet_tint,
+        }
+    };
+    let body_layer = |sprite: usize| Layer {
+        image: part(sprite),
+        center: body,
+        size: (64.0, 64.0),
+        mirror: false,
+        tint: body_tint,
+    };
+    // eyes: separation (0.075 - 0.010) * 64, offset (0.125, -0.05) * 64, size 0.40 * 64
+    let (separation, eye) = (0.065 * 64.0, 0.40 * 64.0);
+    let eye_at = |dx: f32, mirror: bool| Layer {
+        image: part(SPRITE_TEE_EYE_NORMAL),
+        center: (body.0 + dx + 0.125 * 64.0, body.1 - 0.05 * 64.0),
+        size: (eye, eye),
+        mirror,
+        tint: body_tint,
+    };
+    let layers = [
+        foot(true, true),
+        body_layer(SPRITE_TEE_BODY_OUTLINE),
+        foot(false, true),
+        foot(true, false),
+        body_layer(SPRITE_TEE_BODY),
+        eye_at(-separation, false),
+        eye_at(separation, true),
+        foot(false, false),
+    ];
     let size = SIZE as f32;
-    let (eye_size, separation) = (size * 0.40, size * 0.065);
-    let (eye_x, eye_y) = (size * 0.125, size * -0.05);
     let mut pixels = Vec::with_capacity(SIZE * SIZE);
     // 2x2 samples per pixel
     let offsets = [0.25, 0.75];
@@ -74,20 +148,15 @@ pub fn compose(skin: &SkinData, look: &TeeLook) -> ColorImage {
                     let to_units = |p: f32| p / size * VIEW - VIEW / 2.0;
                     let (x, y) = (to_units(px as f32 + ox), to_units(py as f32 + oy));
                     let mut c = [0.0f32; 4];
-                    let mut over = |s: [f32; 4]| {
+                    for l in &layers {
+                        let u = (x - l.center.0) / l.size.0 + 0.5;
+                        let v = (y - l.center.1) / l.size.1 + 0.5;
+                        let u = if l.mirror { 1.0 - u } else { u };
+                        let s = sample(&l.image, u, v, l.tint);
                         for i in 0..3 {
                             c[i] = s[i] * s[3] + c[i] * (1.0 - s[3]);
                         }
                         c[3] = s[3] + c[3] * (1.0 - s[3]);
-                    };
-                    let (u, v) = (x / size + 0.5, y / size + 0.5);
-                    over(sample(&outline, u, v, tint));
-                    over(sample(&body, u, v, tint));
-                    for (dx, mirror) in [(-separation, false), (separation, true)] {
-                        let eu = (x - (dx + eye_x)) / eye_size + 0.5;
-                        let ev = (y - eye_y) / eye_size + 0.5;
-                        let eu = if mirror { 1.0 - eu } else { eu };
-                        over(sample(&eye, eu, ev, tint));
                     }
                     for i in 0..4 {
                         sum[i] += c[i] / 4.0;
@@ -142,8 +211,8 @@ impl TeeHeads {
             let texture = self.skins[name].as_ref().map(|skin| {
                 ctx.load_texture(
                     format!(
-                        "tee_head_{}_{}_{}",
-                        name, look.custom_color, look.color_body
+                        "tee_{}_{}_{}_{}",
+                        name, look.custom_color, look.color_body, look.color_feet
                     ),
                     compose(skin, look),
                     egui::TextureOptions::LINEAR,

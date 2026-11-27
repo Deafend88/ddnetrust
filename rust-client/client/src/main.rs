@@ -1040,6 +1040,7 @@ impl App {
                                 local
                             },
                             heads,
+                            ping_color: settings.config.cl_enable_ping_color != 0,
                         };
                         scoreboard::show(ctx, &mut view);
                     }

@@ -72,6 +72,8 @@ pub mod size {
     pub const ICON_SMALL: f32 = 14.0;
     pub const ICON: f32 = 17.0;
     pub const ICON_LARGE: f32 = 21.0;
+    /// A whole tee (with feet) in a scoreboard row.
+    pub const TEE: f32 = 23.0;
     /// The race status block's icons and weapon sprites.
     pub const ICON_HUD: f32 = 24.0;
     /// The album cover in the island's track change.

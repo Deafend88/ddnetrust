@@ -156,6 +156,7 @@ fn active_player(items: &[ddnet::protocol::snapshot::Item], id: i32) -> Option<P
                 .unwrap_or_else(|| "default".into()),
             custom_color: info.is_some_and(|c| c.use_custom_color != 0),
             color_body: info.map_or(0, |c| c.color_body),
+            color_feet: info.map_or(0, |c| c.color_feet),
         },
     })
 }
@@ -346,6 +347,7 @@ impl Widget for Killfeed {
                         skin: "default".into(),
                         custom_color: false,
                         color_body: 0,
+                        color_feet: 0,
                     },
                 },
                 time: "00:42.10".into(),

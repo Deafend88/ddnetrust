@@ -949,6 +949,7 @@ fn killfeed_follows_info_messages() {
             skin: "default".into(),
             custom_color: id == 2,
             color_body: id,
+            color_feet: 0,
         },
     };
     let name = |id: i32| (0..4).contains(&id).then(|| player(id));

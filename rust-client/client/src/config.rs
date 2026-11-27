@@ -132,6 +132,7 @@ pub struct Config {
     pub cl_show_freeze_bars: i32,
     pub cl_freezebars_alpha_inside_freeze: i32,
     pub cl_scoreboard_on_death: i32,
+    pub cl_enable_ping_color: i32,
     /// Ours (not a C++ variable): the DDNet data dir, used when neither `--data-dir`
     /// nor `DDNET_DATA_DIR` is given.
     pub rs_data_dir: String,
@@ -234,6 +235,7 @@ impl Default for Config {
             cl_show_freeze_bars: 1,
             cl_freezebars_alpha_inside_freeze: 0,
             cl_scoreboard_on_death: 1,
+            cl_enable_ping_color: 1,
             rs_data_dir: String::new(),
             rs_media_source: String::new(),
             rs_media: 1,
@@ -371,6 +373,7 @@ impl Config {
                 Int(&mut self.cl_freezebars_alpha_inside_freeze, 0, 100)
             }
             "cl_scoreboard_on_death" => Int(&mut self.cl_scoreboard_on_death, 0, 1),
+            "cl_enable_ping_color" => Int(&mut self.cl_enable_ping_color, 0, 1),
             "rs_data_dir" => Str(&mut self.rs_data_dir, 512),
             "rs_media_source" => Str(&mut self.rs_media_source, 512),
             "rs_media" => Int(&mut self.rs_media, 0, 1),
@@ -436,7 +439,7 @@ impl Config {
 }
 
 /// Every variable name `Config::var` knows.
-pub const VAR_NAMES: [&str; 91] = [
+pub const VAR_NAMES: [&str; 92] = [
     "player_name",
     "player_skin",
     "player_use_custom_color",
@@ -523,6 +526,7 @@ pub const VAR_NAMES: [&str; 91] = [
     "cl_show_freeze_bars",
     "cl_freezebars_alpha_inside_freeze",
     "cl_scoreboard_on_death",
+    "cl_enable_ping_color",
     "rs_data_dir",
     "rs_media_source",
     "rs_media",

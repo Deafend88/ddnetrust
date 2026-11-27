@@ -501,6 +501,7 @@ impl Chat {
                     skin: author.skin.clone(),
                     custom_color: author.use_custom_color != 0,
                     color_body: author.color_body,
+                    color_feet: author.color_feet,
                 });
             }
         }
