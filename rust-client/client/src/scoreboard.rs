@@ -235,17 +235,12 @@ mod view {
 
     use super::*;
     use crate::nameplates::dd_team_color;
-    use crate::style::{Weight, color, font, radius, size, space};
+    use crate::style::{Weight, color, font, radius, rgb, size, space};
     use crate::widgets as w;
     use ddnet::protocol::generated::{GAMEFLAG_TEAMS, GAMESTATEFLAG_GAMEOVER};
 
     /// C++ `TEAM_RED_TITLE_COLOR`, `TEAM_BLUE_TITLE_COLOR`.
     const TEAM_COLORS: [[f32; 3]; 2] = [[0.975, 0.17, 0.17], [0.17, 0.46, 0.975]];
-
-    fn rgb([r, g, b]: [f32; 3]) -> Color32 {
-        let c = |f: f32| (f.clamp(0.0, 1.0) * 255.0).round() as u8;
-        Color32::from_rgb(c(r), c(g), c(b))
-    }
 
     /// Row height and type size: roomy up to 16 rows per column, compact above.
     fn density(rows: usize) -> (f32, f32) {
@@ -336,7 +331,7 @@ mod view {
             size * 3.2
         };
         let (score_r, tee_x) = (rect.left() + score_w, rect.left() + score_w + space::M);
-        let name_x = tee_x + size::ICON_LARGE + space::S;
+        let name_x = tee_x + size::TEE + space::S;
         let ping_r = rect.right();
         let clan_c = rect.left() + width * 0.68;
         // C++ headlines: Time/Score, Name, Clan, Ping

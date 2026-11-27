@@ -137,6 +137,12 @@ pub enum Weight {
     SemiBold,
 }
 
+/// A 0..1 RGB colour (C++ `ColorRGBA`) as an egui colour.
+pub fn rgb([r, g, b]: [f32; 3]) -> Color32 {
+    let c = |f: f32| (f.clamp(0.0, 1.0) * 255.0).round() as u8;
+    Color32::from_rgb(c(r), c(g), c(b))
+}
+
 pub fn font(size: f32, weight: Weight) -> FontId {
     FontId::new(
         size,

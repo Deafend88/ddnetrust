@@ -319,9 +319,8 @@ mod draw {
             if a <= 0.0 {
                 continue;
             }
-            let c = |f: f32| (f.clamp(0.0, 1.0) * 255.0).round() as u8;
-            let tint =
-                Color32::from_rgb(c(p.color[0]), c(p.color[1]), c(p.color[2])).gamma_multiply(a);
+            let [r, g, b, _] = p.color;
+            let tint = crate::style::rgb([r, g, b]).gamma_multiply(a);
             let text = color::TEXT.gamma_multiply(a);
             let weak = color::TEXT_SECONDARY.gamma_multiply(a);
             let id = p.id.to_string();

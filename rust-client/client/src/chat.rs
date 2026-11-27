@@ -901,17 +901,12 @@ mod view {
 
     use super::*;
     use crate::render::map::hsl_packed_to_rgb;
-    use crate::style::{Weight, color, font, radius, size, space};
+    use crate::style::{Weight, color, font, radius, rgb, size, space};
     use crate::teehead::TeeHeads;
     use crate::widgets as w;
 
     /// The text field's egui id.
     pub const INPUT_ID: &str = "chat_input";
-
-    fn rgb(c: [f32; 3]) -> Color32 {
-        let b = |f: f32| (f.clamp(0.0, 1.0) * 255.0).round() as u8;
-        Color32::from_rgb(b(c[0]), b(c[1]), b(c[2]))
-    }
 
     /// A subtle tint: `amount` of `c` over the text colour (user decision 2026-11-27:
     /// the C++ kind colours, toned down, so kinds read at a glance).
