@@ -1342,7 +1342,15 @@ User review: chat approved; fixes before sound.
   force/max speed) from atlases built like C++ `InitOverlayTextures` (`cl_text_entities_size`),
   glyphs by ab_glyph (DECISIONS 13.4). Screenshot: same numbers, places and sizes
   (`docs/review/13.4/entities_text_*`).
-- Next: the asset picker on the settings page and switching packs at runtime.
+- Piece c: asset picker on the settings page (`ui.rs` `asset_rows`): Game, Emoticons,
+  Particles, Extras, Entities rows with the current pack's art; a click opens a popover
+  grid of every pack (C++ `AssetScan`/`EntitiesScan` listing, `assets::list_packs`), the
+  chosen one ringed in the accent, names on hover. HUD left out (our HUD draws its own
+  icons). Choices go through `cl_asset_*` lines and are saved with the settings; the
+  sprites and the weapon icons of the status bar and kill feed reload when a pack changes
+  (C++ change callbacks), the entities textures already rebuild on a new key. Review:
+  `docs/review/13.4/asset_picker.png` (gallery, 4th argument). Live switching is checked
+  by code path and the gates only; not clicked through in a running client yet.
 
 #### Exact next actions (next session starts here)
 State (2026-11-27): 13.1, 13.2 and the 13.2 review fixes done and pushed; stopped for

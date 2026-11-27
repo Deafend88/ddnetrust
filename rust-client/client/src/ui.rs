@@ -201,6 +201,65 @@ pub struct Menu {
     skins: Vec<String>,
     /// The prediction details (secondary antiping settings) are shown.
     prediction_details: bool,
+    storage: Storage,
+    /// The asset kind whose pack grid is open (an index of `ASSET_KINDS`).
+    picking: Option<usize>,
+    /// The packs of each kind, listed when its grid first opens.
+    packs: [Option<Vec<String>>; ASSET_KINDS.len()],
+    /// Pack thumbnails by (kind, name); `None` where the image does not load.
+    thumbs: std::collections::HashMap<(usize, String), Option<egui::TextureHandle>>,
+}
+
+/// The asset kinds the picker offers: (label, variable, asset kind; `None` for the
+/// entities). The HUD pack is left out: our HUD draws its own icons (DECISIONS 13.4).
+type AssetKind = (
+    &'static str,
+    &'static str,
+    Option<(&'static str, &'static str)>,
+);
+const ASSET_KINDS: [AssetKind; 5] = [
+    ("Game", "cl_asset_game", Some(crate::assets::GAME)),
+    (
+        "Emoticons",
+        "cl_asset_emoticons",
+        Some(crate::assets::EMOTICONS),
+    ),
+    (
+        "Particles",
+        "cl_asset_particles",
+        Some(crate::assets::PARTICLES),
+    ),
+    ("Extras", "cl_asset_extras", Some(crate::assets::EXTRAS)),
+    ("Entities", "cl_assets_entities", None),
+];
+
+/// A pack's image scaled to `height` px (box filter, alpha-weighted), for a thumbnail.
+fn thumbnail(img: &crate::image::Image, height: usize) -> egui::ColorImage {
+    let rgba = img.to_rgba();
+    let (w0, h0) = (img.width as usize, img.height as usize);
+    let h = height.min(h0).max(1);
+    let w = (w0 * h / h0).max(1);
+    let mut out = Vec::with_capacity(w * h * 4);
+    for y in 0..h {
+        for x in 0..w {
+            let (mut sum, mut n) = ([0u64; 4], 0u64);
+            for sy in y * h0 / h..((y + 1) * h0 / h).max(y * h0 / h + 1) {
+                for sx in x * w0 / w..((x + 1) * w0 / w).max(x * w0 / w + 1) {
+                    let p = &rgba[(sy * w0 + sx) * 4..][..4];
+                    let a = p[3] as u64;
+                    for c in 0..3 {
+                        sum[c] += p[c] as u64 * a;
+                    }
+                    sum[3] += a;
+                    n += 1;
+                }
+            }
+            let a = sum[3].max(1);
+            out.extend([0, 1, 2].map(|c| (sum[c] / a) as u8));
+            out.push((sum[3] / n) as u8);
+        }
+    }
+    egui::ColorImage::from_rgba_unmultiplied([w, h], &out)
 }
 
 impl Menu {
@@ -213,6 +272,10 @@ impl Menu {
             reading_key: None,
             skins: crate::assets::list_skins(storage),
             prediction_details: false,
+            storage: storage.clone(),
+            picking: None,
+            packs: Default::default(),
+            thumbs: Default::default(),
         }
     }
 
@@ -221,6 +284,13 @@ impl Menu {
     pub fn open_settings(&mut self, prediction_details: bool) {
         self.page = Page::Settings;
         self.prediction_details = prediction_details;
+    }
+
+    /// Opens the settings page with the pack grid of asset kind `kind` open (the
+    /// gallery's asset picker review).
+    pub fn open_assets(&mut self, kind: usize) {
+        self.page = Page::Settings;
+        self.picking = Some(kind);
     }
 
     /// The start screen (`connected` false) or the in-game menu, and the settings page.
@@ -341,6 +411,7 @@ impl Menu {
                             }
                         });
                     ui.end_row();
+                    self.asset_rows(ui, c, &mut lines);
                     ui.label("Mouse sensitivity");
                     let mut sens = c.inp_mousesens;
                     if ui
@@ -407,6 +478,114 @@ impl Menu {
             });
         for line in lines {
             s.execute_line(&line);
+        }
+    }
+
+    /// The thumbnail of a pack (loaded once): the kind's image as the game loads it,
+    /// for entities the DDNet image.
+    fn thumb(
+        &mut self,
+        ctx: &egui::Context,
+        kind: usize,
+        name: &str,
+    ) -> Option<egui::TextureHandle> {
+        let storage = &self.storage;
+        let key = (kind, name.to_string());
+        self.thumbs
+            .entry(key)
+            .or_insert_with(|| {
+                let image = match ASSET_KINDS[kind].2 {
+                    Some(asset) => crate::assets::load_asset(storage, asset, name).image,
+                    None => {
+                        let mod_type = crate::render::entities::MOD_DDNET;
+                        crate::render::entities::load_image(storage, name, mod_type).1
+                    }
+                };
+                // twice the largest size it is shown at, for high-DPI screens
+                let height = (2.0 * size::COVER_PLAYER) as usize;
+                image.map(|i| {
+                    let t = thumbnail(&i, height);
+                    ctx.load_texture(format!("pack {kind} {name}"), t, Default::default())
+                })
+            })
+            .clone()
+    }
+
+    /// One pack as a thumbnail `height` points high, ringed in the accent when chosen;
+    /// its name on hover. Packs whose image does not load show their name instead.
+    fn pack_button(
+        &mut self,
+        ui: &mut egui::Ui,
+        kind: usize,
+        name: &str,
+        height: f32,
+        chosen: bool,
+    ) -> egui::Response {
+        let r = match self.thumb(ui.ctx(), kind, name) {
+            Some(t) => {
+                let [w, h] = t.size().map(|v| v as f32);
+                let size = egui::vec2(height * w / h, height);
+                let image = egui::Image::new(&t)
+                    .fit_to_exact_size(size)
+                    .corner_radius(style::radius::SMALL)
+                    .bg_fill(color::SURFACE_RAISED)
+                    .sense(egui::Sense::click());
+                ui.add(image)
+            }
+            None => w::button(ui, None, name),
+        };
+        if chosen {
+            let radius = egui::CornerRadius::same(style::radius::SMALL);
+            let ring = egui::Stroke::new(space::XS / 2.0, color::ACCENT);
+            (ui.painter()).rect_stroke(r.rect, radius, ring, egui::StrokeKind::Outside);
+        }
+        r.on_hover_text(name)
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+    }
+
+    /// The asset packs (C++ menus_settings_assets.cpp): per kind the chosen pack; a click
+    /// opens the grid of every pack of that kind. Rows of the settings grid.
+    fn asset_rows(&mut self, ui: &mut egui::Ui, c: &Config, lines: &mut Vec<String>) {
+        let glass = Glass::from_setting(c.rs_glass);
+        for (kind, (label, var, asset)) in ASSET_KINDS.into_iter().enumerate() {
+            let dir = asset.map_or("entities", |a| a.0);
+            let chosen = c.string(var).unwrap_or_default();
+            ui.label(label);
+            let tile = self.pack_button(ui, kind, &chosen, size::CONTROL, false);
+            if tile.clicked() {
+                self.picking = (self.picking != Some(kind)).then_some(kind);
+            }
+            let open = self.picking == Some(kind);
+            let list = match open {
+                true => self.packs[kind]
+                    .get_or_insert_with(|| crate::assets::list_packs(&self.storage, dir))
+                    .clone(),
+                false => Vec::new(),
+            };
+            let shown = w::popover(&tile, open, glass, None, |ui| {
+                ui.set_max_width(MENU_WIDTH * 2.0);
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing = egui::vec2(space::S, space::S);
+                    for name in &list {
+                        let r =
+                            self.pack_button(ui, kind, name, size::COVER_PLAYER, *name == chosen);
+                        if r.clicked() {
+                            lines.push(format!("{var} \"{}\"", escape(name)));
+                        }
+                    }
+                });
+            });
+            // a click outside the grid (or a choice) closes it
+            if let Some((_, rect)) = shown {
+                let outside = ui.input(|i| {
+                    i.pointer.any_click()
+                        && i.pointer.interact_pos().is_some_and(|p| !rect.contains(p))
+                });
+                if (outside && !tile.clicked()) || !lines.is_empty() {
+                    self.picking = None;
+                }
+            }
+            ui.end_row();
         }
     }
 

@@ -115,6 +115,25 @@ pub fn load_asset(storage: &Storage, kind: (&str, &str), name: &str) -> Asset {
     }
 }
 
+/// C++ `AssetScan`/`EntitiesScan` over `assets/<dir>` in every storage path:
+/// "default", then the `.png` files (without the extension) and the directories, sorted;
+/// names starting with '.' and "default" itself are skipped.
+pub fn list_packs(storage: &Storage, dir: &str) -> Vec<String> {
+    let mut names: Vec<String> = storage
+        .list(&format!("assets/{dir}"))
+        .into_iter()
+        .filter_map(|(n, is_dir)| match is_dir {
+            true => (!n.starts_with('.')).then_some(n),
+            false => n.strip_suffix(".png").map(String::from),
+        })
+        .filter(|n| n != "default")
+        .collect();
+    names.sort();
+    names.dedup();
+    names.insert(0, "default".into());
+    names
+}
+
 /// C++: `CSkin::IsValidName`: a valid filename shorter than `MAX_SKIN_LENGTH` (24) bytes.
 pub fn valid_skin_name(name: &str) -> bool {
     name.len() < 24 && valid_filename(name)

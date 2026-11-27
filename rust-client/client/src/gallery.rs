@@ -209,6 +209,17 @@ pub fn render_settings(gfx: &mut Gfx, storage: &Storage) {
     });
 }
 
+/// Draws the settings page with the game pack grid open (13.4) into the world target of
+/// `gfx` (sized `SETTINGS_SIZE`).
+pub fn render_assets(gfx: &mut Gfx, storage: &Storage) {
+    let mut menu = crate::ui::Menu::new(None, storage);
+    menu.open_assets(0);
+    let mut settings = crate::config::Settings::load(&[]);
+    render_page(gfx, Glass::Subtle, 30, stripes, |ctx| {
+        menu.show(ctx, false, &mut settings);
+    });
+}
+
 /// The race status review page (7.7): every state, labelled.
 pub const STATUS_SIZE: Size = Size {
     width: 1280,

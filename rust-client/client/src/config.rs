@@ -337,6 +337,14 @@ impl Config {
         }
     }
 
+    /// A string variable by its C++ name.
+    pub fn string(&self, name: &str) -> Option<String> {
+        match self.clone().var(name)? {
+            Var::Str(v, _) => Some(v.clone()),
+            _ => None,
+        }
+    }
+
     fn var(&mut self, name: &str) -> Option<Var<'_>> {
         use Var::*;
         Some(match name.to_ascii_lowercase().as_str() {

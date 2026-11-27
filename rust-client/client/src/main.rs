@@ -90,6 +90,8 @@ struct Running {
     config: wgpu::SurfaceConfiguration,
     gfx: Gfx,
     players: Players,
+    /// The asset packs the sprites were loaded from.
+    packs: assets::Packs,
     ui: Ui,
     /// The `rs_glass` and zoom factor the UI was set up with.
     ui_glass: i32,
@@ -474,6 +476,7 @@ impl App {
             config,
             gfx,
             players,
+            packs,
             ui,
         })
     }
@@ -841,6 +844,23 @@ impl App {
             self.save_settings();
         }
         let Some(r) = &mut self.running else { return };
+        // C++: the cl_asset_* change callbacks reload the sprites (and our HUD icons)
+        let packs = assets::Packs::from_config(&self.settings.config);
+        if packs != r.packs {
+            r.players.set_packs(&mut r.gfx, &self.storage, &packs);
+            if packs.game != r.packs.game {
+                // ponytail: rebuilt widgets drop the kill feed's lines; keep them if it
+                // matters (pack changes happen in the menu)
+                for w in &mut self.hud {
+                    match w.id() {
+                        "status" => *w = Box::new(StatusBar::new(&self.storage, &packs.game)),
+                        "killfeed" => *w = Box::new(Killfeed::new(&self.storage, &packs.game)),
+                        _ => {}
+                    }
+                }
+            }
+            r.packs = packs;
+        }
         let mut batch = Batch::default();
         // C++ OnRender's clear colour: cl_background_entities_color with an entities overlay
         let bg = match self.settings.config.cl_overlay_entities {
