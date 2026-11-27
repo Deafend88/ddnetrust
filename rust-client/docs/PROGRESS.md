@@ -1311,6 +1311,11 @@ User review: chat approved; fixes before sound.
   `compare_screenshots.ps1 -Assets` with the user's packs (`docs/review/13.4/packs_*`):
   same weapons/pickups/emoticons; differences are the C++ spectator cursor and particles.
 - Deferred: the spectated player's cursor (`CCursorInfo`) to 13.7 (spectating).
+- Piece b (started): `render/entities.rs` builds the entities textures like C++
+  `CMapImages::GetEntities` (pack/mod lookup, gray tune tile, per-layer masks).
+  `rs_parity entities` (copies of `GetEntitiesModType`, `IsValidTile`, `GetEntities`):
+  identical for the stock packs (28 cases) and the user's (42). Next: draw the entity
+  layers (game/front/tele/speedup/switch/tune) with `cl_overlay_entities`.
 
 #### Exact next actions (next session starts here)
 State (2026-11-27): 13.1, 13.2 and the 13.2 review fixes done and pushed; stopped for
@@ -1418,6 +1423,7 @@ Build the `rs_parity` target like `rs_golden`, then per map (repo root):
     build-rs/rs_parity.exe wv rust-client/tests/golden/wv.txt data/audio
     build-rs/rs_parity.exe mixer rust-client/tests/golden/mixer.txt data/audio
     build-rs/rs_parity.exe assets rust-client/tests/golden/assets.txt data   # more: assets <out> %APPDATA%/DDNet data, then RS_ASSETS_EXTRA=<out>;<root>;<root>
+    build-rs/rs_parity.exe entities rust-client/tests/golden/entities.txt data   # more: RS_ENTITIES_EXTRA like RS_ASSETS_EXTRA
     python rust-client/scripts/extract_map_sounds.py <corpus dir> data/maps %APPDATA%/DDNet/downloadedmaps
     build-rs/rs_parity.exe opus <ref dir> <corpus dir>   # then cargo test with RS_OPUS_REF=<ref dir> RS_OPUS_CORPUS=<corpus dir>
     rust-client\scripts\cpp_settings.ps1   # needs build-rs-client\DDNet.exe (PowerShell)

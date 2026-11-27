@@ -389,3 +389,64 @@ fn asset_packs_match_cpp_extra() {
     let roots: Vec<std::path::PathBuf> = parts.map(std::path::PathBuf::from).collect();
     println!("{} packs", check_packs(&golden, &roots));
 }
+
+/// The entities textures (`render::entities`) for every pack, mod and mask of
+/// `rs_parity entities <golden> <root>...` against its copies of `CMapImages::GetEntities`.
+fn check_entities(golden: &str, roots: &[std::path::PathBuf]) -> usize {
+    use ddnet_rs::render::entities;
+    let storage = ddnet_rs::storage::Storage {
+        paths: roots.to_vec(),
+        user_dir: None,
+        data_dir: None,
+    };
+    let text = std::fs::read_to_string(golden).unwrap();
+    let mut lines = text.lines().peekable();
+    let mut n = 0;
+    while let Some(line) = lines.next() {
+        let w: Vec<&str> = line.split(' ').collect();
+        let (pack, mod_type, masked) = (w[1], w[2].parse().unwrap(), w[3] == "1");
+        let (path, img) = entities::load_image(&storage, pack, mod_type);
+        let got: Vec<String> = img.map_or(Vec::new(), |img| {
+            entities::build(img, masked, mod_type)
+                .iter()
+                .map(|i| {
+                    format!(
+                        "layer {path} {} {} {} {:016x}",
+                        i.width,
+                        i.height,
+                        i.format as i32,
+                        fnv(&i.data)
+                    )
+                })
+                .collect()
+        });
+        let mut want = Vec::new();
+        while lines.peek().is_some_and(|l| l.starts_with("layer ")) {
+            want.push(lines.next().unwrap().to_string());
+        }
+        assert_eq!(got, want, "{line}");
+        n += 1;
+    }
+    n
+}
+
+#[test]
+fn entities_textures_match_cpp() {
+    let n = check_entities(
+        &repo("rust-client/tests/golden/entities.txt"),
+        &[std::path::PathBuf::from(repo("data"))],
+    );
+    assert_eq!(n, 28);
+}
+
+/// More packs: `RS_ENTITIES_EXTRA` = `<rs_parity entities output>;<root>;<root>...`.
+#[test]
+fn entities_textures_match_cpp_extra() {
+    let Ok(v) = std::env::var("RS_ENTITIES_EXTRA") else {
+        return;
+    };
+    let mut parts = v.split(';');
+    let golden = parts.next().unwrap().to_string();
+    let roots: Vec<std::path::PathBuf> = parts.map(std::path::PathBuf::from).collect();
+    println!("{} entities textures", check_entities(&golden, &roots));
+}

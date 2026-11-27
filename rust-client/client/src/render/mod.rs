@@ -3,6 +3,7 @@
 pub mod anim;
 pub mod content;
 pub mod cursor;
+pub mod entities;
 pub mod envelope;
 pub mod items;
 pub mod map;
