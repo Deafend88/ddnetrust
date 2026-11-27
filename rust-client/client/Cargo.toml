@@ -14,8 +14,6 @@ ddnet = { path = "../ddnet" }
 egui = "0.37"
 egui-wgpu = { version = "0.37.0", default-features = false }
 egui-winit = { version = "0.37.0", default-features = false, features = ["clipboard"] }
-# map sounds: Ogg Opus, pure Rust (PLAN §13.13 answer 1)
-opus-pure = "0.2.5"
 png = "0.18"
 wgpu = "30.0.2"
 winit = "0.30.13"
@@ -28,3 +26,7 @@ windows = { version = "0.62", features = ["Foundation", "Foundation_Collections"
 
 [dev-dependencies]
 flate2 = "1.1.11"
+
+[build-dependencies]
+# the vendored opusfile/libopus/libogg (map sounds, DECISIONS.md 13.3)
+cc = "1"

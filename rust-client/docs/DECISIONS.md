@@ -373,7 +373,7 @@ only matters for names so long that neither file can exist.
 
 ## 2026-11-27 — M9 13.3: sound
 
-- WavPack: our own decoder (`client/src/wavpack.rs`), a port of the libwavpack 5.9.0 code
+- WavPack: our own decoder (`client/src/wavpack.rs`, kept in pure Rust: it is exact), a port of the libwavpack 5.9.0 code
   `CSound::DecodeWV` reaches (ddnet-libs has 5.9.0): single-stream mono/stereo, lossless and
   hybrid lossy without a correction file, every decorrelation term, joint/false stereo,
   shifts, extended-integer fixups, the muting of bad blocks, CRC checks, junk skipping and
@@ -385,21 +385,22 @@ only matters for names so long that neither file can exist.
   file is malformed), the extended 32-bit `wvx` stream, legacy (pre-4.0) files.
 - C++ callocs whatever length the header claims (up to INT_MAX frames) and crashes when
   that fails; our allocation is fallible, so such a file fails to load instead.
-- Opus (map sounds): `opus-pure` 0.2.5 (pure Rust, Ogg demuxer included) decodes; on top
-  `client/src/opus.rs` ports what opusfile's `op_read` does in float builds: libopus
-  `opus_pcm_soft_clip` per packet, then `op_float2short_filter` (triangular dither with IIR
-  noise shaping, PRNG seeded with the stream serial, muting after silence, `lrintf`).
-  A float decoder cannot be bit-exact with libopus 1.3.1 on x86, so the tolerance (§13.13
-  answer 1) is: lengths, channels and loop starts exact; samples within 9 steps of 16 bits
-  (peak -71 dBFS), mean difference at most 1 step. Measured on all 60 embedded sounds of
-  `data/maps` and the user's 303 downloaded maps (`rs_parity opus`, 143M samples): all
-  lengths/channels/loop starts identical, worst 9, mean 0.64, 66% of samples identical.
-  The committed test checks Sunny Side Up's sound (4 windows) against opusfile.
-- A damaged Ogg page (CRC) fails the whole Opus sound; opusfile resyncs and plays the
-  rest. A panic inside the third-party decoder is caught and is a failed decode (map
-  sounds come from servers).
-- `LOOP_START=` is parsed with Rust's integer parse (C++ `str_toint`); they differ only on
-  odd spellings such as a leading `+`.
+- Opus (map sounds): the C libraries, by the user's fallback rule (2026-11-27: a decoder
+  that cannot reach exact parity in pure Rust switches to the C library, vendored and
+  built with `cc`, behind a small safe wrapper). The pure-Rust try (`opus-pure` plus
+  ports of opusfile's soft clip and dither) got within 9 steps (mean 0.64), not exact.
+  Now `rust-client/vendor/` holds libopus 1.3.1, libogg 1.3.5 and opusfile 0.12 (the
+  ddnet-libs versions, library sources only), `client/build.rs` builds them, and
+  `client/src/opus.rs` is the only module that calls them (SAFETY comments on every
+  `unsafe`). A plain C build still differed from the ddnet-libs DLL (worst 8): that DLL
+  is built by GCC with the x86 intrinsics and run-time CPU detection, whose SIMD paths
+  round differently. With the same configuration (`OPUS_HAVE_RTCD`, SSE/SSE2 presumed,
+  SSE4.1 detected, the `celt/x86` and `silk/x86` sources) all 60 map sounds of `data/maps`
+  and the user's downloaded maps decode identically to it (143M samples, 0 differ). The
+  result depends on the CPU's features the same way as C++ on the same machine.
+- A damaged Ogg page is skipped by opusfile as in C++; C code cannot be caught like a
+  panic, so the damage test (`opus_survives_damage`) checks it does not crash.
+- `LOOP_START=` is parsed like DDNet's `str_toint` (`strtol` rules, ported).
 - Device: cpal (WASAPI) at the device's rate (SDL opens with ALLOW_FREQUENCY_CHANGE). The
   callback pulls `Mix` in SDL's fixed chunks of `snd_buffer_size` frames, so looping
   voices restart at the same frames as in C++. Stereo goes into the first two device

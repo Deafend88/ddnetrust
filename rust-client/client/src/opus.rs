@@ -1,205 +1,184 @@
-//! Ogg Opus decoding as C++ `CSound::DecodeOpus` (engine/client/sound.cpp:464) does it with
-//! opusfile 0.12 and libopus 1.3.1 (float builds): `op_open_memory`, `op_read` to 16 bits
-//! until the end, the `LOOP_START=` tag. The Ogg pages, the Opus decoder and the pre-skip
-//! and end trimming come from `opus-pure`; on top of that this ports what `op_read` does
-//! to the float output: libopus `opus_pcm_soft_clip` per decoded packet and opusfile's
-//! `op_float2short_filter` (triangular dither with IIR noise shaping, seeded with the
-//! stream's serial number). A float decoder on x86 cannot be bit-exact with libopus, so
-//! samples may differ by a few steps (DECISIONS.md 13.3); lengths, channels and loop
-//! starts are exact.
+//! Ogg Opus decoding: C++ `CSound::DecodeOpus` (engine/client/sound.cpp:464) on the real
+//! opusfile 0.12 / libopus 1.3.1 / libogg 1.3.5, vendored in `rust-client/vendor` and built
+//! by `build.rs` (no pure-Rust decoder is bit-exact with libopus: DECISIONS.md 13.3).
+//!
+//! This module is the only place that calls opusfile; every `unsafe` block is an FFI call
+//! with its SAFETY reasoning, and the API is safe.
 
 use crate::wavpack::Decoded;
-use opus_pure::{OggOpusReader, Trim};
+use std::ffi::{c_char, c_int, c_uchar};
 
-/// C: opusfile.c `op_rand`.
-fn op_rand(seed: u32) -> u32 {
-    seed.wrapping_mul(96314165).wrapping_add(907633515)
+/// opusfile's `OggOpusFile`, opaque.
+#[repr(C)]
+struct OggOpusFile {
+    _private: [u8; 0],
 }
 
-const OP_GAIN: f32 = 32753.0;
-const OP_PRNG_GAIN: f32 = 1.0 / 0xFFFF_FFFFu32 as f32;
-const OP_FCOEF_B: [f32; 4] = [2.2374, -0.7339, -0.1251, -0.6033];
-const OP_FCOEF_A: [f32; 4] = [0.9030, 0.0116, -0.5853, -0.2571];
-
-/// opusfile's dither state (`dither_a/b`, `dither_mute`, `dither_seed`).
-struct Dither {
-    a: [[f32; 4]; 2],
-    b: [[f32; 4]; 2],
-    mute: i32,
-    seed: u32,
-    first: bool,
+/// opusfile's `OpusTags`.
+#[repr(C)]
+struct OpusTags {
+    user_comments: *mut *mut c_char,
+    comment_lengths: *mut c_int,
+    comments: c_int,
+    vendor: *mut c_char,
 }
 
-/// C: opusfile.c `op_float2short_filter` with `OP_SOFT_CLIP` (the dither is on).
-fn float2short(
-    d: &mut Dither,
-    clip: &mut [f32; 2],
-    src: &mut [f32],
-    ch: usize,
-    out: &mut Vec<i16>,
-) {
-    if d.first {
-        *clip = [0.0; 2];
+unsafe extern "C" {
+    fn op_open_memory(data: *const c_uchar, size: usize, error: *mut c_int) -> *mut OggOpusFile;
+    fn op_channel_count(of: *const OggOpusFile, li: c_int) -> c_int;
+    fn op_pcm_total(of: *const OggOpusFile, li: c_int) -> i64;
+    fn op_read(of: *mut OggOpusFile, pcm: *mut i16, buf_size: c_int, li: *mut c_int) -> c_int;
+    fn op_tags(of: *const OggOpusFile, li: c_int) -> *const OpusTags;
+    fn op_free(of: *mut OggOpusFile);
+}
+
+/// An open file; freed on drop. It borrows the data, which opusfile reads in place.
+struct File<'a> {
+    of: *mut OggOpusFile,
+    _data: &'a [u8],
+}
+
+impl Drop for File<'_> {
+    fn drop(&mut self) {
+        // SAFETY: `of` came from `op_open_memory`, is non-null and freed only here.
+        unsafe { op_free(self.of) }
     }
-    soft_clip(src, ch, clip);
-    let mut mute = if d.first { 65 } else { d.mute };
-    if mute > 64 {
-        d.a = [[0.0; 4]; 2];
+}
+
+impl<'a> File<'a> {
+    fn open(data: &'a [u8]) -> Option<Self> {
+        let mut error = 0;
+        // SAFETY: the pointer and length describe `data`, which outlives the file (the
+        // borrow in `File`); `error` is a valid out pointer.
+        let of = unsafe { op_open_memory(data.as_ptr(), data.len(), &mut error) };
+        (!of.is_null()).then_some(File { of, _data: data })
     }
-    for frame in src.chunks_exact(ch) {
-        let mut silent = true;
-        for (ci, &x) in frame.iter().enumerate() {
-            silent &= x == 0.0;
-            let mut s = x * OP_GAIN;
-            let mut err = 0.0f32;
-            for j in 0..4 {
-                err += OP_FCOEF_B[j] * d.b[ci][j] - OP_FCOEF_A[j] * d.a[ci][j];
-            }
-            d.a[ci].copy_within(0..3, 1);
-            d.b[ci].copy_within(0..3, 1);
-            d.a[ci][0] = err;
-            s -= err;
-            let r = if mute > 16 {
-                0.0
-            } else {
-                d.seed = op_rand(d.seed);
-                let r = d.seed as f32 * OP_PRNG_GAIN;
-                d.seed = op_rand(d.seed);
-                r - d.seed as f32 * OP_PRNG_GAIN
-            };
-            // op_float2int is lrintf (round half to even)
-            let si = (s + r).clamp(-32768.0, 32767.0).round_ties_even() as i32;
-            out.push(si as i16);
-            d.b[ci][0] = if mute > 16 {
-                0.0
-            } else {
-                (si as f32 - s).clamp(-1.5, 1.5)
-            };
+
+    fn channel_count(&self) -> i32 {
+        // SAFETY: `of` is an open file.
+        unsafe { op_channel_count(self.of, -1) }
+    }
+
+    fn pcm_total(&self) -> i64 {
+        // SAFETY: `of` is an open file.
+        unsafe { op_pcm_total(self.of, -1) }
+    }
+
+    /// `op_read` into `buf`: the sample frames read, or a negative error.
+    fn read(&mut self, buf: &mut [i16]) -> i32 {
+        let len = buf.len().min(c_int::MAX as usize) as c_int;
+        // SAFETY: `of` is an open file; opusfile writes at most `len` values into `buf`,
+        // which holds at least that many; a null link index pointer is allowed.
+        unsafe { op_read(self.of, buf.as_mut_ptr(), len, std::ptr::null_mut()) }
+    }
+
+    /// The comments of the tags, as bytes.
+    fn comments(&self) -> Vec<Vec<u8>> {
+        // SAFETY: `of` is an open file; the tags it returns live as long as it does.
+        let tags = unsafe { op_tags(self.of, -1) };
+        if tags.is_null() {
+            return Vec::new();
         }
-        mute += 1;
-        if !silent {
-            mute = 0;
-        }
-    }
-    d.mute = mute.min(65);
-    d.first = false;
-}
-
-/// C: libopus 1.3.1 opus.c `opus_pcm_soft_clip`, on interleaved `x` of `c` channels.
-fn soft_clip(x: &mut [f32], c: usize, declip_mem: &mut [f32; 2]) {
-    let n = x.len() / c;
-    if n < 1 {
-        return;
-    }
-    for v in x.iter_mut() {
-        *v = v.clamp(-2.0, 2.0);
-    }
-    for (ch, mem) in declip_mem.iter_mut().enumerate().take(c) {
-        let at = |i: usize| i * c + ch;
-        let mut a = *mem;
-        for i in 0..n {
-            if x[at(i)] * a >= 0.0 {
-                break;
-            }
-            x[at(i)] += a * x[at(i)] * x[at(i)];
-        }
-        let mut curr = 0;
-        let x0 = x[at(0)];
-        loop {
-            let Some(i) = (curr..n).find(|&i| x[at(i)] > 1.0 || x[at(i)] < -1.0) else {
-                a = 0.0;
-                break;
-            };
-            let mut peak_pos = i;
-            let (mut start, mut end) = (i, i);
-            let mut maxval = x[at(i)].abs();
-            while start > 0 && x[at(i)] * x[at(start - 1)] >= 0.0 {
-                start -= 1;
-            }
-            while end < n && x[at(i)] * x[at(end)] >= 0.0 {
-                if x[at(end)].abs() > maxval {
-                    maxval = x[at(end)].abs();
-                    peak_pos = end;
-                }
-                end += 1;
-            }
-            let special = start == 0 && x[at(i)] * x[at(0)] >= 0.0;
-            a = (maxval - 1.0) / (maxval * maxval);
-            a += a * 2.4e-7;
-            if x[at(i)] > 0.0 {
-                a = -a;
-            }
-            for k in start..end {
-                x[at(k)] += a * x[at(k)] * x[at(k)];
-            }
-            if special && peak_pos >= 2 {
-                let mut offset = x0 - x[at(0)];
-                let delta = offset / peak_pos as f32;
-                for k in curr..peak_pos {
-                    offset -= delta;
-                    x[at(k)] += offset;
-                    x[at(k)] = x[at(k)].clamp(-1.0, 1.0);
-                }
-            }
-            curr = end;
-            if curr == n {
-                break;
-            }
-        }
-        *mem = a;
+        // SAFETY: `tags` points to the file's `OpusTags`, whose `user_comments` and
+        // `comment_lengths` arrays hold `comments` entries.
+        let t = unsafe { &*tags };
+        (0..t.comments.max(0) as usize)
+            .filter_map(|i| {
+                // SAFETY: `i < comments`, see above.
+                let (p, n) = unsafe { (*t.user_comments.add(i), *t.comment_lengths.add(i)) };
+                // SAFETY: a non-null comment has `n` bytes (opusfile stores the length).
+                (!p.is_null()).then(|| unsafe {
+                    std::slice::from_raw_parts(p as *const u8, n.max(0) as usize).to_vec()
+                })
+            })
+            .collect()
     }
 }
 
-/// C++ `CSound::DecodeOpus`: `None` where C++ logs an error and returns false. Map sounds
-/// come from servers, so a panic inside the third-party decoder is a failed decode too.
-/// A damaged Ogg page fails the whole sound (opusfile skips the page and plays on).
-pub fn decode(data: &[u8]) -> Option<Decoded> {
-    std::panic::catch_unwind(|| decode_inner(data))
-        .ok()
-        .flatten()
-}
-
-fn decode_inner(data: &[u8]) -> Option<Decoded> {
-    let mut reader = OggOpusReader::new(data).ok()?;
-    let head = reader.head().clone();
-    let ch = head.channel_count as usize;
-    if ch > 2 {
+/// DDNet's `str_toint` (base/str.cpp:874): `strtol` (whitespace, sign, digits, 32-bit `long`
+/// saturating) with nothing after the number; an empty string is 0.
+fn str_toint(s: &[u8]) -> Option<i32> {
+    let t = s.trim_ascii_start();
+    let (neg, rest) = match t.first() {
+        Some(b'-') => (true, &t[1..]),
+        Some(b'+') => (false, &t[1..]),
+        _ => (false, t),
+    };
+    let n = rest.iter().take_while(|c| c.is_ascii_digit()).count();
+    if n == 0 {
+        // no conversion: strtol's end is the start of the string
+        return s.is_empty().then_some(0);
+    }
+    if n != rest.len() {
         return None;
     }
-    let mut decoder = head.decoder(48000).ok()?;
-    let mut trim = Trim::new(&head, 48000, ch).ok()?;
-    let mut dither = Dither {
-        a: [[0.0; 4]; 2],
-        b: [[0.0; 4]; 2],
-        mute: 0,
-        seed: reader.serial(),
-        first: true,
-    };
-    let mut clip = [0.0f32; 2];
-    let mut pcm = vec![0f32; 5760 * ch];
-    let mut out = Vec::new();
-    while let Some(packet) = reader.read_packet().ok()? {
-        let n = decoder.decode(&packet.data, 5760, &mut pcm).ok()?;
-        let range = trim.keep_range(&packet, n * ch);
-        if !range.is_empty() {
-            float2short(&mut dither, &mut clip, &mut pcm[range], ch, &mut out);
+    let v = rest
+        .iter()
+        .fold(0i64, |v, &c| (v * 10 + (c - b'0') as i64).min(1 << 40));
+    let v = if neg { -v } else { v };
+    Some(v.clamp(i32::MIN as i64, i32::MAX as i64) as i32)
+}
+
+/// C++ `CSound::DecodeOpus`: `None` where C++ logs an error and returns false.
+pub fn decode(data: &[u8]) -> Option<Decoded> {
+    let mut file = File::open(data)?;
+    let channels = file.channel_count();
+    if channels > 2 {
+        return None;
+    }
+    // C++ stores the int64 total in an int
+    let num_samples = file.pcm_total() as i32;
+    if num_samples < 0 || channels < 1 {
+        return None;
+    }
+    let ch = channels as usize;
+    let mut pcm = Vec::new();
+    pcm.try_reserve_exact(num_samples as usize * ch).ok()?;
+    pcm.resize(num_samples as usize * ch, 0i16);
+    let mut pos = 0usize;
+    while pos < num_samples as usize {
+        let read = file.read(&mut pcm[pos * ch..]);
+        if read < 0 {
+            return None;
+        }
+        if read == 0 {
+            break; // EOF
+        }
+        pos += read as usize;
+    }
+    pcm.truncate(pos * ch);
+    let mut loop_start = 0;
+    let comments = file.comments();
+    if let Some(c) = comments.iter().find(|c| c.starts_with(b"LOOP_START=")) {
+        // C++: the first LOOP_START tag decides; a bad or out of range value keeps 0
+        if let Some(v) = str_toint(&c[b"LOOP_START=".len()..])
+            && v >= 0
+            && (v as usize) < pos
+        {
+            loop_start = v as usize;
         }
     }
-    let frames = out.len() / ch;
-    // C++: the first LOOP_START= comment decides; bad or out of range values keep 0
-    let loop_start = reader
-        .tags()
-        .comments
-        .iter()
-        .find_map(|c| c.strip_prefix("LOOP_START="))
-        .and_then(|v| v.trim().parse::<i64>().ok())
-        .filter(|&v| v >= 0 && (v as usize) < frames)
-        .unwrap_or(0) as usize;
     Some(Decoded {
-        data: out,
-        frames,
+        data: pcm,
+        frames: pos,
         rate: 48000,
         channels: ch,
         loop_start,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::str_toint;
+
+    #[test]
+    fn str_toint_like_strtol() {
+        assert_eq!(str_toint(b"123"), Some(123));
+        assert_eq!(str_toint(b" -7"), Some(-7));
+        assert_eq!(str_toint(b"+5"), Some(5));
+        assert_eq!(str_toint(b""), Some(0));
+        assert_eq!(str_toint(b" "), None);
+        assert_eq!(str_toint(b"12x"), None);
+        assert_eq!(str_toint(b"99999999999"), Some(i32::MAX));
+    }
 }

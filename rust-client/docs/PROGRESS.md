@@ -1266,10 +1266,12 @@ User review: chat approved; fixes before sound.
   `src/tools/rs_parity_sound.cpp`, copies of `CWavpackReader` and `DecodeWV`, linked to the
   real libwavpack): all 131 `data/audio/*.wv` plus 4 damaged variants each (655 cases,
   483 decodes) identical; `client/tests/sound.rs`, plus a no-panic damage test.
-- Piece B, Opus: `client/src/opus.rs` (opus-pure + ports of opusfile's soft clip and
-  dither). `rs_parity opus` (copy of `DecodeOpus` on real opusfile) over 60 map sounds:
-  lengths/channels/loop starts identical, samples within 9 steps (mean 0.64), DECISIONS.
-  Committed check: Sunny Side Up (`tests/golden/opus_sunny.*`); the corpus check runs with
+- Piece B, Opus: first pure Rust (opus-pure + opusfile's soft clip and dither): within 9
+  steps, not exact. By the user's fallback rule it now uses the vendored C opusfile/libopus/
+  libogg (`rust-client/vendor`, `client/build.rs` with `cc`, safe wrapper
+  `client/src/opus.rs`) in ddnet-libs' configuration (intrinsics + RTCD): identical to
+  ddnet-libs on all 60 map sounds (`rs_parity opus`, 143M samples). Committed check:
+  Sunny Side Up's full PCM hash (`tests/golden/opus_sunny.txt`); the corpus check runs with
   `RS_OPUS_REF`/`RS_OPUS_CORPUS` (see "Regenerate parity data").
 - Piece C, mixer: `client/src/sound.rs` (C++ `CSound` without the device: sample slots,
   voices, channels, `Play`/`Stop`/voice setters, `RateConvert`, `AdvanceVoice`, `Mix`).
