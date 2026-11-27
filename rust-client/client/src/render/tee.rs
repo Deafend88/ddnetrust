@@ -82,7 +82,9 @@ impl Skin {
 pub struct Sprites(Vec<Option<TextureId>>);
 
 impl Sprites {
-    pub fn load(gfx: &mut Gfx, storage: &Storage) -> Self {
+    /// C++: `LoadGameSkin`, `LoadParticlesSkin`, `LoadEmoticonsSkin`, `LoadExtrasSkin` with
+    /// the chosen packs.
+    pub fn load(gfx: &mut Gfx, storage: &Storage, packs: &assets::Packs) -> Self {
         let mut textures = vec![None; SPRITES.len()];
         for kind in [
             assets::GAME,
@@ -92,7 +94,7 @@ impl Sprites {
         ] {
             let set_index = SPRITESETS.iter().position(|s| s.name == kind.0).unwrap();
             let set = &SPRITESETS[set_index];
-            let asset = assets::load_asset(storage, kind, "default");
+            let asset = assets::load_asset(storage, kind, packs.of(kind));
             let Some(image) = asset.image.and_then(|mut i| {
                 (i.check_divisibility(set.gridx as u32, set.gridy as u32, true)
                     && i.format == Format::Rgba)
@@ -116,6 +118,14 @@ impl Sprites {
 
     pub fn get(&self, sprite: usize) -> Option<TextureId> {
         self.0[sprite]
+    }
+
+    /// Frees the textures (C++ unloads them before loading another pack).
+    pub fn free(self, gfx: &mut Gfx) {
+        self.0
+            .into_iter()
+            .flatten()
+            .for_each(|t| gfx.free_texture(t));
     }
 }
 

@@ -457,7 +457,8 @@ impl App {
         config.present_mode = present_mode(self.vsync);
         surface.configure(&device, &config);
         let mut gfx = Gfx::new(device, queue, config.format, size_of(&config));
-        let players = Players::new(&mut gfx, &self.storage);
+        let packs = assets::Packs::from_config(&self.settings.config);
+        let players = Players::new(&mut gfx, &self.storage, &packs);
         let c = &self.settings.config;
         let ui = Ui::new(
             &window,
@@ -1015,6 +1016,28 @@ impl App {
                     self.sounds.skid(pos, 1.0, &self.settings.config);
                 }
                 map.render_foreground(&mut batch, &view);
+                // C++ CHud::RenderCursor (the last thing the HUD draws, over the map)
+                let local = s.client.local_id();
+                // C++ m_LocalCharacterPos: our own tee (not a --follow'ed one)
+                let own = rendered.iter().find(|t| Some(t.id) == local);
+                if let (Some(p), Some(id), Some(own)) = (&s.predictor, local, own)
+                    && !p.spectating
+                {
+                    let cam = &s.camera;
+                    let target = ddnet_rs::render::cursor::target_pos(
+                        own.pos,
+                        s.controls.mouse_pos,
+                        cam.dyncam_target_offset,
+                        cam.dyncam_current_offset,
+                        cam.zoom,
+                    );
+                    let weapon = p.predicted[id as usize].active_weapon;
+                    let aspect = size.width as f32 / size.height as f32;
+                    let sprites = r.players.sprites();
+                    ddnet_rs::render::cursor::render(
+                        &mut batch, sprites, weapon, target, cam.center, aspect,
+                    );
+                }
                 // the game layer's world rect (C++ Graphics()->GetScreen() there)
                 let aspect = size.width as f32 / size.height as f32;
                 let rect = ddnet_rs::render::map_screen_to_world(
@@ -1532,9 +1555,9 @@ fn main() {
     let vsync = options.vsync || settings.config.gfx_vsync != 0;
     let hud: Vec<Box<dyn Widget>> = vec![
         Box::new(Watermark::default()),
-        Box::new(StatusBar::new(&storage)),
+        Box::new(StatusBar::new(&storage, &settings.config.cl_asset_game)),
         Box::new(Movement),
-        Box::new(Killfeed::new(&storage)),
+        Box::new(Killfeed::new(&storage, &settings.config.cl_asset_game)),
         Box::new(Island::default()),
         Box::new(NowPlayingCard::default()),
     ];

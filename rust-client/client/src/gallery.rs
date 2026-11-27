@@ -218,7 +218,7 @@ pub const STATUS_SIZE: Size = Size {
 /// Draws the race status page into the world target of `gfx` (sized `STATUS_SIZE`).
 pub fn render_status(gfx: &mut Gfx, storage: &Storage) {
     let glass = Glass::Subtle;
-    let mut icons = WeaponIcons::new(storage);
+    let mut icons = WeaponIcons::new(storage, "default");
     let examples = statusview::examples();
     render_page(gfx, glass, 3, stripes, |ctx| {
         egui::Area::new(egui::Id::unique("status_gallery"))

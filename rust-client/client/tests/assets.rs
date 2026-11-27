@@ -301,3 +301,91 @@ fn map_images_load_from_data_dir() {
     assert!(external > 10, "{external}");
     assert!(load_asset(&without, GAME, "default").image.is_none());
 }
+
+fn fnv(data: &[u8]) -> u64 {
+    data.iter().fold(0xcbf2_9ce4_8422_2325u64, |h, &b| {
+        (h ^ b as u64).wrapping_mul(0x100_0000_01b3)
+    })
+}
+
+/// Our pack loading (`assets::load_asset`, the grid and RGBA checks, `sprite_image`) for
+/// every pack of `rs_parity assets <golden> <root>...` against its copies of the C++
+/// loader: the file the chain loads, its validity, and every sprite of the kind's set.
+fn check_packs(golden: &str, roots: &[std::path::PathBuf]) -> usize {
+    use ddnet_rs::render::content::{SPRITES, SPRITESETS};
+    let storage = ddnet_rs::storage::Storage {
+        paths: roots.to_vec(),
+        user_dir: None,
+        data_dir: None,
+    };
+    let kinds = [
+        ddnet_rs::assets::GAME,
+        ddnet_rs::assets::PARTICLES,
+        ddnet_rs::assets::EMOTICONS,
+        ddnet_rs::assets::HUD,
+        ddnet_rs::assets::EXTRAS,
+    ];
+    let text = std::fs::read_to_string(golden).unwrap();
+    let mut want = text.lines().peekable();
+    let mut packs = 0;
+    while let Some(line) = want.next() {
+        let (_, rest) = line.split_once("pack ").unwrap();
+        let (dir, name) = rest.split_once(' ').unwrap();
+        let kind = *kinds.iter().find(|k| k.0 == dir).unwrap();
+        let asset = ddnet_rs::assets::load_asset(&storage, kind, name);
+        let set_index = SPRITESETS.iter().position(|s| s.name == dir);
+        let mut got = Vec::new();
+        let loaded = asset.image.is_some();
+        let valid = asset.image.and_then(|mut i| {
+            let set = &SPRITESETS[set_index?];
+            (i.check_divisibility(set.gridx as u32, set.gridy as u32, true)
+                && i.format == image::Format::Rgba)
+                .then_some(i)
+        });
+        got.push(format!(
+            "asset {} {} {}",
+            asset.path,
+            loaded as i32,
+            valid.is_some() as i32
+        ));
+        if let Some(img) = &valid {
+            for s in SPRITES.iter().filter(|s| Some(s.set) == set_index) {
+                let sprite = ddnet_rs::skin::sprite_image(img, asset.fallback.as_ref(), s);
+                got.push(format!(
+                    "sprite {} {} {} {:016x}",
+                    s.name,
+                    sprite.width,
+                    sprite.height,
+                    fnv(&sprite.data)
+                ));
+            }
+        }
+        for g in got {
+            assert_eq!(Some(g.as_str()), want.next(), "{line}");
+        }
+        assert!(want.peek().is_none_or(|l| l.starts_with("pack ")), "{line}");
+        packs += 1;
+    }
+    packs
+}
+
+#[test]
+fn asset_packs_match_cpp() {
+    let packs = check_packs(
+        &repo("rust-client/tests/golden/assets.txt"),
+        &[std::path::PathBuf::from(repo("data"))],
+    );
+    assert_eq!(packs, 11);
+}
+
+/// More packs: `RS_ASSETS_EXTRA` = `<rs_parity assets output>;<root>;<root>...`.
+#[test]
+fn asset_packs_match_cpp_extra() {
+    let Ok(v) = std::env::var("RS_ASSETS_EXTRA") else {
+        return;
+    };
+    let mut parts = v.split(';');
+    let golden = parts.next().unwrap().to_string();
+    let roots: Vec<std::path::PathBuf> = parts.map(std::path::PathBuf::from).collect();
+    println!("{} packs", check_packs(&golden, &roots));
+}

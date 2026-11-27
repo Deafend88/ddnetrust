@@ -17,6 +17,53 @@ pub const EMOTICONS: (&str, &str) = ("emoticons", "emoticons.png");
 pub const HUD: (&str, &str) = ("hud", "hud.png");
 pub const EXTRAS: (&str, &str) = ("extras", "extras.png");
 
+/// The chosen packs: C++ `cl_asset_game`, `cl_asset_particles`, `cl_asset_emoticons`,
+/// `cl_asset_hud`, `cl_asset_extras` (read from `settings_ddnet.cfg`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Packs {
+    pub game: String,
+    pub particles: String,
+    pub emoticons: String,
+    pub hud: String,
+    pub extras: String,
+}
+
+impl Default for Packs {
+    fn default() -> Self {
+        let d = || "default".to_string();
+        Packs {
+            game: d(),
+            particles: d(),
+            emoticons: d(),
+            hud: d(),
+            extras: d(),
+        }
+    }
+}
+
+impl Packs {
+    pub fn from_config(c: &crate::config::Config) -> Self {
+        Packs {
+            game: c.cl_asset_game.clone(),
+            particles: c.cl_asset_particles.clone(),
+            emoticons: c.cl_asset_emoticons.clone(),
+            hud: c.cl_asset_hud.clone(),
+            extras: c.cl_asset_extras.clone(),
+        }
+    }
+
+    /// The pack chosen for an asset kind (`GAME`, `PARTICLES`, ...).
+    pub fn of(&self, kind: (&str, &str)) -> &str {
+        match kind.0 {
+            "game" => &self.game,
+            "particles" => &self.particles,
+            "emoticons" => &self.emoticons,
+            "hud" => &self.hud,
+            _ => &self.extras,
+        }
+    }
+}
+
 /// C++: `CGameClient::CImageAsset`.
 pub struct Asset {
     pub path: String,

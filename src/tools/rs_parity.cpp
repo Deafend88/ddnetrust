@@ -117,6 +117,7 @@ int ScoreboardMode(const char *pOutFile); // rs_parity_scoreboard.cpp
 int WvMode(const char *pOutFile, int NumDirs, const char *const *ppDirs); // rs_parity_sound.cpp
 int OpusMode(const char *pOutDir, const char *pDir); // rs_parity_sound.cpp
 int MixerMode(const char *pOutFile, const char *pAudioDir); // rs_parity_sound.cpp
+int AssetsMode(const char *pOutFile, int NumRoots, const char *const *ppRoots); // rs_parity_assets.cpp
 
 typedef std::vector<unsigned char> Bytes;
 
@@ -3103,6 +3104,8 @@ int main(int argc, const char **argv)
 		return OpusMode(argv[2], argv[3]);
 	if(argc == 4 && str_comp(argv[1], "mixer") == 0)
 		return MixerMode(argv[2], argv[3]);
+	if(argc >= 4 && str_comp(argv[1], "assets") == 0)
+		return AssetsMode(argv[2], argc - 3, argv + 3);
 	if(argc == 3 && str_comp(argv[1], "antiping-timing") == 0)
 		return AntiPingMode(nullptr, argv[2]);
 	if(argc == 4 && (str_comp(argv[1], "msgs") == 0 || str_comp(argv[1], "antiping") == 0))
@@ -3134,6 +3137,6 @@ int main(int argc, const char **argv)
 			return CoreMode(argv[2], argv[3], HookTele, Verbose);
 		return CollisionMode(argv[2], argv[3], HookTele, Verbose);
 	}
-	log_error(TOOL_NAME, "Usage: %s map <map file> <output file> <scratch dir> | collision|core|world|weapons <map file> <output file> [hooktele] [verbose] | doors|netents|mapimages|envelopes|items|msgs|antiping <map file> <output file> | envelopes-synthetic|screen|anims|colors|interp|camera|movement|antiping-timing|chat|scoreboard <output file> | wv <output file> <dir>... | opus <output dir> <dir> | mixer <output file> <audio dir> | png <output file> <dir>... | skins <output file> <dir>", argc > 0 ? argv[0] : TOOL_NAME);
+	log_error(TOOL_NAME, "Usage: %s map <map file> <output file> <scratch dir> | collision|core|world|weapons <map file> <output file> [hooktele] [verbose] | doors|netents|mapimages|envelopes|items|msgs|antiping <map file> <output file> | envelopes-synthetic|screen|anims|colors|interp|camera|movement|antiping-timing|chat|scoreboard <output file> | wv <output file> <dir>... | opus <output dir> <dir> | mixer <output file> <audio dir> | assets <output file> <root>... | png <output file> <dir>... | skins <output file> <dir>", argc > 0 ? argv[0] : TOOL_NAME);
 	return -1;
 }

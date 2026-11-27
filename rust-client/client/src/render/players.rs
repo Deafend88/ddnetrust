@@ -143,14 +143,19 @@ struct Drawn {
 }
 
 impl Players {
-    pub fn new(gfx: &mut Gfx, storage: &Storage) -> Self {
-        // C++ cl_asset_game and cl_asset_emoticons "default"
+    pub fn new(gfx: &mut Gfx, storage: &Storage, packs: &crate::assets::Packs) -> Self {
         Self {
             quads: Quads::default(),
-            sprites: Sprites::load(gfx, storage),
+            sprites: Sprites::load(gfx, storage, packs),
             skins: Skins::default(),
             skids: Vec::new(),
         }
+    }
+
+    /// Loads other packs (C++ the `cl_asset_*` change callbacks).
+    pub fn set_packs(&mut self, gfx: &mut Gfx, storage: &Storage, packs: &crate::assets::Packs) {
+        let old = std::mem::replace(&mut self.sprites, Sprites::load(gfx, storage, packs));
+        old.free(gfx);
     }
 
     /// The game, particles, emoticons and extras sprites (shared with `Items`).

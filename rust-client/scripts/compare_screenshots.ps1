@@ -20,6 +20,9 @@
 # (cl_run_on_join spec subject) and DDNet-rs follows it, so both cameras sit on the same
 # tee even where the C++ tee would move. Add -ServerArgs "sv_show_all_default 1" so the
 # server sends both clients everything, wherever their own tees are.
+# -Assets <dir> copies <dir>/assets (asset packs, e.g. "$env:APPDATA\DDNet") into both
+# clients' scratch dirs, read only; choose packs with -CppArgs 'cl_asset_game x' and
+# -RustSettings 'cl_asset_game "x"'.
 # -RustSubject makes DDNet-rs itself the subject: it joins first as "subject" (from a
 # settings_ddnet.cfg in its scratch dir) and plays its own tee without grabbing the mouse;
 # the C++ client spectates it. The server then sends each client only what its camera
@@ -28,7 +31,7 @@
 # Usage (repo root): rust-client\scripts\compare_screenshots.ps1 -Map dm1 [-Mask "340,240,460,340"]
 param([string]$Map = "dm1", [string[]]$Mask = @("340,240,460,340"), [double]$Wait = 5, [string]$OutDir = "$env:TEMP\ddnet-rs-compare",
     [string[]]$ServerArgs = @(), [string[]]$CppArgs = @(), [string]$Name = "", [string]$Subject = "",
-    [switch]$RustSubject, [string[]]$RustArgs = @(), [string[]]$RustSettings = @())
+    [switch]$RustSubject, [string[]]$RustArgs = @(), [string[]]$RustSettings = @(), [string]$Assets = "")
 $ErrorActionPreference = "Stop"
 $repo = Resolve-Path "$PSScriptRoot\..\.."
 $srvDir = "$OutDir\server"; $cDir = "$OutDir\cpp-client"
@@ -37,6 +40,9 @@ $srvDir = "$OutDir\server"; $cDir = "$OutDir\cpp-client"
 foreach ($d in $srvDir, $cDir, $OutDir) {
     New-Item -ItemType Directory -Force $d | Out-Null
     Set-Content -Path "$d\storage.cfg" -Value "add_path `$CURRENTDIR`nadd_path `$DATADIR" -Encoding ascii
+}
+if ($Assets) {
+    foreach ($d in $cDir, $OutDir) { Copy-Item -Recurse -Force (Join-Path $Assets "assets") "$d" }
 }
 # DDNet-rs's own settings (%APPDATA%\DDNet-rs\settings.cfg) come from a scratch APPDATA:
 # your name and binds stay out, and the HUD is off (the comparison is map, tees and
@@ -88,6 +94,9 @@ try {
         $CppArgs += 'cl_run_on_join spec subject' # a string setting takes the rest of the line
     }
     Remove-Item "$OutDir\settings_ddnet.cfg" -ErrorAction SilentlyContinue
+    if ($RustSettings -and -not $RustSubject) {
+        Set-Content -Path "$OutDir\settings_ddnet.cfg" -Value $RustSettings -Encoding utf8
+    }
     if ($RustSubject) {
         Set-Content -Path "$OutDir\settings_ddnet.cfg" -Value (@('player_name "subject"') + $RustSettings) -Encoding ascii
         $r = Start-Process -FilePath "$repo\rust-client\target\debug\ddnet-rs.exe" -ArgumentList (@("127.0.0.1:8303", "--size", "800x600", "--no-grab") + $RustArgs) -WorkingDirectory $OutDir -PassThru

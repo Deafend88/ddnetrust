@@ -419,3 +419,11 @@ only matters for names so long that neither file can exist.
 - No dummy: the other-players air-jump check skips only the predicted local tee.
 - The map-sound warning is printed to stderr (C++ shows a warning popup).
 
+## 2026-11-27 — M9 13.4: crosshair and asset packs
+
+- `cl_asset_hud` is read and its loader is verified, but our HUD draws its own icons
+  (design system), so the HUD pack changes nothing visible.
+- The spectated player's cursor (`CCursorInfo`: polynomial interpolation of the
+  spectated tee's aim, `cl_spec_cursor`) comes with spectating (13.7); until then a
+  spectator sees no cursor.
+

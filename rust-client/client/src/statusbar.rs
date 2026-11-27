@@ -206,7 +206,7 @@ pub fn status(i: &Input) -> Status {
 
 /// The game skin's pickup sprites of the six weapons (C++
 /// `m_GameSkin.m_aSpritePickupWeapons`), cut from `game.png` in the data dir.
-fn weapon_images(storage: &Storage) -> Vec<Option<ColorImage>> {
+fn weapon_images(storage: &Storage, game: &str) -> Vec<Option<ColorImage>> {
     let names = [
         "pickup_hammer",
         "pickup_gun",
@@ -218,7 +218,7 @@ fn weapon_images(storage: &Storage) -> Vec<Option<ColorImage>> {
     let Some(set) = SPRITESETS.iter().find(|s| s.name == "game") else {
         return vec![None; NUM_WEAPONS];
     };
-    let asset = assets::load_asset(storage, assets::GAME, "default");
+    let asset = assets::load_asset(storage, assets::GAME, game);
     let image = asset.image.and_then(|mut i| {
         (i.check_divisibility(set.gridx as u32, set.gridy as u32, true) && i.format == Format::Rgba)
             .then_some(i)
@@ -248,9 +248,10 @@ pub struct WeaponIcons {
 }
 
 impl WeaponIcons {
-    pub fn new(storage: &Storage) -> Self {
+    /// From the game pack `game` (C++ `cl_asset_game`).
+    pub fn new(storage: &Storage, game: &str) -> Self {
         Self {
-            images: weapon_images(storage),
+            images: weapon_images(storage, game),
             textures: Vec::new(),
             silhouettes: Vec::new(),
         }
@@ -313,8 +314,8 @@ impl WeaponIcons {
 pub struct StatusBar(WeaponIcons);
 
 impl StatusBar {
-    pub fn new(storage: &Storage) -> Self {
-        Self(WeaponIcons::new(storage))
+    pub fn new(storage: &Storage, game: &str) -> Self {
+        Self(WeaponIcons::new(storage, game))
     }
 }
 

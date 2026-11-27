@@ -1297,6 +1297,21 @@ User review: chat approved; fixes before sound.
   them are); a listening check by the user is pending. No sound settings
   page yet (13.10); values come from `settings_ddnet.cfg`.
 
+#### 13.4 (2026-11-27): crosshair and asset packs — in progress
+- Piece a: `cl_asset_game/particles/emoticons/hud/extras` (and `cl_assets_entities`,
+  `cl_overlay_entities`, `cl_text_entities(_size)`, `cl_spec_cursor`) read from
+  `settings_ddnet.cfg`; `assets::Packs`; sprites, HUD weapon icons and the kill feed load
+  the chosen packs; `Players::set_packs` reloads. Crosshair: `render/cursor.rs` (C++
+  `CHud::RenderCursor` + `CControls` target position) for the local tee.
+- Verified: `rs_parity assets` (new `src/tools/rs_parity_assets.cpp`, copies of
+  `LoadAssetFromPath`, `CImageAsset`, `CheckImageDivisibility`, `IsImageFormatRgba`,
+  `LoadSpriteTexture`, `IsImageSubFullyTransparent`): every stock pack (11) and every
+  pack in the user's `%APPDATA%\DDNetssets` (27, incl. a Cyrillic name) give the same
+  file, validity and every sprite (incl. the invisible-sprite fallbacks). Visual:
+  `compare_screenshots.ps1 -Assets` with the user's packs (`docs/review/13.4/packs_*`):
+  same weapons/pickups/emoticons; differences are the C++ spectator cursor and particles.
+- Deferred: the spectated player's cursor (`CCursorInfo`) to 13.7 (spectating).
+
 #### Exact next actions (next session starts here)
 State (2026-11-27): 13.1, 13.2 and the 13.2 review fixes done and pushed; stopped for
 the user's look at `docs/review/13.2b/`. Then: 13.3 sound.
@@ -1402,6 +1417,7 @@ Build the `rs_parity` target like `rs_golden`, then per map (repo root):
     build-rs/rs_parity.exe chat rust-client/tests/golden/chat.txt
     build-rs/rs_parity.exe wv rust-client/tests/golden/wv.txt data/audio
     build-rs/rs_parity.exe mixer rust-client/tests/golden/mixer.txt data/audio
+    build-rs/rs_parity.exe assets rust-client/tests/golden/assets.txt data   # more: assets <out> %APPDATA%/DDNet data, then RS_ASSETS_EXTRA=<out>;<root>;<root>
     python rust-client/scripts/extract_map_sounds.py <corpus dir> data/maps %APPDATA%/DDNet/downloadedmaps
     build-rs/rs_parity.exe opus <ref dir> <corpus dir>   # then cargo test with RS_OPUS_REF=<ref dir> RS_OPUS_CORPUS=<corpus dir>
     rust-client\scripts\cpp_settings.ps1   # needs build-rs-client\DDNet.exe (PowerShell)

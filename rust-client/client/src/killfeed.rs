@@ -168,10 +168,10 @@ pub struct Killfeed {
 }
 
 impl Killfeed {
-    pub fn new(storage: &Storage) -> Self {
+    pub fn new(storage: &Storage, game: &str) -> Self {
         Self {
             feed: Feed::default(),
-            weapons: WeaponIcons::new(storage),
+            weapons: WeaponIcons::new(storage, game),
             heads: TeeHeads::new(storage),
         }
     }
