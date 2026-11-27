@@ -3,7 +3,7 @@
 # %TEMP%\ddnet-rs-scoreboard\server), target/debug/ddnet-rs.exe as "Alice" (APPDATA in the
 # scratch dir) and three ddnet-headless bots: Bob idles, Carol and Dave say "/team 3" (a
 # DDRace team in the scoreboard). Keys go to our window only: Alice says "/teleport Bob"
-# (practice) to stand next to him (his name plate), then logs in to rcon (F8) and runs the
+# (practice) and steps off him (his name plate beside her), then logs in to rcon (F8) and runs the
 # test command "freeze" (F9) for her own freeze bar. Captures: the world, then the
 # scoreboard while Tab is held. The server log must show the team joins.
 # Run `cargo build` first.
@@ -78,6 +78,12 @@ try {
   Start-Sleep 10; $cl.Refresh(); $h = $cl.MainWindowHandle
   [K]::PostMessage($h, 0x0007, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null; Start-Sleep -Milliseconds 300
   [K]::Key($h, 0x54); Start-Sleep -Milliseconds 200; [K]::Text($h, "/teleport Bob"); [K]::Key($h, 0x0D); Start-Sleep 1.5
+  # step off Bob (+right on D): on top of him, his tee and gun showed behind her frozen one
+  $scan = [K]::MapVirtualKey(0x44, 0)
+  [K]::PostMessage($h, 0x100, [IntPtr]0x44, [IntPtr](1 -bor ($scan -shl 16))) | Out-Null
+  Start-Sleep -Milliseconds 250
+  [K]::PostMessage($h, 0x101, [IntPtr]0x44, [IntPtr](1 -bor ($scan -shl 16) -bor (3 -shl 30))) | Out-Null
+  Start-Sleep 1
   [K]::Key($h, 0x77); Start-Sleep -Milliseconds 500; [K]::Key($h, 0x78); Start-Sleep -Milliseconds 800
   Capture $h "$Out\world.png"
   Start-Sleep 2.5; Capture $h "$Out\world2.png"
