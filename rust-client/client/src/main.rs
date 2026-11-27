@@ -349,10 +349,12 @@ impl Session {
     }
 
     /// C++: `CGameClient::UpdatePositions` (`m_LocalCharacterPos`): the rendered
-    /// position of the followed or local tee, else the last one.
+    /// position of the followed or local tee, else the last one. The followed tee falls
+    /// back to ours while the server does not send it (it sends far tees only with
+    /// `sv_show_all_default 1`); without that the world stayed grey.
     fn local_pos(&mut self, rendered: &[Rendered], follow: Option<i32>) -> Option<(f32, f32)> {
-        let id = follow.or(self.client.local_id());
-        if let Some(r) = rendered.iter().find(|r| Some(r.id) == id) {
+        let find = |id: Option<i32>| rendered.iter().find(|r| Some(r.id) == id);
+        if let Some(r) = find(follow).or_else(|| find(self.client.local_id())) {
             self.center = Some((r.pos.x, r.pos.y));
         }
         self.center
