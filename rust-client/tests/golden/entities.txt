@@ -1,84 +1,112 @@
 pack comfort 0 0
 layer assets/entities/comfort/ddnet.png 1024 1024 1 537ecccaf69eb02a
 layer assets/entities/comfort/ddnet.png 1024 1024 1 22fd6e766a1e9e7a
+tune 1024 1024 1 656280f13dadb910
 pack comfort 0 1
 layer assets/entities/comfort/ddnet.png 1024 1024 1 c216d65102245c26
 layer assets/entities/comfort/ddnet.png 1024 1024 1 89ec8a5fc6763cbc
+tune 1024 1024 1 656280f13dadb910
 pack comfort 1 0
 layer editor/entities_clear/ddrace.png 1024 1024 1 7d258c7763cde4d4
 layer editor/entities_clear/ddrace.png 1024 1024 1 02101dc1d423a659
+tune 1024 1024 1 f8e3e56ce9222325
 pack comfort 1 1
 layer editor/entities_clear/ddrace.png 1024 1024 1 d3cf2879f3c52b31
 layer editor/entities_clear/ddrace.png 1024 1024 1 f839d535807f6f89
+tune 1024 1024 1 f8e3e56ce9222325
 pack comfort 2 0
 layer editor/entities_clear/race.png 1024 1024 1 cd197a8c49900864
 layer editor/entities_clear/race.png 1024 1024 1 c1f437436d9c4a64
+tune 1024 1024 1 4840ef8d47a0e525
 pack comfort 2 1
 layer editor/entities_clear/race.png 1024 1024 1 1b975806f03164ce
 layer editor/entities_clear/race.png 1024 1024 1 107214be143da6ce
+tune 1024 1024 1 4840ef8d47a0e525
 pack comfort 3 0
 layer editor/entities_clear/blockworlds.png 1024 1024 1 6e6b1b18d208de5a
 layer editor/entities_clear/blockworlds.png 1024 1024 1 bdc633b35186a1e4
+tune 1024 1024 1 f8e3e56ce9222325
 pack comfort 3 1
 layer editor/entities_clear/blockworlds.png 1024 1024 1 6e6b1b18d208de5a
 layer editor/entities_clear/blockworlds.png 1024 1024 1 bdc633b35186a1e4
+tune 1024 1024 1 f8e3e56ce9222325
 pack comfort 4 0
 layer editor/entities_clear/fng.png 1024 1024 1 b9e36df06af01534
 layer editor/entities_clear/fng.png 1024 1024 1 d0d3c6e94d70e3d5
+tune 1024 1024 1 661a5c13f920a325
 pack comfort 4 1
 layer editor/entities_clear/fng.png 1024 1024 1 e614e280aa3f9432
 layer editor/entities_clear/fng.png 1024 1024 1 e968ffe148e7c8cb
+tune 1024 1024 1 661a5c13f920a325
 pack comfort 5 0
 layer editor/entities_clear/vanilla.png 1024 1024 1 27ccf6a07bf653cd
 layer editor/entities_clear/vanilla.png 1024 1024 1 721d0a46441e3fcd
+tune 1024 1024 1 661a5c13f920a325
 pack comfort 5 1
 layer editor/entities_clear/vanilla.png 1024 1024 1 6d883a35713f94ef
 layer editor/entities_clear/vanilla.png 1024 1024 1 b7d84ddb396780ef
+tune 1024 1024 1 661a5c13f920a325
 pack comfort 6 0
 layer editor/entities_clear/f-ddrace.png 1024 1024 1 d135b5fb0a8b56af
 layer editor/entities_clear/f-ddrace.png 1024 1024 1 3bc081397d30c9ed
+tune 1024 1024 1 97ee5566eb59519d
 pack comfort 6 1
 layer editor/entities_clear/f-ddrace.png 1024 1024 1 d135b5fb0a8b56af
 layer editor/entities_clear/f-ddrace.png 1024 1024 1 3bc081397d30c9ed
+tune 1024 1024 1 97ee5566eb59519d
 pack default 0 0
 layer editor/entities_clear/ddnet.png 1024 1024 1 30a2d082dfc6d350
 layer editor/entities_clear/ddnet.png 1024 1024 1 6b89071f263a3c72
+tune 1024 1024 1 97ee5566eb59519d
 pack default 0 1
 layer editor/entities_clear/ddnet.png 1024 1024 1 476a422ec81eb977
 layer editor/entities_clear/ddnet.png 1024 1024 1 26a752f1e618e885
+tune 1024 1024 1 97ee5566eb59519d
 pack default 1 0
 layer editor/entities_clear/ddrace.png 1024 1024 1 7d258c7763cde4d4
 layer editor/entities_clear/ddrace.png 1024 1024 1 02101dc1d423a659
+tune 1024 1024 1 f8e3e56ce9222325
 pack default 1 1
 layer editor/entities_clear/ddrace.png 1024 1024 1 d3cf2879f3c52b31
 layer editor/entities_clear/ddrace.png 1024 1024 1 f839d535807f6f89
+tune 1024 1024 1 f8e3e56ce9222325
 pack default 2 0
 layer editor/entities_clear/race.png 1024 1024 1 cd197a8c49900864
 layer editor/entities_clear/race.png 1024 1024 1 c1f437436d9c4a64
+tune 1024 1024 1 4840ef8d47a0e525
 pack default 2 1
 layer editor/entities_clear/race.png 1024 1024 1 1b975806f03164ce
 layer editor/entities_clear/race.png 1024 1024 1 107214be143da6ce
+tune 1024 1024 1 4840ef8d47a0e525
 pack default 3 0
 layer editor/entities_clear/blockworlds.png 1024 1024 1 6e6b1b18d208de5a
 layer editor/entities_clear/blockworlds.png 1024 1024 1 bdc633b35186a1e4
+tune 1024 1024 1 f8e3e56ce9222325
 pack default 3 1
 layer editor/entities_clear/blockworlds.png 1024 1024 1 6e6b1b18d208de5a
 layer editor/entities_clear/blockworlds.png 1024 1024 1 bdc633b35186a1e4
+tune 1024 1024 1 f8e3e56ce9222325
 pack default 4 0
 layer editor/entities_clear/fng.png 1024 1024 1 b9e36df06af01534
 layer editor/entities_clear/fng.png 1024 1024 1 d0d3c6e94d70e3d5
+tune 1024 1024 1 661a5c13f920a325
 pack default 4 1
 layer editor/entities_clear/fng.png 1024 1024 1 e614e280aa3f9432
 layer editor/entities_clear/fng.png 1024 1024 1 e968ffe148e7c8cb
+tune 1024 1024 1 661a5c13f920a325
 pack default 5 0
 layer editor/entities_clear/vanilla.png 1024 1024 1 27ccf6a07bf653cd
 layer editor/entities_clear/vanilla.png 1024 1024 1 721d0a46441e3fcd
+tune 1024 1024 1 661a5c13f920a325
 pack default 5 1
 layer editor/entities_clear/vanilla.png 1024 1024 1 6d883a35713f94ef
 layer editor/entities_clear/vanilla.png 1024 1024 1 b7d84ddb396780ef
+tune 1024 1024 1 661a5c13f920a325
 pack default 6 0
 layer editor/entities_clear/f-ddrace.png 1024 1024 1 d135b5fb0a8b56af
 layer editor/entities_clear/f-ddrace.png 1024 1024 1 3bc081397d30c9ed
+tune 1024 1024 1 97ee5566eb59519d
 pack default 6 1
 layer editor/entities_clear/f-ddrace.png 1024 1024 1 d135b5fb0a8b56af
 layer editor/entities_clear/f-ddrace.png 1024 1024 1 3bc081397d30c9ed
+tune 1024 1024 1 97ee5566eb59519d

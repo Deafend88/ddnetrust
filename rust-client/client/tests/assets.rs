@@ -407,21 +407,22 @@ fn check_entities(golden: &str, roots: &[std::path::PathBuf]) -> usize {
         let (pack, mod_type, masked) = (w[1], w[2].parse().unwrap(), w[3] == "1");
         let (path, img) = entities::load_image(&storage, pack, mod_type);
         let got: Vec<String> = img.map_or(Vec::new(), |img| {
-            entities::build(img, masked, mod_type)
-                .iter()
-                .map(|i| {
-                    format!(
-                        "layer {path} {} {} {} {:016x}",
-                        i.width,
-                        i.height,
-                        i.format as i32,
-                        fnv(&i.data)
-                    )
-                })
-                .collect()
+            let [all, switch, tune] = entities::build(img, masked, mod_type);
+            let dump = |i: &ddnet_rs::image::Image| {
+                let (w, h, f) = (i.width, i.height, i.format as i32);
+                format!("{w} {h} {f} {:016x}", fnv(&i.data))
+            };
+            vec![
+                format!("layer {path} {}", dump(&all)),
+                format!("layer {path} {}", dump(&switch)),
+                format!("tune {}", dump(&tune)),
+            ]
         });
         let mut want = Vec::new();
-        while lines.peek().is_some_and(|l| l.starts_with("layer ")) {
+        while lines
+            .peek()
+            .is_some_and(|l| l.starts_with("layer ") || l.starts_with("tune "))
+        {
             want.push(lines.next().unwrap().to_string());
         }
         assert_eq!(got, want, "{line}");

@@ -103,7 +103,7 @@ class CGraphics
 {
 public:
 	std::vector<std::string> m_vRoots;
-	bool HasTextureArraysSupport() const { return false; }
+	bool HasTextureArraysSupport() const { return true; } // like DDNet-rs's tile arrays: the tune map is built
 	int TextureLoadFlags() const { return 0; }
 	bool LoadPng(CImageInfo &Image, const char *pFilename, int StorageType)
 	{
@@ -125,7 +125,13 @@ public:
 		fprintf(s_pOut, "layer %s %d %d %d %016" PRIx64 "\n", pTexName, (int)Image.m_Width, (int)Image.m_Height, (int)Image.m_Format, Fnv(Image.m_pData, Image.DataSize()));
 		return IGraphics::CTextureHandle();
 	}
-	IGraphics::CTextureHandle LoadTextureRawMove(CImageInfo &Image, int Flags) { return IGraphics::CTextureHandle(); }
+	// only the tune colour map is loaded this way
+	IGraphics::CTextureHandle LoadTextureRawMove(CImageInfo &Image, int Flags)
+	{
+		fprintf(s_pOut, "tune %d %d %d %016" PRIx64 "\n", (int)Image.m_Width, (int)Image.m_Height, (int)Image.m_Format, Fnv(Image.m_pData, Image.DataSize()));
+		Image.Free();
+		return IGraphics::CTextureHandle();
+	}
 };
 
 // C++ copy: game/client/components/mapimages.cpp:200-218
