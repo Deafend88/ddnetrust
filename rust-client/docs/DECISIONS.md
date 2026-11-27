@@ -441,3 +441,13 @@ only matters for names so long that neither file can exist.
   screenshot (`docs/review/13.4/entities_text_*`), not bit for bit. FreeType itself would
   need a vendored C library for one-pixel differences in small digits.
 
+## 2026-11-28 — flaky `prediction_matches_server_with_antiping`
+
+- Two causes, both in the test, neither in the client: (1) C++ antiping predicts a grenade
+  from the snapshot, whose position is rounded to 1/100 (`projectile.cpp:355`, read back in
+  `projectile_data.cpp:79`), so a blast reaching the tee can leave its velocity one step
+  (1/256) off the server's in C++ as well (seen: `vel_x` 2071 vs 2072 at tick 284 on dm1);
+  (2) the grenade knockback made the tee's path depend on timing, and under CPU load it
+  sometimes landed in a dm1 death tile, which freezes in the test commands' practice mode,
+  so no grenade or laser was fired. The live test now runs with `tune explosion_strength 0`;
+  the explosion force stays checked against C++ at full strength by `rs_parity antiping`.

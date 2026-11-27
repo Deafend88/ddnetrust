@@ -318,7 +318,7 @@ fn check_prediction(
 
 /// Fire on top of the scripted movement: gun, shotgun, grenade and laser in turn
 /// (2 s each), fire toggled every 150 ms; with `down` aiming down half the time
-/// (grenade jumps; on dm1 they throw the tee into a death tile, which freezes it).
+/// (blasts next to the tee).
 fn fire_script(input: &mut g::ObjPlayerInput, elapsed: i64, down: bool) {
     let weapon = 1 + (elapsed / (2 * FREQ)) % 4;
     input.wanted_weapon = weapon as i32 + 1;
@@ -367,10 +367,17 @@ fn count_own_entities(client: &Client, pred: &Predictor, own: &mut [u32; 5], fou
 /// 8.5: antiping on (`cl_antiping 1`: weapons, other players) while firing every
 /// weapon: the local tee still matches every snapshot, and every own projectile and
 /// laser of a snapshot is in the prediction world.
+///
+/// Explosions push nobody here (`explosion_strength 0`): C++ predicts a grenade from the
+/// snapshot, whose position is rounded to 1/100 (projectile.cpp:355), so a blast that
+/// reaches the tee can be one velocity step (1/256) off in C++ too; and the knockback made
+/// the path timing-dependent, sometimes into a dm1 death tile, which freezes the tee in
+/// the test commands' practice mode before it fires grenades and lasers. The force itself
+/// is checked against C++ at full strength by `rs_parity antiping`.
 #[test]
 fn prediction_matches_server_with_antiping() {
     for map_name in ["dm1", "coverage"] {
-        if check_prediction(map_name, &[], None, true).is_none() {
+        if check_prediction(map_name, &["tune explosion_strength 0"], None, true).is_none() {
             return;
         }
     }
