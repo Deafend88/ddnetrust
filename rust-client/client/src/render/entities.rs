@@ -133,18 +133,19 @@ pub fn is_valid_tile(switch: bool, masked: bool, mod_type: usize, i: i32) -> boo
         return true;
     }
     if mod_type == MOD_DDNET || mod_type == MOD_DDRACE {
-        if mod_type == MOD_DDNET || i != 28 {
-            if !switch
-                && !is_valid_game_tile(i)
-                && !is_valid_front_tile(i)
-                && !is_valid_speedup_tile(i)
-                && !is_valid_tele_tile(i)
-                && i != TILE_TUNE
-            {
-                return false;
-            } else if switch && !is_valid_switch_tile(i) {
-                return false;
+        let other = !is_valid_game_tile(i)
+            && !is_valid_front_tile(i)
+            && !is_valid_speedup_tile(i)
+            && !is_valid_tele_tile(i)
+            && i != TILE_TUNE;
+        if (mod_type == MOD_DDNET || i != 28)
+            && if switch {
+                !is_valid_switch_tile(i)
+            } else {
+                other
             }
+        {
+            return false;
         }
     } else if matches!(mod_type, MOD_RACE | MOD_FNG | MOD_VANILLA) && is_credits_tile(i) {
         return false;
