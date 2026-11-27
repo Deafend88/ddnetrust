@@ -1241,6 +1241,13 @@ User review: chat approved; fixes before sound.
   states" in the 13.2 capture was Alice standing exactly on Bob (his tee and gun behind
   her); `scoreboard_check.ps1` now steps off him. Only difference left: C++ freezing-flake
   particles (particles are not ported). The yellow wedges on the C++ tee are its cursor.
+- Feet (second look): the grey "stones" on the feet in `frozen_tee_cpp_vs_rs.png` are
+  dm1's foreground rocks at its second spawn, drawn over tees by C++ too; DDNet-rs only
+  spawned there because the killed C++ client still held the first spawn. The script now
+  restarts the server per client (same spawn and camera), captures before and after the
+  freeze, and `-Blocker` (a headless bot on spawn 1) compares at spawn 2.
+  `review/13.2b/feet_cpp_vs_rs.png`: normal and frozen at both spawns are identical
+  except the C++ cursor and freeze flakes. No renderer change.
 - Tee icons (scoreboard, chat, killfeed): the whole idle tee with feet, centred like C++
   `RenderIdleTeeAtCenter` (skin metrics); scoreboard tee 21 -> 23 px (`size::TEE`).
 - Scoreboard: DDRace team tint pastel (lightness 0.8, alpha 0.24); ping coloured with C++

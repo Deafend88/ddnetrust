@@ -1,10 +1,11 @@
 # Frozen tee, C++ vs DDNet-rs (13.2 review): build-rs/DDNet-Server.exe (127.0.0.1:8309, dm1,
-# sv_test_cmds 1, scratch rcon password, 60 s freezes, no initial AFK) from a scratch dir;
+# sv_test_cmds 1, scratch rcon password, 60 s freezes, no initial AFK; restarted for each
+# client, so both spawn at the same spot) from a scratch dir;
 # build-rs-client/DDNet.exe joins alone (scratch storage, dead proxy), F8 logs in to rcon
 # and F9 runs the test command $Cmd (freeze, deep or livefreeze); captured, it quits;
-# then target/debug/ddnet-rs.exe does the same. Captures in $Out: cpp.png, cpp2.png (2 s
-# later), rust.png. Run `cargo build` first.
-param([string]$Out = "$env:TEMP\ddnet-rs-freeze", [string]$Cmd = "freeze")
+# then target/debug/ddnet-rs.exe does the same. Captures in $Out: cpp_normal.png and
+# rust_normal.png (before the freeze), cpp.png and rust.png. Run `cargo build` first.
+param([string]$Out = "$env:TEMP\ddnet-rs-freeze", [string]$Cmd = "freeze", [switch]$Blocker)
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Drawing
 Add-Type @"
@@ -45,23 +46,38 @@ New-Item -ItemType Directory -Force "$dir\server", "$dir\cpp", "$dir\appdata\DDN
 foreach ($d in "$dir\server", "$dir\cpp", $dir) { Set-Content "$d\storage.cfg" "add_path `$CURRENTDIR`nadd_path `$DATADIR" -Encoding ascii }
 Set-Content "$dir\appdata\DDNet-rs\settings.cfg" 'player_name "Alice"', 'bind f8 "rcon_auth test"', "bind f9 `"rcon $Cmd`"" -Encoding utf8
 $appData = $env:APPDATA; $env:APPDATA = "$dir\appdata"
-$srv = Start-Process "$root\build-rs\DDNet-Server.exe" -ArgumentList '"sv_register 0"', '"bindaddr 127.0.0.1"', '"sv_port 8309"', '"sv_map dm1"', '"sv_test_cmds 1"', '"sv_rcon_password test"', '"sv_freeze_delay 60"', '"sv_max_afk_time 0"' -WorkingDirectory "$dir\server" -PassThru -WindowStyle Hidden -RedirectStandardOutput "$dir\server.log"
-Start-Sleep 1
-try {
-  $env:ALL_PROXY = "http://127.0.0.1:9"; $env:HTTPS_PROXY = "http://127.0.0.1:9"; $env:HTTP_PROXY = "http://127.0.0.1:9"
-  $c = Start-Process "$root\build-rs-client\DDNet.exe" -ArgumentList '"gfx_backend Vulkan"', '"gfx_fullscreen 0"', '"gfx_borderless 0"', '"gfx_screen_width 1280"', '"gfx_screen_height 720"', '"snd_enable 0"', '"cl_show_welcome 0"', '"cl_motd_time 0"', '"player_name Cpp"', '"bind f8 \"rcon_auth test\""', "`"bind f9 \`"rcon $Cmd\`"`"", '"connect 127.0.0.1:8309"' -WorkingDirectory "$dir\cpp" -PassThru
-  Start-Sleep 6; $c.Refresh(); $h = $c.MainWindowHandle
-  [K2]::SetForegroundWindow($h) | Out-Null; Start-Sleep -Milliseconds 300
-  [K2]::Key($h, 0x77); Start-Sleep -Milliseconds 600; [K2]::Key($h, 0x78); Start-Sleep 1.5
-  Capture $h "$Out\cpp.png"; Start-Sleep 2; Capture $h "$Out\cpp2.png"
-  Stop-Process -Id $c.Id -Force; Start-Sleep 2
-  $r = Start-Process "$root\rust-client\target\debug\ddnet-rs.exe" -ArgumentList "127.0.0.1:8309", "--size", "1280x720", "--no-grab" -WorkingDirectory $dir -PassThru
-  Start-Sleep 6; $r.Refresh(); $h = $r.MainWindowHandle
-  [K2]::PostMessage($h, 0x0007, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null; Start-Sleep -Milliseconds 300
-  [K2]::Key($h, 0x77); Start-Sleep -Milliseconds 600; [K2]::Key($h, 0x78); Start-Sleep 1.5
-  Capture $h "$Out\rust.png"
-} finally {
-  Get-Process ddnet-rs, DDNet -ErrorAction SilentlyContinue | Stop-Process -Force
-  Stop-Process -Id $srv.Id -ErrorAction SilentlyContinue; $env:APPDATA = $appData
+# one server per client: a killed client stays connected until it times out, and its
+# tee would push the next one to another spawn (the cameras must match). -Blocker: a
+# headless bot holds the first spawn, so both clients spawn at the second one.
+function Start-Server($log) {
+  $p = Start-Process "$root\build-rs\DDNet-Server.exe" -ArgumentList '"sv_register 0"', '"bindaddr 127.0.0.1"', '"sv_port 8309"', '"sv_map dm1"', '"sv_test_cmds 1"', '"sv_rcon_password test"', '"sv_freeze_delay 60"', '"sv_max_afk_time 0"' -WorkingDirectory "$dir\server" -PassThru -WindowStyle Hidden -RedirectStandardOutput $log
+  Start-Sleep 1
+  if ($Blocker) {
+    Start-Process "$root\rust-client\target\debug\ddnet-headless.exe" -ArgumentList "127.0.0.1:8309", "--name", "Blocker", "--seconds", "20" -WindowStyle Hidden
+    Start-Sleep 2
+  }
+  $p
 }
-Get-Content "$dir\server.log" | Select-String "rcon|auth"
+$env:ALL_PROXY = "http://127.0.0.1:9"; $env:HTTPS_PROXY = "http://127.0.0.1:9"; $env:HTTP_PROXY = "http://127.0.0.1:9"
+$runs = @(
+  @("cpp", { Start-Process "$root\build-rs-client\DDNet.exe" -ArgumentList '"gfx_backend Vulkan"', '"gfx_fullscreen 0"', '"gfx_borderless 0"', '"gfx_screen_width 1280"', '"gfx_screen_height 720"', '"snd_enable 0"', '"cl_show_welcome 0"', '"cl_motd_time 0"', '"player_name Cpp"', '"bind f8 \"rcon_auth test\""', "`"bind f9 \`"rcon $Cmd\`"`"", '"connect 127.0.0.1:8309"' -WorkingDirectory "$dir\cpp" -PassThru }),
+  @("rust", { Start-Process "$root\rust-client\target\debug\ddnet-rs.exe" -ArgumentList "127.0.0.1:8309", "--size", "1280x720", "--no-grab" -WorkingDirectory $dir -PassThru })
+)
+foreach ($run in $runs) {
+  $name = $run[0]
+  $srv = Start-Server "$dir\server_$name.log"
+  try {
+    $c = & $run[1]
+    Start-Sleep 6; $c.Refresh(); $h = $c.MainWindowHandle
+    [K2]::SetForegroundWindow($h) | Out-Null; [K2]::PostMessage($h, 0x0007, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
+    Start-Sleep -Milliseconds 300
+    Capture $h "$Out\${name}_normal.png"
+    [K2]::Key($h, 0x77); Start-Sleep -Milliseconds 600; [K2]::Key($h, 0x78); Start-Sleep 1.5
+    Capture $h "$Out\$name.png"
+  } finally {
+    Get-Process ddnet-rs, DDNet, ddnet-headless -ErrorAction SilentlyContinue | Stop-Process -Force
+    Stop-Process -Id $srv.Id -ErrorAction SilentlyContinue; Start-Sleep 1
+  }
+}
+$env:APPDATA = $appData
+Get-Content "$dir\server_*.log" | Select-String "rcon|auth"
