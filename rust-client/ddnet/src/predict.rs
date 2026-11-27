@@ -272,8 +272,9 @@ pub struct Predictor {
     predict_events: bool,
     /// C++: `m_aLastNewPredictedTick[Dummy]`.
     last_new_predicted_tick: i32,
-    /// `IntraGameTick` of the frame, for the positions of `OnNewSnapshot`'s effects.
-    intra_tick: f32,
+    /// `IntraGameTick` of the previous frame, for the positions of `OnNewSnapshot`'s
+    /// effects (C++ updates it after switching snapshots).
+    pub intra_tick: f32,
     /// This frame's sounds, drained by the client.
     pub sound_events: Vec<SoundEvent>,
 }
@@ -383,7 +384,6 @@ impl Predictor {
         let repredict = std::mem::take(&mut client.repredict);
         let client = &*client;
         let input_at = |t| client.input_at(t);
-        self.intra_tick = client.timing(now).intra_tick;
         for (prev, cur) in switches {
             let Some(items) = client.snapshot_at(cur) else {
                 continue;
@@ -393,6 +393,8 @@ impl Predictor {
         }
         // C++ CClient::Update: only sane predictions
         let t = client.timing(now);
+        // after OnNewSnapshot, as C++ updates the intra tick after switching snapshots
+        self.intra_tick = t.intra_tick;
         if repredict
             && client.game_tick().is_some()
             && t.pred_tick > t.game_tick
@@ -803,13 +805,23 @@ impl Predictor {
 
     /// C++: the sounds of `CGameClient::ProcessEvents` (gameclient.cpp:1404): hammer hits and
     /// spawns (through `CEffects`), world sounds the prediction did not already play, map
-    /// sounds. The other events only make particles.
+    /// sounds. The other events only make particles (damage indicators and explosions
+    /// still confirm their predicted events).
     fn process_events(&mut self, items: &[Item], tick: i32) {
         let c = self.config;
         for it in items {
             let d = ints(it, 3);
             let pos = vec2(d[0] as f32, d[1] as f32);
             match it.type_id {
+                // particles only, but the check forgets the predicted event
+                g::NETEVENTTYPE_DAMAGEIND => {
+                    let e = PredictedEvent::new(it.type_id, pos, -1, tick, d[2]);
+                    self.check_predicted_event_handled(e);
+                }
+                g::NETEVENTTYPE_EXPLOSION => {
+                    let e = PredictedEvent::new(it.type_id, pos, -1, tick, -1);
+                    self.check_predicted_event_handled(e);
+                }
                 g::NETEVENTTYPE_HAMMERHIT => {
                     let e = PredictedEvent::new(it.type_id, pos, -1, tick, -1);
                     if !self.check_predicted_event_handled(e) && c.snd_game {

@@ -27,8 +27,11 @@ type Loaded = Vec<Vec<Option<Decoded>>>;
 
 pub struct Sounds {
     pub engine: Arc<Mutex<Sound>>,
-    /// The device stream; `None` without a device (C++ keeps running silently too).
-    stream: Option<cpal::Stream>,
+    /// The device stream, kept alive; `None` without a device (C++ keeps running silently
+    /// too).
+    _stream: Option<cpal::Stream>,
+    /// C++ `IsSoundEnabled`: a device is open.
+    enabled: bool,
     /// C++ `m_pSoundJob`/`m_WaitForSoundJob`: the decoding thread.
     job: Option<JoinHandle<Loaded>>,
     /// C++ `g_pData->m_aSounds[s].m_aSounds[i].m_Id` and `m_Last`.
@@ -72,7 +75,8 @@ impl Sounds {
         });
         Sounds {
             engine,
-            stream,
+            enabled: stream.is_some(),
+            _stream: stream,
             job,
             ids: SOUNDS.iter().map(|s| vec![-1; s.len()]).collect(),
             last: vec![-1; SOUNDS.len()],
@@ -80,6 +84,24 @@ impl Sounds {
             queue: Vec::new(),
             queue_wait: Instant::now(),
             seed: std::process::id().wrapping_mul(2_654_435_761),
+            skid_timer: None,
+        }
+    }
+
+    /// Sounds around `engine` as if a device were open, without one and without the sound
+    /// sets: for driving the engine directly (the parity tests).
+    pub fn with_engine(engine: Sound) -> Sounds {
+        Sounds {
+            engine: Arc::new(Mutex::new(engine)),
+            _stream: None,
+            enabled: true,
+            job: None,
+            ids: Vec::new(),
+            last: Vec::new(),
+            volumes: [-1.0; 4],
+            queue: Vec::new(),
+            queue_wait: Instant::now(),
+            seed: 0,
             skid_timer: None,
         }
     }
@@ -104,7 +126,7 @@ impl Sounds {
     }
 
     pub fn enabled(&self) -> bool {
-        self.stream.is_some()
+        self.enabled
     }
 
     /// C++ `rand()`; any generator will do, the pick is random in C++ too.

@@ -12,6 +12,8 @@ use crate::sounds::{CHN_MAPSOUND, Sounds};
 use crate::storage::Storage;
 use ddnet::map::Map;
 use ddnet::physics::vmath::{Vec2, vec2};
+use std::sync::atomic::AtomicU32;
+use std::sync::atomic::Ordering::Relaxed;
 
 const MAPITEMTYPE_GROUP: i32 = 4;
 const MAPITEMTYPE_LAYER: i32 = 5;
@@ -19,8 +21,8 @@ const MAPITEMTYPE_SOUND: i32 = 7;
 const LAYERTYPE_SOUNDS: i32 = 10;
 const LAYERFLAG_DETAIL: i32 = 1;
 const MAX_MAPSOUNDS: usize = 64;
-/// C++ `sizeof(CSoundSource)`: 14 ints.
-const SOURCE_INTS: usize = 14;
+/// C++ `sizeof(CSoundSource)`: 13 ints (position 2, 8 ints, shape: type and a 2-int union).
+const SOURCE_INTS: usize = 13;
 
 fn fx2f(v: i32) -> f32 {
     v as f32 * (1.0 / 1024.0)
@@ -54,12 +56,13 @@ struct Entry {
 
 pub struct MapSounds {
     /// C++ `m_aSounds`: engine sample ids, -1 where loading failed.
-    ids: Vec<i32>,
+    pub ids: Vec<i32>,
     queue: Vec<Entry>,
     envelopes: Envelopes,
-    /// C++ `static float s_Time` of `OnRender`.
-    time: f32,
 }
+
+/// C++ `static float s_Time` of `OnRender` (f32 bits): kept across maps, like the static.
+static TIME: AtomicU32 = AtomicU32::new(0);
 
 impl MapSounds {
     /// C++ `OnMapLoad`. `warning` is set when some sounds failed (C++ shows a warning).
@@ -158,8 +161,12 @@ impl MapSounds {
             ids,
             queue,
             envelopes: Envelopes::from_map(map),
-            time: 0.0,
         }
+    }
+
+    /// The sources' voices (C++ `m_vSourceQueue[i].m_Voice`).
+    pub fn voices(&self) -> impl Iterator<Item = VoiceHandle> + '_ {
+        self.queue.iter().map(|e| e.voice)
     }
 
     /// C++ `Play`/`PlayAt` (Sv_MapSoundGlobal, NETEVENTTYPE_MAPSOUNDWORLD).
@@ -195,11 +202,11 @@ impl MapSounds {
             if let Some(start) = round_start {
                 let a = (prev - start) as f32 / 50.0;
                 let b = (cur - start) as f32 / 50.0;
-                self.time = a + (b - a) * intra;
+                TIME.store((a + (b - a) * intra).to_bits(), Relaxed);
             }
             let e = &self.queue[i];
             let s = e.source;
-            let offset = self.time - s.time_delay as f32;
+            let offset = f32::from_bits(TIME.load(Relaxed)) - s.time_delay as f32;
             if offset >= 0.0 && cfg.snd_enable != 0 && (cfg.gfx_high_detail != 0 || !e.high_detail)
             {
                 let voice = e.voice;

@@ -418,6 +418,11 @@ only matters for names so long that neither file can exist.
   previous frame's predicted events.
 - No dummy: the other-players air-jump check skips only the predicted local tee.
 - The map-sound warning is printed to stderr (C++ shows a warning popup).
+- `CMapSounds::OnRender`'s `static float s_Time` is a static here too (`mapsounds::TIME`):
+  it survives map changes, so without a game info object a new map starts from the old
+  map's round time, as in C++.
+- The map-sound parity tool cannot load `mapres/*.opus` (no storage in the stand-in); both
+  sides fail external sounds there. The real client loads them through the storage.
 
 ## 2026-11-27 — M9 13.4: crosshair and asset packs
 

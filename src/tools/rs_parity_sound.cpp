@@ -1337,3 +1337,455 @@ int OpusMode(const char *pOutDir, const char *pDir)
 	fclose(pOut);
 	return 0;
 }
+
+// "mapsounds": CMapSounds (game/client/components/mapsounds.cpp) on the stand-in engine of
+// "mixer": copies of OnMapLoad, OnRender and Clear, and of CSounds::PlaySampleAt, with
+// stand-ins for what they reach in the game client (map, layers, ticks, camera, envelope
+// clock). The map's sounds decode through the copied DecodeOpus. A script of frames
+// (ticks, round start, camera, envelope time, snd_enable, gfx_high_detail) runs OnRender
+// and then mixes like the device; every frame, the source voices and the mix hash are
+// dumped.
+#include <engine/map.h>
+#include <engine/shared/config.h>
+#include <game/layers.h>
+#include <game/map/render_map.h>
+#include <game/mapitems.h>
+#include <generated/protocol.h>
+
+#include <chrono>
+
+void EnvelopeStateEval(CMapBasedEnvelopePointAccess &Access, std::chrono::nanoseconds Time, int TimeOffsetMillis, int EnvelopeIndex, ColorRGBA &Result, size_t Channels); // rs_parity.cpp
+
+namespace rs_mapsounds {
+
+static const char *Localize(const char *pStr) { return pStr; }
+struct SWarning
+{
+	SWarning(const char *) {}
+};
+struct IClient
+{
+	enum
+	{
+		STATE_ONLINE = 3,
+		STATE_DEMOPLAYBACK = 4,
+	};
+};
+
+// the engine with CSound's map sound loader (LoadOpus needs the storage: it fails)
+class CEngine : public rs_mixer::CSound
+{
+public:
+	int LoadOpus(const char *pFilename, int StorageType = 0) override { return -1; }
+	int LoadOpusFromMem(const void *pData, unsigned DataSize, bool ForceLoad, const char *pContextName) override
+	{
+		rs_sound::CSound Decoder;
+		rs_sound::CSample Sample;
+		if(!Decoder.DecodeOpus(Sample, pData, DataSize, pContextName))
+			return -1;
+		const int Id = Load(Sample, Sample.m_LoopStart);
+		free(Sample.m_pData);
+		return Id;
+	}
+};
+
+struct SClient
+{
+	int m_PrevGameTick = 0;
+	int m_GameTick = 0;
+	float m_IntraGameTick = 0.0f;
+	int State() const { return IClient::STATE_ONLINE; }
+	int PrevGameTick(int) const { return m_PrevGameTick; }
+	int GameTick(int) const { return m_GameTick; }
+	float IntraGameTick(int) const { return m_IntraGameTick; }
+	int GameTickSpeed() const { return 50; }
+	void AddWarning(const SWarning &) {}
+};
+
+// CEnvelopeState on the map's envelopes at a scripted time
+class CEnvelopeState
+{
+public:
+	CMapBasedEnvelopePointAccess *m_pAccess = nullptr;
+	long long m_Time = 0;
+	void Update() {}
+	void EnvelopeEval(int TimeOffsetMillis, int EnvelopeIndex, ColorRGBA &Result, size_t Channels) const
+	{
+		EnvelopeStateEval(*m_pAccess, std::chrono::nanoseconds(m_Time), TimeOffsetMillis, EnvelopeIndex, Result, Channels);
+	}
+};
+
+class CGameClient;
+
+class CSounds
+{
+public:
+	enum
+	{
+		CHN_GUI = 0,
+		CHN_MUSIC,
+		CHN_WORLD,
+		CHN_GLOBAL,
+		CHN_MAPSOUND,
+	};
+	CGameClient *m_pGameClient;
+	CGameClient *GameClient() const { return m_pGameClient; }
+	CEngine *Sound() const;
+	ISound::CVoiceHandle PlaySampleAt(int Channel, int SampleId, int Flags, float Volume, vec2 Position);
+};
+
+struct SSnap
+{
+	const CNetObj_GameInfo *m_pGameInfoObj = nullptr;
+};
+struct SCamera
+{
+	vec2 m_Center;
+};
+struct SMapLayers
+{
+	CEnvelopeState m_State;
+	CEnvelopeState &EnvEvaluator() { return m_State; }
+};
+
+class CGameClient
+{
+public:
+	IMap *m_pMap = nullptr;
+	CEngine m_Engine;
+	SClient m_Client;
+	CSounds m_Sounds{this};
+	bool m_SuppressEvents = false;
+	SSnap m_Snap;
+	SCamera m_Camera;
+	SMapLayers m_MapLayersBackground;
+	IMap *Map() const { return m_pMap; }
+	bool IsDemoPlaybackPaused() const { return false; }
+};
+
+CEngine *CSounds::Sound() const { return &m_pGameClient->m_Engine; }
+
+// C++ copy: game/client/components/sounds.cpp:244-253
+ISound::CVoiceHandle CSounds::PlaySampleAt(int Channel, int SampleId, int Flags, float Volume, vec2 Position)
+{
+	if(GameClient()->m_SuppressEvents || (Channel == CHN_MUSIC && !g_Config.m_SndMusic) || SampleId == -1)
+		return ISound::CVoiceHandle();
+
+	if(Channel == CHN_MUSIC)
+		Flags |= ISound::FLAG_LOOP;
+
+	return Sound()->PlayAt(Channel, SampleId, Flags, Volume, Position);
+}
+// end of copy
+
+class CMapSounds
+{
+public:
+	// C++ copy: game/client/components/mapsounds.h:13-25
+	int m_aSounds[MAX_MAPSOUNDS];
+	int m_Count;
+
+	class CSourceQueueEntry
+	{
+	public:
+		int m_Sound;
+		bool m_HighDetail;
+		ISound::CVoiceHandle m_Voice;
+		const CMapItemGroup *m_pGroup;
+		const CSoundSource *m_pSource;
+	};
+	std::vector<CSourceQueueEntry> m_vSourceQueue;
+	// end of copy
+	CGameClient *m_pGameClient;
+	CLayers *m_pLayers;
+	CGameClient *GameClient() const { return m_pGameClient; }
+	SClient *Client() const { return &m_pGameClient->m_Client; }
+	CEngine *Sound() const { return &m_pGameClient->m_Engine; }
+	CLayers *Layers() const { return m_pLayers; }
+	void Clear();
+	void OnMapLoad();
+	void OnRender();
+};
+
+// C++ copy: game/client/components/mapsounds.cpp:50-251
+void CMapSounds::OnMapLoad()
+{
+	IMap *pMap = GameClient()->Map();
+
+	Clear();
+
+	if(!Sound()->IsSoundEnabled())
+		return;
+
+	// load samples
+	int Start;
+	pMap->GetType(MAPITEMTYPE_SOUND, &Start, &m_Count);
+
+	m_Count = std::clamp<int>(m_Count, 0, MAX_MAPSOUNDS);
+
+	// load new samples
+	bool ShowWarning = false;
+	for(int i = 0; i < m_Count; i++)
+	{
+		CMapItemSound *pSound = (CMapItemSound *)pMap->GetItem(Start + i);
+		const char *pName = pMap->GetDataString(pSound->m_SoundName);
+		if(pName == nullptr || pName[0] == '\0')
+		{
+			if(pSound->m_External)
+			{
+				log_error("mapsounds", "Failed to load map sound %d: failed to load name.", i);
+				ShowWarning = true;
+				m_aSounds[i] = -1;
+				continue;
+			}
+			pName = "(error)";
+		}
+
+		if(pSound->m_External)
+		{
+			char aBuf[IO_MAX_PATH_LENGTH];
+			str_format(aBuf, sizeof(aBuf), "mapres/%s.opus", pName);
+			m_aSounds[i] = Sound()->LoadOpus(aBuf);
+			pMap->UnloadData(pSound->m_SoundName);
+		}
+		else
+		{
+			const void *pData = pMap->GetData(pSound->m_SoundData);
+			if(pData == nullptr)
+			{
+				log_error("mapsounds", "Failed to load map sound %d: failed to load data.", i);
+				ShowWarning = true;
+				m_aSounds[i] = -1;
+				continue;
+			}
+			const int SoundDataSize = pMap->GetDataSize(pSound->m_SoundData);
+			m_aSounds[i] = Sound()->LoadOpusFromMem(pData, SoundDataSize, false, pName);
+			pMap->UnloadData(pSound->m_SoundData);
+		}
+		ShowWarning = ShowWarning || m_aSounds[i] == -1;
+	}
+	if(ShowWarning)
+	{
+		Client()->AddWarning(SWarning(Localize("Some map sounds could not be loaded. Check the local console for details.")));
+	}
+
+	// enqueue sound sources
+	for(int GroupIndex = 0; GroupIndex < Layers()->NumGroups(); GroupIndex++)
+	{
+		const CMapItemGroup *pGroup = Layers()->GetGroup(GroupIndex);
+		if(!pGroup)
+			continue;
+
+		for(int LayerIndex = 0; LayerIndex < pGroup->m_NumLayers; LayerIndex++)
+		{
+			const CMapItemLayer *pLayer = Layers()->GetLayer(pGroup->m_StartLayer + LayerIndex);
+			if(!pLayer)
+				continue;
+			if(pLayer->m_Type != LAYERTYPE_SOUNDS)
+				continue;
+
+			const CMapItemLayerSounds *pSoundLayer = reinterpret_cast<const CMapItemLayerSounds *>(pLayer);
+			if(pSoundLayer->m_Version < 1 || pSoundLayer->m_Version > 2)
+				continue;
+			if(pSoundLayer->m_Sound < 0 || pSoundLayer->m_Sound >= m_Count || m_aSounds[pSoundLayer->m_Sound] == -1)
+				continue;
+
+			const CSoundSource *pSources = static_cast<CSoundSource *>(Layers()->Map()->GetDataSwapped(pSoundLayer->m_Data));
+			if(!pSources)
+				continue;
+
+			const size_t NumSources = std::min((size_t)pSoundLayer->m_NumSources, (size_t)Layers()->Map()->GetDataSize(pSoundLayer->m_Data) / sizeof(CSoundSource));
+			for(size_t SourceIndex = 0; SourceIndex < NumSources; SourceIndex++)
+			{
+				CSourceQueueEntry Source;
+				Source.m_Sound = pSoundLayer->m_Sound;
+				Source.m_HighDetail = pLayer->m_Flags & LAYERFLAG_DETAIL;
+				Source.m_pGroup = pGroup;
+				Source.m_pSource = &pSources[SourceIndex];
+				m_vSourceQueue.push_back(Source);
+			}
+		}
+	}
+}
+
+void CMapSounds::OnRender()
+{
+	if(Client()->State() != IClient::STATE_ONLINE && Client()->State() != IClient::STATE_DEMOPLAYBACK)
+		return;
+
+	const bool DemoPlayerPaused = GameClient()->IsDemoPlaybackPaused();
+
+	// enqueue sounds
+	for(auto &Source : m_vSourceQueue)
+	{
+		static float s_Time = 0.0f;
+		if(GameClient()->m_Snap.m_pGameInfoObj)
+		{
+			s_Time = mix((Client()->PrevGameTick(g_Config.m_ClDummy) - GameClient()->m_Snap.m_pGameInfoObj->m_RoundStartTick) / (float)Client()->GameTickSpeed(),
+				(Client()->GameTick(g_Config.m_ClDummy) - GameClient()->m_Snap.m_pGameInfoObj->m_RoundStartTick) / (float)Client()->GameTickSpeed(),
+				Client()->IntraGameTick(g_Config.m_ClDummy));
+		}
+		float Offset = s_Time - Source.m_pSource->m_TimeDelay;
+		if(!DemoPlayerPaused && Offset >= 0.0f && g_Config.m_SndEnable && (g_Config.m_GfxHighDetail || !Source.m_HighDetail))
+		{
+			if(Source.m_Voice.IsValid())
+			{
+				// currently playing, set offset
+				Sound()->SetVoiceTimeOffset(Source.m_Voice, Offset);
+			}
+			else
+			{
+				// need to enqueue
+				int Flags = 0;
+				if(Source.m_pSource->m_Loop)
+					Flags |= ISound::FLAG_LOOP;
+				if(!Source.m_pSource->m_Pan)
+					Flags |= ISound::FLAG_NO_PANNING;
+
+				Source.m_Voice = GameClient()->m_Sounds.PlaySampleAt(CSounds::CHN_MAPSOUND, m_aSounds[Source.m_Sound], Flags, 1.0f, vec2(fx2f(Source.m_pSource->m_Position.x), fx2f(Source.m_pSource->m_Position.y)));
+				Sound()->SetVoiceTimeOffset(Source.m_Voice, Offset);
+				Sound()->SetVoiceFalloff(Source.m_Voice, Source.m_pSource->m_Falloff / 255.0f);
+				switch(Source.m_pSource->m_Shape.m_Type)
+				{
+				case CSoundShape::SHAPE_CIRCLE:
+				{
+					Sound()->SetVoiceCircle(Source.m_Voice, Source.m_pSource->m_Shape.m_Circle.m_Radius);
+					break;
+				}
+
+				case CSoundShape::SHAPE_RECTANGLE:
+				{
+					Sound()->SetVoiceRectangle(Source.m_Voice, fx2f(Source.m_pSource->m_Shape.m_Rectangle.m_Width), fx2f(Source.m_pSource->m_Shape.m_Rectangle.m_Height));
+					break;
+				}
+				};
+			}
+		}
+		else
+		{
+			// stop voice
+			Sound()->StopVoice(Source.m_Voice);
+			Source.m_Voice = ISound::CVoiceHandle();
+		}
+	}
+
+	CEnvelopeState &EnvEvaluator = GameClient()->m_MapLayersBackground.EnvEvaluator();
+	EnvEvaluator.Update();
+
+	const vec2 Center = GameClient()->m_Camera.m_Center;
+	for(const auto &Source : m_vSourceQueue)
+	{
+		if(!Source.m_Voice.IsValid())
+			continue;
+
+		ColorRGBA Position = ColorRGBA(0.0f, 0.0f, 0.0f, 0.0f);
+		EnvEvaluator.EnvelopeEval(Source.m_pSource->m_PosEnvOffset, Source.m_pSource->m_PosEnv, Position, 2);
+
+		float x = fx2f(Source.m_pSource->m_Position.x) + Position.r;
+		float y = fx2f(Source.m_pSource->m_Position.y) + Position.g;
+
+		x += Center.x * (1.0f - Source.m_pGroup->m_ParallaxX / 100.0f);
+		y += Center.y * (1.0f - Source.m_pGroup->m_ParallaxY / 100.0f);
+
+		x -= Source.m_pGroup->m_OffsetX;
+		y -= Source.m_pGroup->m_OffsetY;
+
+		Sound()->SetVoicePosition(Source.m_Voice, vec2(x, y));
+
+		ColorRGBA Volume = ColorRGBA(1.0f, 0.0f, 0.0f, 0.0f);
+		EnvEvaluator.EnvelopeEval(Source.m_pSource->m_SoundEnvOffset, Source.m_pSource->m_SoundEnv, Volume, 1);
+
+		Sound()->SetVoiceVolume(Source.m_Voice, std::clamp(Volume.r, 0.0f, 1.0f));
+	}
+}
+
+void CMapSounds::Clear()
+{
+	// unload all samples
+	m_vSourceQueue.clear();
+	for(int i = 0; i < m_Count; i++)
+	{
+		Sound()->UnloadSample(m_aSounds[i]);
+		m_aSounds[i] = -1;
+	}
+	m_Count = 0;
+}
+// end of copy
+
+} // namespace rs_mapsounds
+
+int MapSoundsMode(IMap *pMap, CLayers *pLayers, const char *pOutFile)
+{
+	using rs_sound::Rand;
+	FILE *pOut = fopen(pOutFile, "w");
+	if(!pOut)
+		return -1;
+	rs_mapsounds::CGameClient GameClient;
+	GameClient.m_pMap = pMap;
+	GameClient.m_Engine.Init(48000, 512);
+	// CSounds::UpdateChannels with the default snd_ambient_volume 30
+	GameClient.m_Engine.SetChannel(rs_mapsounds::CSounds::CHN_MAPSOUND, 30 / 100.0f, 1.0f);
+	CMapBasedEnvelopePointAccess Access(pMap);
+	GameClient.m_MapLayersBackground.m_State.m_pAccess = &Access;
+	rs_mapsounds::CMapSounds MapSounds;
+	MapSounds.m_Count = 0;
+	MapSounds.m_pGameClient = &GameClient;
+	MapSounds.m_pLayers = pLayers;
+	MapSounds.OnMapLoad();
+	fprintf(pOut, "sounds %d", MapSounds.m_Count);
+	for(int i = 0; i < MapSounds.m_Count; i++)
+		fprintf(pOut, " %d", MapSounds.m_aSounds[i]);
+	fprintf(pOut, " sources %d\n", (int)MapSounds.m_vSourceQueue.size());
+	CNetObj_GameInfo GameInfo = {};
+	int Tick = 1000 + Rand() % 100000;
+	GameInfo.m_RoundStartTick = Tick - (int)(Rand() % 3000);
+	long long EnvTime = 0;
+	vec2 Center(0, 0);
+	for(int Frame = 0; Frame < 3000 && !MapSounds.m_vSourceQueue.empty(); Frame++)
+	{
+		// mostly smooth play, sometimes a new round or a tick jump
+		const unsigned r = Rand() % 100;
+		if(r < 2)
+			GameInfo.m_RoundStartTick = Tick - (int)(Rand() % 3000);
+		else if(r < 4)
+			Tick += (int)(Rand() % 2000) - 1000;
+		else if(r < 75)
+			Tick += Rand() % 2;
+		const bool HasGameInfo = Frame == 0 || Rand() % 50 != 0;
+		GameClient.m_Snap.m_pGameInfoObj = HasGameInfo ? &GameInfo : nullptr;
+		GameClient.m_Client.m_GameTick = Tick;
+		GameClient.m_Client.m_PrevGameTick = Tick - 1;
+		GameClient.m_Client.m_IntraGameTick = (Rand() % 1001) / 1000.0f;
+		// the camera wanders, jumps near a source (22.10 fixed point), sometimes anywhere
+		const CSoundSource *pSource = MapSounds.m_vSourceQueue[Rand() % MapSounds.m_vSourceQueue.size()].m_pSource;
+		const unsigned c = Rand() % 100;
+		if(Frame == 0 || c < 4)
+			Center = vec2(fx2f(pSource->m_Position.x), fx2f(pSource->m_Position.y)) + vec2(rs_mixer::Frand(-1500, 1500), rs_mixer::Frand(-1500, 1500));
+		else if(c < 6)
+			Center = vec2(rs_mixer::Frand(-2000, 20000), rs_mixer::Frand(-2000, 20000));
+		else
+			Center += vec2(rs_mixer::Frand(-30, 30), rs_mixer::Frand(-30, 30));
+		GameClient.m_Camera.m_Center = Center;
+		EnvTime += Rand() % 50 == 0 ? (long long)(Rand() % 100000) * 100000 : 16666667;
+		GameClient.m_MapLayersBackground.m_State.m_Time = EnvTime;
+		g_Config.m_SndEnable = Rand() % 60 != 0;
+		g_Config.m_GfxHighDetail = Rand() % 20 != 0;
+		MapSounds.OnRender();
+		// CSounds::OnRender, then the device
+		GameClient.m_Engine.SetListenerPosition(Center);
+		const unsigned Frames = 200 + Rand() % 1400;
+		std::vector<short> vOut(Frames * 2, 0x5555);
+		GameClient.m_Engine.Mix(vOut.data(), Frames);
+		fprintf(pOut, "frame %d %d %08x %d %d %08x %08x %lld %d %d %u =", GameClient.m_Client.m_PrevGameTick, Tick,
+			rs_mixer::Bits(GameClient.m_Client.m_IntraGameTick), HasGameInfo, GameInfo.m_RoundStartTick,
+			rs_mixer::Bits(Center.x), rs_mixer::Bits(Center.y), EnvTime, g_Config.m_SndEnable, g_Config.m_GfxHighDetail, Frames);
+		for(const auto &Source : MapSounds.m_vSourceQueue)
+			fprintf(pOut, " %d:%d", Source.m_Voice.Id(), Source.m_Voice.Age());
+		fprintf(pOut, " %016" PRIx64 "\n", rs_sound::Fnv(vOut.data(), vOut.size()));
+	}
+	g_Config.m_SndEnable = 1;
+	g_Config.m_GfxHighDetail = 1;
+	MapSounds.Clear();
+	fclose(pOut);
+	return 0;
+}

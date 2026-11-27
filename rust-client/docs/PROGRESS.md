@@ -1292,10 +1292,24 @@ User review: chat approved; fixes before sound.
   116 samples loaded, no errors.
 - The prediction world's events are verified: `rs_parity weapons` dumps the C++ world's
   `m_PredictedEvents` each tick (7 maps x 4500 ticks, identical).
-- Not verified against C++ copies yet: the glue of `CSounds`/`CMapSounds::OnRender` and
-  `HandlePredictedEvents`/`CheckPredictedEventHandled` (the engine and the events under
-  them are); a listening check by the user is pending. No sound settings
-  page yet (13.10); values come from `settings_ddnet.cfg`.
+- Glue verified (2026-11-28):
+  - `rs_parity mapsounds` (copies of `CMapSounds::OnMapLoad`/`OnRender`/`Clear` and
+    `CSounds::PlaySampleAt` on the copied engine; scripted ticks, round starts, camera,
+    envelope clock, `snd_enable`, `gfx_high_detail`; voices and mix hash per frame):
+    Sunny Side Up 3000 frames identical (`tests/golden/mapsounds_sunny.txt`), and the
+    user's 18 downloaded maps with sound sources (135 sources, 54000 frames) identical
+    via `RS_MAPSOUNDS_REF`/`RS_MAPSOUNDS_MAPS`. Found: `CSoundSource` is 13 ints, not 14,
+    so no map sound had ever played; fixed. `s_Time` is now a static like C++'s.
+  - `rs_parity antiping` now also runs copies of `ProcessEvents`, `HandlePredictedEvents`
+    and `OnNewSnapshot`'s other-tee air jumps; the server world's events go into the
+    snapshots (plus spawns and map sounds), `cl_predict_events`, `snd_gun`,
+    `snd_long_pain` vary per run, hammer is wielded too. Every sound call (weapons,
+    hammer hits, explosions, pain, jumps, hooks, spawns, map sounds) identical on all 7
+    maps. Found: C++ reads `m_GameInfo` after `ProcessEvents` and the intra tick after
+    `OnNewSnapshot` (both fixed: harness order, Rust intra tick); damage indicators and
+    explosions now confirm their predicted events like C++.
+  - Pending: the user's listening check (jump, hook, weapons, chat, a map with ambient
+    sounds). No sound settings page yet (13.10); values come from `settings_ddnet.cfg`.
 
 #### 13.4 (2026-11-27): crosshair and asset packs — in progress
 - Piece a: `cl_asset_game/particles/emoticons/hud/extras` (and `cl_assets_entities`,
@@ -1422,6 +1436,7 @@ Build the `rs_parity` target like `rs_golden`, then per map (repo root):
     build-rs/rs_parity.exe chat rust-client/tests/golden/chat.txt
     build-rs/rs_parity.exe wv rust-client/tests/golden/wv.txt data/audio
     build-rs/rs_parity.exe mixer rust-client/tests/golden/mixer.txt data/audio
+    build-rs/rs_parity.exe mapsounds "data/maps/Sunny Side Up.map" rust-client/tests/golden/mapsounds_sunny.txt   # more: one <ref>/<name>.txt per map of <maps> (ASCII copies), then RS_MAPSOUNDS_REF=<ref> RS_MAPSOUNDS_MAPS=<maps>
     build-rs/rs_parity.exe assets rust-client/tests/golden/assets.txt data   # more: assets <out> %APPDATA%/DDNet data, then RS_ASSETS_EXTRA=<out>;<root>;<root>
     build-rs/rs_parity.exe entities rust-client/tests/golden/entities.txt data   # more: RS_ENTITIES_EXTRA like RS_ASSETS_EXTRA
     python rust-client/scripts/extract_map_sounds.py <corpus dir> data/maps %APPDATA%/DDNet/downloadedmaps

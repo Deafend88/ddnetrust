@@ -1313,7 +1313,7 @@ fn cpp_copies_match_source() {
             i = end + 1;
         }
     }
-    assert_eq!(copies, 51);
+    assert_eq!(copies, 57);
 }
 
 /// rs_parity's `WeaponZoneTuning`: `ZoneTuning` plus weapon parameters per zone.
@@ -2064,7 +2064,7 @@ fn antiping_timing_matches_cpp() {
 /// UpdatePrediction, then frames that predict ahead.
 fn check_antiping(name: &str, map: &Map, col: Rc<Collision>, text: &str) {
     use ddnet::net::client::{PredictMsg, Timing};
-    use ddnet::predict::{PredictConfig, Predictor};
+    use ddnet::predict::{PredictConfig, Predictor, SoundEvent};
     use ddnet::protocol::snapshot::Item;
     let empty = GameWorld::new(Rc::clone(&col), WorldConfig::default());
     let mut p: Option<Predictor> = None;
@@ -2093,6 +2093,9 @@ fn check_antiping(name: &str, map: &Map, col: Rc<Collision>, text: &str) {
                     predict_freeze: v[9],
                     antiping_grenade: v[10] != 0,
                     antiping_gunfire: v[11] != 0,
+                    snd_gun: v[12] != 0,
+                    snd_long_pain: v[13] != 0,
+                    predict_events: v[14] != 0,
                     ..Default::default()
                 };
                 p = Some(pr);
@@ -2168,6 +2171,7 @@ fn check_antiping(name: &str, map: &Map, col: Rc<Collision>, text: &str) {
                     pred_intra_tick: float(8),
                 };
                 pr.new_tick = w[9] == "1";
+                pr.intra_tick = t.intra_tick;
                 // CClient::Update: only sane predictions (MaxLatencyTicks 50)
                 if t.pred_tick > t.game_tick && t.pred_tick < t.game_tick + 50 {
                     let windows = pr.smooth_start.clone();
@@ -2180,7 +2184,15 @@ fn check_antiping(name: &str, map: &Map, col: Rc<Collision>, text: &str) {
             }
             other => panic!("unknown line {other}"),
         }
-        let got = antiping_state(pr, &empty, &seen, frame.as_ref());
+        let mut got = antiping_state(pr, &empty, &seen, frame.as_ref());
+        // the sounds played (CSounds/CMapSounds calls and CEffects' own)
+        for e in std::mem::take(&mut pr.sound_events) {
+            let (m, id, pos) = match e {
+                SoundEvent::World(id, pos) => ("", id, pos),
+                SoundEvent::MapWorld(id, pos) => ("m", id, pos),
+            };
+            got += &format!(" {m}{id}:{:08x}:{:08x}", pos.x.to_bits(), pos.y.to_bits());
+        }
         if got != want {
             // compare with `RS_VERBOSE=1 rs_parity antiping` (stderr)
             let w = pr.world();

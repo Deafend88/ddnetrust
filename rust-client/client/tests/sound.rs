@@ -302,3 +302,86 @@ fn mixer_matches_cpp() {
     }
     assert_eq!(mixes, 3301);
 }
+
+/// Replays one `rs_parity mapsounds` dump (copies of C++ `CMapSounds::OnMapLoad`/`OnRender`
+/// and `CSounds::PlaySampleAt` on the copied engine) on `MapSounds`: the loaded sounds, then
+/// per frame the source voices and the mix. Returns the frames checked.
+fn check_mapsounds(map: &std::path::Path, golden: &std::path::Path) -> usize {
+    use ddnet::physics::vmath::vec2;
+    use ddnet_rs::config::Config;
+    use ddnet_rs::mapsounds::MapSounds;
+    use ddnet_rs::sound::Sound;
+    use ddnet_rs::sounds::{CHN_MAPSOUND, Sounds};
+    let text = std::fs::read_to_string(golden).unwrap();
+    let mut lines = text.lines();
+    let map = ddnet::map::Map::load(std::fs::read(map).unwrap()).unwrap();
+    // no mapres/ here, as the C++ stand-in's LoadOpus fails
+    let storage =
+        ddnet_rs::storage::Storage::from_parts(None, None, Some(b"add_path $CURRENTDIR")).unwrap();
+    let mut sounds = Sounds::with_engine(Sound::new(48000, 512));
+    sounds
+        .engine
+        .lock()
+        .unwrap()
+        .set_channel(CHN_MAPSOUND, 30.0 / 100.0, 1.0);
+    let mut warning = false;
+    let mut ms = MapSounds::load(&map, &storage, &mut sounds, &mut warning);
+    let ids: Vec<String> = std::iter::once(ms.ids.len() as i32)
+        .chain(ms.ids.iter().copied())
+        .map(|i| i.to_string())
+        .collect();
+    let head = format!("sounds {} sources {}", ids.join(" "), ms.voices().count());
+    assert_eq!(head, lines.next().unwrap());
+    let mut cfg = Config::default();
+    let mut frames = 0;
+    for line in lines {
+        let (call, want) = line.split_once(" = ").unwrap();
+        let w: Vec<&str> = call.split(' ').collect();
+        let int = |i: usize| w[i].parse::<i64>().unwrap();
+        cfg.snd_enable = int(9) as i32;
+        cfg.gfx_high_detail = int(10) as i32;
+        let round_start = (int(4) != 0).then_some(int(5) as i32);
+        let ticks = (int(1) as i32, int(2) as i32, f32h(w[3]), round_start);
+        let center = vec2(f32h(w[6]), f32h(w[7]));
+        ms.on_render(&mut sounds, ticks, center, int(8), &cfg);
+        let mut engine = sounds.engine.lock().unwrap();
+        engine.set_listener_position(center);
+        let n = int(11) as u32;
+        let mut out = vec![0x5555i16; n as usize * 2];
+        engine.mix(&mut out, n);
+        drop(engine);
+        let voices: Vec<String> = ms.voices().map(|v| format!("{}:{}", v.id, v.age)).collect();
+        let got = format!("{} {:016x}", voices.join(" "), fnv(&out));
+        assert_eq!(got, want, "{line}");
+        frames += 1;
+    }
+    ms.clear(&mut sounds);
+    frames
+}
+
+/// Sunny Side Up's sound layer against the C++ `CMapSounds` copies.
+#[test]
+fn mapsounds_match_cpp() {
+    let frames = check_mapsounds(
+        &repo_file("data/maps/Sunny Side Up.map"),
+        &repo_file("rust-client/tests/golden/mapsounds_sunny.txt"),
+    );
+    assert_eq!(frames, 3000);
+    // more maps: `RS_MAPSOUNDS_REF` holds `rs_parity mapsounds` dumps named
+    // `<map>.txt` of the maps in `RS_MAPSOUNDS_MAPS` (run in this test: `TIME` is shared)
+    let (Ok(refdir), Ok(maps)) = (
+        std::env::var("RS_MAPSOUNDS_REF"),
+        std::env::var("RS_MAPSOUNDS_MAPS"),
+    ) else {
+        return;
+    };
+    let mut total = 0;
+    for e in std::fs::read_dir(&refdir).unwrap() {
+        let golden = e.unwrap().path();
+        let map = std::path::Path::new(&maps)
+            .join(golden.file_stem().unwrap())
+            .with_extension("map");
+        total += check_mapsounds(&map, &golden);
+    }
+    eprintln!("mapsounds corpus: {total} frames identical");
+}

@@ -117,6 +117,10 @@ public:
 	float PredIntraGameTick(int Conn) const { return m_PredIntraGameTick; }
 	bool DummyConnected() const { return false; }
 	int State() const { return IClient::STATE_ONLINE; }
+	// the current snapshot's items for ProcessEvents
+	std::vector<IClient::CSnapItem> m_vSnapItems;
+	int SnapNumItems(int SnapId) const { return (int)m_vSnapItems.size(); }
+	IClient::CSnapItem SnapGetItem(int SnapId, int Index) const { return m_vSnapItems[Index]; }
 	// C++ CClient::GetInput: the latest input sent for a tick at or before `Tick`
 	int *GetInput(int Tick, int IsDummy = 0) const
 	{
@@ -221,14 +225,50 @@ struct SClientData
 	vec2 m_RenderPos = vec2(0, 0);
 };
 
-struct SEffects
+// The sounds the copies play (CSounds/CMapSounds calls; CEffects plays its sounds itself
+// when snd_game is on): "<set>:<x bits>:<y bits>", map sounds "m<id>:<x bits>:<y bits>",
+// dumped and cleared with each state.
+static std::vector<std::string> s_vSounds;
+static void Played(const char *pPrefix, int Id, vec2 Pos)
 {
-	void AirJump(vec2 Pos, float Alpha, float Volume) {}
-};
+	char aBuf[64];
+	str_format(aBuf, sizeof(aBuf), "%s%d:%08x:%08x", pPrefix, Id, Bits(Pos.x), Bits(Pos.y));
+	s_vSounds.emplace_back(aBuf);
+}
 
 struct SSounds
 {
-	void PlayAndRecord(int Channel, int SetId, float Volume, vec2 Position) {}
+	void PlayAt(int Channel, int SetId, float Volume, vec2 Position) { Played("", SetId, Position); }
+	void PlayAndRecord(int Channel, int SetId, float Volume, vec2 Position) { PlayAt(Channel, SetId, Volume, Position); }
+};
+
+struct SMapSounds
+{
+	void PlayAt(int Channel, int SoundId, vec2 Position) { Played("m", SoundId, Position); }
+};
+
+// CEffects: only its sounds (effects.cpp:48, 214, 408)
+struct SEffects
+{
+	void AirJump(vec2 Pos, float Alpha, float Volume)
+	{
+		if(g_Config.m_SndGame)
+			Played("", SOUND_PLAYER_AIRJUMP, Pos);
+	}
+	void PlayerSpawn(vec2 Pos, float Alpha, float Volume)
+	{
+		if(g_Config.m_SndGame)
+			Played("", SOUND_PLAYER_SPAWN, Pos);
+	}
+	void HammerHit(vec2 Pos, float Alpha, float Volume)
+	{
+		if(g_Config.m_SndGame)
+			Played("", SOUND_HAMMER_HIT, Pos);
+	}
+	void DamageIndicator(vec2 Pos, vec2 Dir, float Alpha) {}
+	void Explosion(vec2 Pos, float Alpha) {}
+	void Confetti(vec2 Pos, float Alpha) {}
+	void PlayerDeath(vec2 Pos, int ClientId, float Alpha) {}
 };
 
 struct SGhost
@@ -262,6 +302,8 @@ public:
 	CTuningParams m_aTuning[2];
 	SEffects m_Effects;
 	SSounds m_Sounds;
+	SMapSounds m_MapSounds;
+	CCollision *m_pCollision = nullptr;
 	SGhost m_Ghost;
 	CClient m_Client;
 	std::vector<CSnapEntities> m_vSnapEntities;
@@ -286,7 +328,11 @@ public:
 	bool IsTeamPlay() const { return m_Snap.m_pGameInfoObj && (m_Snap.m_pGameInfoObj->m_GameFlags & GAMEFLAG_TEAMS) != 0; }
 	bool IsWorldPaused() const { return m_Snap.m_pGameInfoObj && (m_Snap.m_pGameInfoObj->m_GameStateFlags & (GAMESTATEFLAG_GAMEOVER | GAMESTATEFLAG_PAUSED)) != 0; }
 	void DetectStrongHook() {} // not reached: every character has the extended object
-	void HandlePredictedEvents(int Tick) {} // events are not ported (cl_predict_events 0)
+	void HandlePredictedEvents(const int Tick);
+	void ProcessEvents();
+	void DetectOtherAirJumps();
+	CCollision *Collision() { return m_pCollision; }
+	CConfig *Config() { return &g_Config; }
 
 	int AntiPingPlayers() const;
 	bool AntiPingGrenade() const;
@@ -1210,6 +1256,7 @@ static int RsType(int Type)
 	case NETOBJTYPE_DDNETCHARACTER: return 0x10001;
 	case NETOBJTYPE_GAMEINFOEX: return 0x10003;
 	case NETOBJTYPE_DDNETLASER: return 0x10005;
+	case NETEVENTTYPE_MAPSOUNDWORLD: return 0x10011;
 	}
 	return Type;
 }
@@ -1347,9 +1394,186 @@ static void PrintState(FILE *f, CGameClient &Gc, const bool *aSeen, bool Frame)
 				fprintf(stderr, "\n");
 			}
 	// m_PredictedChar is left out: only the ghost reads it (not ported)
-	fprintf(f, " = %08x %08x %08x %08x %08x %08x %d %08x %08x\n", Crc(Cores), Crc(PredPos), Crc(Smooth), Crc(World), Crc(Predicted),
+	fprintf(f, " = %08x %08x %08x %08x %08x %08x %d %08x %08x", Crc(Cores), Crc(PredPos), Crc(Smooth), Crc(World), Crc(Predicted),
 		Crc(PrevPredicted), Gc.m_PredictedTick, Crc(Render), Crc(ItemTime));
+	for(const std::string &Sound : s_vSounds)
+		fprintf(f, " %s", Sound.c_str());
+	fprintf(f, "\n");
+	s_vSounds.clear();
 }
+
+// C++ copy: game/client/gameclient.cpp:1404-1490
+void CGameClient::ProcessEvents()
+{
+	if(m_SuppressEvents)
+		return;
+
+	int SnapType = IClient::SNAP_CURRENT;
+	int Num = Client()->SnapNumItems(SnapType);
+	for(int Index = 0; Index < Num; Index++)
+	{
+		const IClient::CSnapItem Item = Client()->SnapGetItem(SnapType, Index);
+
+		// TODO: We don't have enough info about us, others, to know a correct alpha or volume value.
+		const float Alpha = 1.0f;
+		const float Volume = 1.0f;
+
+		if(Item.m_Type == NETEVENTTYPE_DAMAGEIND)
+		{
+			const CNetEvent_DamageInd *pEvent = (const CNetEvent_DamageInd *)Item.m_pData;
+
+			vec2 DamageIndPos = vec2(pEvent->m_X, pEvent->m_Y);
+			if(!m_PredictedWorld.CheckPredictedEventHandled(CGameWorld::CPredictedEvent(Item.m_Type, DamageIndPos, -1, Client()->GameTick(g_Config.m_ClDummy), pEvent->m_Angle)))
+			{
+				m_Effects.DamageIndicator(vec2(pEvent->m_X, pEvent->m_Y), direction(pEvent->m_Angle / 256.0f), Alpha);
+			}
+		}
+		else if(Item.m_Type == NETEVENTTYPE_EXPLOSION)
+		{
+			const CNetEvent_Explosion *pEvent = (const CNetEvent_Explosion *)Item.m_pData;
+
+			vec2 ExplosionPos = vec2(pEvent->m_X, pEvent->m_Y);
+			if(!m_PredictedWorld.CheckPredictedEventHandled(CGameWorld::CPredictedEvent(Item.m_Type, ExplosionPos, -1, Client()->GameTick(g_Config.m_ClDummy))))
+			{
+				m_Effects.Explosion(ExplosionPos, Alpha);
+			}
+		}
+		else if(Item.m_Type == NETEVENTTYPE_HAMMERHIT)
+		{
+			const CNetEvent_HammerHit *pEvent = (const CNetEvent_HammerHit *)Item.m_pData;
+
+			vec2 HammerHitPos = vec2(pEvent->m_X, pEvent->m_Y);
+			if(!m_PredictedWorld.CheckPredictedEventHandled(CGameWorld::CPredictedEvent(Item.m_Type, HammerHitPos, -1, Client()->GameTick(g_Config.m_ClDummy))))
+			{
+				m_Effects.HammerHit(HammerHitPos, Alpha, Volume);
+			}
+		}
+		else if(Item.m_Type == NETEVENTTYPE_BIRTHDAY)
+		{
+			const CNetEvent_Birthday *pEvent = (const CNetEvent_Birthday *)Item.m_pData;
+			m_Effects.Confetti(vec2(pEvent->m_X, pEvent->m_Y), Alpha);
+		}
+		else if(Item.m_Type == NETEVENTTYPE_FINISH)
+		{
+			const CNetEvent_Finish *pEvent = (const CNetEvent_Finish *)Item.m_pData;
+			m_Effects.Confetti(vec2(pEvent->m_X, pEvent->m_Y), Alpha);
+		}
+		else if(Item.m_Type == NETEVENTTYPE_SPAWN)
+		{
+			const CNetEvent_Spawn *pEvent = (const CNetEvent_Spawn *)Item.m_pData;
+			m_Effects.PlayerSpawn(vec2(pEvent->m_X, pEvent->m_Y), Alpha, Volume);
+		}
+		else if(Item.m_Type == NETEVENTTYPE_DEATH)
+		{
+			const CNetEvent_Death *pEvent = (const CNetEvent_Death *)Item.m_pData;
+			m_Effects.PlayerDeath(vec2(pEvent->m_X, pEvent->m_Y), pEvent->m_ClientId, Alpha);
+		}
+		else if(Item.m_Type == NETEVENTTYPE_SOUNDWORLD)
+		{
+			const CNetEvent_SoundWorld *pEvent = (const CNetEvent_SoundWorld *)Item.m_pData;
+			if(!Config()->m_SndGame)
+				continue;
+
+			if(m_GameInfo.m_RaceSounds && ((pEvent->m_SoundId == SOUND_GUN_FIRE && !g_Config.m_SndGun) || (pEvent->m_SoundId == SOUND_PLAYER_PAIN_LONG && !g_Config.m_SndLongPain)))
+				continue;
+
+			vec2 SoundPos = vec2(pEvent->m_X, pEvent->m_Y);
+			if(!m_PredictedWorld.CheckPredictedEventHandled(CGameWorld::CPredictedEvent(Item.m_Type, SoundPos, -1, Client()->GameTick(g_Config.m_ClDummy), pEvent->m_SoundId)))
+			{
+				m_Sounds.PlayAt(CSounds::CHN_WORLD, pEvent->m_SoundId, 1.0f, SoundPos);
+			}
+		}
+		else if(Item.m_Type == NETEVENTTYPE_MAPSOUNDWORLD)
+		{
+			CNetEvent_MapSoundWorld *pEvent = (CNetEvent_MapSoundWorld *)Item.m_pData;
+			m_MapSounds.PlayAt(CSounds::CHN_WORLD, pEvent->m_SoundId, vec2(pEvent->m_X, pEvent->m_Y));
+		}
+	}
+}
+// end of copy
+
+// OnNewSnapshot's air jumps of other players
+void CGameClient::DetectOtherAirJumps()
+{
+// C++ copy: game/client/gameclient.cpp:2405-2430
+	// detect air jump for other players
+	for(int i = 0; i < MAX_CLIENTS; i++)
+	{
+		if(m_Snap.m_aCharacters[i].m_Active && (m_Snap.m_aCharacters[i].m_Cur.m_Jumped & 2) && !(m_Snap.m_aCharacters[i].m_Prev.m_Jumped & 2))
+		{
+			bool IsDummy = Client()->DummyConnected() && i == m_aLocalIds[!g_Config.m_ClDummy];
+			bool IsLocalPlayer = i == m_Snap.m_LocalClientId;
+
+			if(!Predict() || (!IsLocalPlayer && !AntiPingPlayers()) || (!IsLocalPlayer && !IsDummy))
+			{
+				vec2 Pos = mix(vec2(m_Snap.m_aCharacters[i].m_Prev.m_X, m_Snap.m_aCharacters[i].m_Prev.m_Y),
+					vec2(m_Snap.m_aCharacters[i].m_Cur.m_X, m_Snap.m_aCharacters[i].m_Cur.m_Y),
+					Client()->IntraGameTick(g_Config.m_ClDummy));
+				float Alpha = 1.0f;
+				if(IsOtherTeam(i))
+					Alpha = g_Config.m_ClShowOthersAlpha / 100.0f;
+				const float Volume = 1.0f; // TODO snd_game_volume_others
+
+				const bool Grounded = Collision()->IsOnGround(vec2(m_Snap.m_aCharacters[i].m_Prev.m_X, m_Snap.m_aCharacters[i].m_Prev.m_Y), CCharacterCore::PhysicalSize());
+				if(!Grounded)
+				{
+					m_Effects.AirJump(Pos, Alpha, Volume);
+				}
+			}
+		}
+	}
+// end of copy
+}
+
+// C++ copy: game/client/gameclient.cpp:3819-3865
+void CGameClient::HandlePredictedEvents(const int Tick)
+{
+	const float Alpha = 1.0f;
+	const float Volume = 1.0f;
+
+	auto EventsIterator = m_PredictedWorld.m_PredictedEvents.begin();
+	while(EventsIterator != m_PredictedWorld.m_PredictedEvents.end())
+	{
+		if(!EventsIterator->m_Handled && EventsIterator->m_Tick <= Tick)
+		{
+			if(EventsIterator->m_EventId == NETEVENTTYPE_SOUNDWORLD)
+			{
+				if(m_GameInfo.m_RaceSounds && ((EventsIterator->m_ExtraInfo == SOUND_GUN_FIRE && !g_Config.m_SndGun) || (EventsIterator->m_ExtraInfo == SOUND_PLAYER_PAIN_LONG && !g_Config.m_SndLongPain)))
+				{
+					EventsIterator = m_PredictedWorld.m_PredictedEvents.erase(EventsIterator);
+					continue;
+				}
+				m_Sounds.PlayAt(CSounds::CHN_WORLD, EventsIterator->m_ExtraInfo, 1.0f, EventsIterator->m_Pos);
+			}
+			else if(EventsIterator->m_EventId == NETEVENTTYPE_EXPLOSION)
+			{
+				m_Effects.Explosion(EventsIterator->m_Pos, Alpha);
+			}
+			else if(EventsIterator->m_EventId == NETEVENTTYPE_HAMMERHIT)
+			{
+				m_Effects.HammerHit(EventsIterator->m_Pos, Alpha, Volume);
+			}
+			else if(EventsIterator->m_EventId == NETEVENTTYPE_DAMAGEIND)
+			{
+				m_Effects.DamageIndicator(EventsIterator->m_Pos, direction(EventsIterator->m_ExtraInfo / 256.0f), Alpha);
+			}
+
+			EventsIterator->m_Handled = true;
+			++EventsIterator;
+			continue;
+		}
+		else if(Tick - EventsIterator->m_Tick > 3 * Client()->GameTickSpeed()) // 3 seconds
+		{
+			// remove too old events
+			EventsIterator = m_PredictedWorld.m_PredictedEvents.erase(EventsIterator);
+		}
+		else
+		{
+			++EventsIterator;
+		}
+	}
+}
+// end of copy
 
 // The tee inputs: each tee's input per tick, made in tick order like rs_parity netents.
 struct SInputs
@@ -1390,7 +1614,7 @@ struct SInputs
 				m_aHold[3] = 1 + Rand() % 6;
 			}
 			const int Extra = Rand() % 100;
-			In.m_WantedWeapon = Extra < 6 ? 2 + Extra % 4 : 0;
+			In.m_WantedWeapon = Extra < 6 ? 1 + Extra % 5 : 0;
 			In.m_PlayerFlags = PLAYERFLAG_PLAYING;
 			m_Ticks[++m_Last] = In;
 		}
@@ -1409,6 +1633,7 @@ static int LoopMode(CCollision *pCollision, FILE *f)
 	g_Config.m_ClDummy = 0;
 	g_Config.m_ClPredictDummy = 1;
 	g_Config.m_SndGame = 1;
+	g_Config.m_SndEnable = 1;
 	g_Config.m_Debug = 0;
 	g_Config.m_ClPredict = 1;
 
@@ -1442,6 +1667,9 @@ static int LoopMode(CCollision *pCollision, FILE *f)
 		g_Config.m_ClAntiPingLimit = Run % 6 == 1 ? 20 + Rand() % 200 : 0;
 		g_Config.m_ClAntiPingPercent = Run % 6 == 2 ? Rand() % 101 : 100;
 		g_Config.m_ClPredictFreeze = Run % 3;
+		g_Config.m_SndGun = Run % 5 != 1;
+		g_Config.m_SndLongPain = Run % 7 != 2;
+		g_Config.m_ClPredictEvents = Run % 8 != 7;
 		const bool Vanilla = Run % 4 == 3;
 		const bool TeamSplit = Run % 5 == 2 || Run % 5 == 4;
 		const int SoloId = Run % 5 == 3 ? aIds[1] : -1;
@@ -1449,10 +1677,12 @@ static int LoopMode(CCollision *pCollision, FILE *f)
 		InfoEx.m_Version = 12;
 		InfoEx.m_Flags = Vanilla ? GAMEINFOFLAG_GAMETYPE_VANILLA | GAMEINFOFLAG_PREDICT_VANILLA :
 					   GAMEINFOFLAG_GAMETYPE_DDNET | GAMEINFOFLAG_PREDICT_DDRACE | GAMEINFOFLAG_PREDICT_DDRACE_TILES;
-		InfoEx.m_Flags2 = (Run % 7 == 3 ? GAMEINFOFLAG2_OLD_LASER : 0) | (Run % 7 == 5 ? GAMEINFOFLAG2_NO_WEAK_HOOK : 0);
-		fprintf(f, "run %d %d %d %d %d %d %d %d %d %d %d %d\n", Run, Index, g_Config.m_ClAntiPing, g_Config.m_ClAntiPingPlayers,
+		InfoEx.m_Flags2 = (Run % 7 == 3 ? GAMEINFOFLAG2_OLD_LASER : 0) | (Run % 7 == 5 ? GAMEINFOFLAG2_NO_WEAK_HOOK : 0) |
+				  (Run % 6 != 4 ? GAMEINFOFLAG2_PREDICT_EVENTS : 0);
+		fprintf(f, "run %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d\n", Run, Index, g_Config.m_ClAntiPing, g_Config.m_ClAntiPingPlayers,
 			g_Config.m_ClAntiPingWeapons, g_Config.m_ClAntiPingPreInput, g_Config.m_ClAntiPingSmooth, g_Config.m_ClAntiPingLimit,
-			g_Config.m_ClAntiPingPercent, g_Config.m_ClPredictFreeze, g_Config.m_ClAntiPingGrenade, g_Config.m_ClAntiPingGunfire);
+			g_Config.m_ClAntiPingPercent, g_Config.m_ClPredictFreeze, g_Config.m_ClAntiPingGrenade, g_Config.m_ClAntiPingGunfire,
+			g_Config.m_SndGun, g_Config.m_SndLongPain, g_Config.m_ClPredictEvents);
 
 		// the server
 		CGameWorld Server;
@@ -1468,6 +1698,7 @@ static int LoopMode(CCollision *pCollision, FILE *f)
 		Config.m_PredictWeapons = true;
 		Config.m_PredictDDRace = !Vanilla;
 		Config.m_UseTuneZones = !Vanilla;
+		Config.m_PredictEvents = true; // its events go into the snapshots
 		CTeamsCore Teams;
 		Teams.m_NumDDRaceTeams = NUM_DDRACE_TEAMS;
 		if(TeamSplit)
@@ -1503,6 +1734,7 @@ static int LoopMode(CCollision *pCollision, FILE *f)
 		// the client
 		std::unique_ptr<CGameClient> pGc = std::make_unique<CGameClient>();
 		CGameClient &Gc = *pGc;
+		Gc.m_pCollision = pCollision;
 		Gc.m_GameWorld.Init(pCollision, s_aTuning, nullptr);
 		Gc.m_GameWorld.m_Core.InitSwitchers(pCollision->m_HighestSwitchNumber);
 		Gc.m_GameWorld.m_WorldConfig.m_InfiniteAmmo = true;
@@ -1510,9 +1742,10 @@ static int LoopMode(CCollision *pCollision, FILE *f)
 		Gc.m_GameWorld.m_WorldConfig.m_IsSolo = false;
 		Gc.m_PredictedWorld.Init(pCollision, s_aTuning, nullptr);
 		Gc.m_PrevPredictedWorld.Init(pCollision, s_aTuning, nullptr);
-		Gc.m_GameInfo = GetGameInfo(&InfoEx, sizeof(InfoEx), nullptr);
-		Gc.m_Teams.m_NumDDRaceTeams = Gc.m_GameInfo.m_NumDDRaceTeams;
-		Gc.m_GameWorld.m_WorldConfig.m_UseTuneZones = Gc.m_GameInfo.m_PredictDDRaceTiles;
+		// OnNewSnapshot sets m_GameInfo after ProcessEvents: a fresh client's before that
+		const CGameInfo Info = GetGameInfo(&InfoEx, sizeof(InfoEx), nullptr);
+		Gc.m_Teams.m_NumDDRaceTeams = Info.m_NumDDRaceTeams;
+		Gc.m_GameWorld.m_WorldConfig.m_UseTuneZones = Info.m_PredictDDRaceTiles;
 		Gc.m_Snap.m_LocalClientId = Local;
 		Gc.m_aLocalIds[0] = Local;
 		if(TeamSplit)
@@ -1544,6 +1777,8 @@ static int LoopMode(CCollision *pCollision, FILE *f)
 			// once in some runs a long gap: the server world skips to the snapshot tick, and
 			// the preinput ring wraps
 			const int Ticks = (Run % 3 == 1 && Snap == 30) ? 150 : 1 + Rand() % 3;
+			const int ClPredictEvents = g_Config.m_ClPredictEvents;
+			g_Config.m_ClPredictEvents = 1; // the server's events
 			for(int t = 0; t < Ticks; t++)
 			{
 				const int Tick = Server.GameTick() + 1;
@@ -1567,6 +1802,7 @@ static int LoopMode(CCollision *pCollision, FILE *f)
 						pChar->OnPredictedInput(&aIn[Id]);
 				Server.Tick();
 			}
+			g_Config.m_ClPredictEvents = ClPredictEvents;
 			const int SnapTick = Server.GameTick();
 			Latency = std::clamp(Latency + (int)(Rand() % 3) - 1, 2, 9);
 
@@ -1656,6 +1892,22 @@ static int LoopMode(CCollision *pCollision, FILE *f)
 			EntIds = SeenIds;
 			std::stable_sort(vEntities.begin(), vEntities.end(), [](const SItem &a, const SItem &b) { return a.m_Id < b.m_Id; });
 			vItems.insert(vItems.end(), vEntities.begin(), vEntities.end());
+			// the server's events since the last snapshot (as CGameContext::Create*: int
+			// positions), sometimes a spawn or a map sound
+			std::vector<SItem> vEvents;
+			for(const CGameWorld::CPredictedEvent &Event : Server.m_PredictedEvents)
+			{
+				std::vector<int> vData = {(int)Event.m_Pos.x, (int)Event.m_Pos.y};
+				if(Event.m_EventId == NETEVENTTYPE_SOUNDWORLD || Event.m_EventId == NETEVENTTYPE_DAMAGEIND)
+					vData.push_back(Event.m_ExtraInfo);
+				vEvents.push_back({Event.m_EventId, (int)vEvents.size(), vData});
+			}
+			Server.m_PredictedEvents.clear();
+			if(Rand() % 10 == 0)
+				vEvents.push_back({NETEVENTTYPE_SPAWN, (int)vEvents.size(), {(int)Spot.x + (int)(Rand() % 200), (int)Spot.y}});
+			if(Rand() % 10 == 0)
+				vEvents.push_back({NETEVENTTYPE_MAPSOUNDWORLD, (int)vEvents.size(), {(int)Spot.x, (int)Spot.y - (int)(Rand() % 200), (int)(Rand() % 4)}});
+			vItems.insert(vItems.end(), vEvents.begin(), vEvents.end());
 
 			fprintf(f, "snap %d\n", SnapTick);
 			for(const SItem &It : vItems)
@@ -1665,7 +1917,16 @@ static int LoopMode(CCollision *pCollision, FILE *f)
 				fprintf(f, "\n");
 			}
 
-			// C++ OnNewSnapshot: what UpdatePrediction reads
+			// C++ OnNewSnapshot (CClient::Update has switched the ticks): ProcessEvents first
+			Gc.m_Client.m_PrevGameTick = PrevSnapTick;
+			Gc.m_Client.m_GameTick = SnapTick;
+			Gc.m_Client.m_vSnapItems.clear();
+			for(const SItem &It : vEvents)
+				Gc.m_Client.m_vSnapItems.push_back({It.m_Type, It.m_Id, It.m_vData.data(), (int)It.m_vData.size() * 4});
+			Gc.ProcessEvents();
+			Gc.m_GameInfo = Info;
+
+			// what UpdatePrediction reads
 			static CNetObj_GameInfo s_GameInfo;
 			s_GameInfo = GameInfo;
 			Gc.m_Snap.m_pGameInfoObj = &s_GameInfo;
@@ -1711,6 +1972,7 @@ static int LoopMode(CCollision *pCollision, FILE *f)
 			Gc.m_Client.m_PrevGameTick = PrevSnapTick;
 			Gc.m_Client.m_GameTick = SnapTick;
 			Gc.m_NewTick = true;
+			Gc.DetectOtherAirJumps();
 			Gc.UpdatePrediction();
 			fprintf(f, "update");
 			PrintState(f, Gc, aSeen, false);

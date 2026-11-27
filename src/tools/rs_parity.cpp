@@ -117,6 +117,7 @@ int ScoreboardMode(const char *pOutFile); // rs_parity_scoreboard.cpp
 int WvMode(const char *pOutFile, int NumDirs, const char *const *ppDirs); // rs_parity_sound.cpp
 int OpusMode(const char *pOutDir, const char *pDir); // rs_parity_sound.cpp
 int MixerMode(const char *pOutFile, const char *pAudioDir); // rs_parity_sound.cpp
+int MapSoundsMode(IMap *pMap, CLayers *pLayers, const char *pOutFile); // rs_parity_sound.cpp
 int AssetsMode(const char *pOutFile, int NumRoots, const char *const *ppRoots); // rs_parity_assets.cpp
 int EntitiesMode(const char *pOutFile, int NumRoots, const char *const *ppRoots); // rs_parity_entities.cpp
 
@@ -2339,7 +2340,7 @@ static int MapImagesMode(const char *pMapFile, const char *pOutFile)
 
 // CEnvelopeState::EnvelopeEval (envelope_state.cpp) on a point access, copied because
 // CEnvelopeState needs the whole game client; RenderEvalEnvelope is the real one.
-static void EnvelopeStateEval(CMapBasedEnvelopePointAccess &Access, std::chrono::nanoseconds Time, int TimeOffsetMillis, int EnvelopeIndex, ColorRGBA &Result, size_t Channels)
+void EnvelopeStateEval(CMapBasedEnvelopePointAccess &Access, std::chrono::nanoseconds Time, int TimeOffsetMillis, int EnvelopeIndex, ColorRGBA &Result, size_t Channels)
 {
 	if(EnvelopeIndex < 0)
 		return;
@@ -3111,13 +3112,15 @@ int main(int argc, const char **argv)
 		return EntitiesMode(argv[2], argc - 3, argv + 3);
 	if(argc == 3 && str_comp(argv[1], "antiping-timing") == 0)
 		return AntiPingMode(nullptr, argv[2]);
-	if(argc == 4 && (str_comp(argv[1], "msgs") == 0 || str_comp(argv[1], "antiping") == 0))
+	if(argc == 4 && (str_comp(argv[1], "msgs") == 0 || str_comp(argv[1], "antiping") == 0 || str_comp(argv[1], "mapsounds") == 0))
 	{
 		std::unique_ptr<IStorage> pStorage = CreateLocalStorage();
 		std::unique_ptr<IMap> pMap = CreateMap();
 		CLayers Layers;
 		if(!pStorage || !LoadMapAndLayers(pStorage.get(), argv[2], pMap.get(), &Layers))
 			return -1;
+		if(str_comp(argv[1], "mapsounds") == 0)
+			return MapSoundsMode(pMap.get(), &Layers, argv[3]);
 		CCollision Collision;
 		Collision.Init(&Layers);
 		if(str_comp(argv[1], "antiping") == 0)
