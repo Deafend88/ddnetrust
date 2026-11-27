@@ -370,3 +370,19 @@ only matters for names so long that neither file can exist.
   Shift+Tab `size_t` wrap (every command is tried before the index can wrap) and the
   custom-colour check of repeat folding (lines that differ in it already differ in their
   client id).
+
+## 2026-11-27 — M9 13.3: sound
+
+- WavPack: our own decoder (`client/src/wavpack.rs`), a port of the libwavpack 5.9.0 code
+  `CSound::DecodeWV` reaches (ddnet-libs has 5.9.0): single-stream mono/stereo, lossless and
+  hybrid lossy without a correction file, every decorrelation term, joint/false stereo,
+  shifts, extended-integer fixups, the muting of bad blocks, CRC checks, junk skipping and
+  the length from the file end (`seek_eof_information`). Identical to libwavpack on every
+  `data/audio/*.wv` and 4 damaged variants of each (655 cases, `rs_parity wv`).
+- Not ported (the decode fails where C++ might return samples): multi-stream layouts (a
+  block without FINAL_BLOCK; only >2-channel files have them, which DDNet refuses
+  anyway), float and DSD data (DDNet refuses float through its 16-bit check unless the
+  file is malformed), the extended 32-bit `wvx` stream, legacy (pre-4.0) files.
+- C++ callocs whatever length the header claims (up to INT_MAX frames) and crashes when
+  that fails; our allocation is fallible, so such a file fails to load instead.
+

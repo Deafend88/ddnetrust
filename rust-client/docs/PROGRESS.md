@@ -1260,6 +1260,15 @@ User review: chat approved; fixes before sound.
   so the camera had no centre; it now falls back to our own tee.
 - Captures: `docs/review/13.2b/`.
 
+#### 13.3 (2026-11-27): sound — in progress
+- Piece A, WavPack: `client/src/wavpack.rs`, a port of the libwavpack 5.9.0 decode path
+  `CSound::DecodeWV` reaches (DECISIONS 13.3). `rs_parity wv` (new
+  `src/tools/rs_parity_sound.cpp`, copies of `CWavpackReader` and `DecodeWV`, linked to the
+  real libwavpack): all 131 `data/audio/*.wv` plus 4 damaged variants each (655 cases,
+  483 decodes) identical; `client/tests/sound.rs`, plus a no-panic damage test.
+- Next: B Opus (opus-pure + opusfile's trimming, soft clip and dither), C mixer
+  (`CSound` copies), D `CSounds`/`CMapSounds`, call sites, cpal output, settings.
+
 #### Exact next actions (next session starts here)
 State (2026-11-27): 13.1, 13.2 and the 13.2 review fixes done and pushed; stopped for
 the user's look at `docs/review/13.2b/`. Then: 13.3 sound.
@@ -1363,6 +1372,7 @@ Build the `rs_parity` target like `rs_golden`, then per map (repo root):
     build-rs/rs_parity.exe camera rust-client/tests/golden/camera.txt
     build-rs/rs_parity.exe movement rust-client/tests/golden/movement.txt
     build-rs/rs_parity.exe chat rust-client/tests/golden/chat.txt
+    build-rs/rs_parity.exe wv rust-client/tests/golden/wv.txt data/audio
     rust-client\scripts\cpp_settings.ps1   # needs build-rs-client\DDNet.exe (PowerShell)
 
 All modes are deterministic: the data regenerates byte for byte.
