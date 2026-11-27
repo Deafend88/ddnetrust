@@ -434,4 +434,10 @@ only matters for names so long that neither file can exist.
 - Entities overlay: the game layer's blinking kill-tile border (C++ `RenderKillTileBorder`)
   is not drawn: it starts 201 tiles outside the map, where no camera goes in play.
   ponytail: add it with a free camera (spectating, 13.7) if it matters.
+- Entity numbers (`cl_text_entities`): the atlas layout, font sizing and glyph placement
+  of `CMapImages::InitOverlayTextures`/`UpdateEntityLayerText`/`AdjustFontSize` are
+  ported, but the glyphs are rasterized by ab_glyph (already in the build through egui)
+  instead of FreeType: no hinting, so a digit can be a pixel wider or lighter. Checked by
+  screenshot (`docs/review/13.4/entities_text_*`), not bit for bit. FreeType itself would
+  need a vendored C library for one-pixel differences in small digits.
 

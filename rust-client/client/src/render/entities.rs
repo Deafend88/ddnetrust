@@ -280,6 +280,94 @@ pub fn build(mut img: Image, masked: bool, mod_type: usize) -> [Image; 3] {
     [all, switch, tune_map]
 }
 
+/// C++ `CMapImages::InitOverlayTextures` with `cl_text_entities_size` `scale`: the
+/// [bottom, top, center] number atlases, 1024x1024 with a 64 px cell per number (1-255).
+/// The glyphs come from ab_glyph instead of FreeType (no hinting: digit widths can differ
+/// by a pixel; DECISIONS 13.4).
+pub fn overlay_atlases(font: &[u8], scale: i32) -> Option<[Image; 3]> {
+    let font = ab_glyph::FontRef::try_from_slice(font).ok()?;
+    let size = (64 * scale / 100).clamp(2, 64);
+    // C++: int = int + float
+    let center = ((64 - size) / 2) as f32 + size as f32 * 0.1;
+    let center = center as i32;
+    let atlas = |size: i32, y_offset: i32| {
+        let mut img = Image {
+            width: 1024,
+            height: 1024,
+            format: Format::Rgba,
+            data: vec![0; 1024 * 1024 * 4],
+        };
+        for (power, max) in [(0, 9), (1, 99), (2, 255)] {
+            layer_text(&font, &mut img, size, 64, y_offset, power, max);
+        }
+        img
+    };
+    Some([
+        atlas(size / 2, 32 + center / 2),
+        atlas(size / 2, center / 2),
+        atlas(size, center),
+    ])
+}
+
+/// A digit's glyph at FreeType pixel size `px` (em = px).
+fn digit_glyph(font: &ab_glyph::FontRef, c: char, px: i32) -> Option<ab_glyph::OutlinedGlyph> {
+    use ab_glyph::Font;
+    let scale = px as f32 * font.height_unscaled() / font.units_per_em()?;
+    font.outline_glyph(font.glyph_id(c).with_scale(scale))
+}
+
+/// C++ `CalculateTextWidth`: each glyph's width plus 1.
+fn text_width(font: &ab_glyph::FontRef, text: &str, px: i32) -> i32 {
+    text.chars()
+        .filter_map(|c| digit_glyph(font, c, px))
+        .map(|g| g.px_bounds().width() as i32 + 1)
+        .sum()
+}
+
+/// C++ `CMapImages::UpdateEntityLayerText` with `AdjustFontSize` and the glyph upload of
+/// `CGlyphMap::UploadEntityLayerText`: the numbers 10^power..=max, each centred in its
+/// cell, glyphs top-aligned and 1 px apart, white with the coverage as alpha.
+fn layer_text(
+    font: &ab_glyph::FontRef,
+    img: &mut Image,
+    size: i32,
+    max_width: i32,
+    y_offset: i32,
+    power: u32,
+    max: i32,
+) {
+    let first = 10i32.pow(power);
+    let width = text_width(font, &first.to_string(), 100);
+    let mut font_size = (100.0 / (width as f32 / max_width as f32)) as i32;
+    if size > 0 && font_size > size {
+        font_size = size;
+    }
+    let px = (font_size as f32 * 0.92) as i32;
+    let y_offset = y_offset + (size - px) / 2;
+    if px < 1 {
+        return;
+    }
+    for n in first..=max {
+        let text = n.to_string();
+        let (x, y) = ((n % 16) * 64, (n / 16) * 64);
+        let x_off = (max_width - text_width(font, &text, px).clamp(0, max_width)) / 2;
+        let (x, y) = ((x + x_off) as f32, (y + y_offset) as f32);
+        let (sub_w, sub_h) = ((64 - x_off) as f32, (64 - y_offset) as f32);
+        let mut last = 0;
+        for g in text.chars().filter_map(|c| digit_glyph(font, c, px)) {
+            let w = g.px_bounds().width() as u32;
+            g.draw(|ox, oy, c| {
+                let ix = (x + ox as f32 + last as f32).clamp(x, x + sub_w - 1.0) as usize;
+                let iy = (y + oy as f32).clamp(y, y + sub_h - 1.0) as usize;
+                let i = (iy * 1024 + ix) * 4;
+                img.data[i..i + 3].fill(255);
+                img.data[i + 3] = (c * 255.0).round() as u8;
+            });
+            last += w + 1;
+        }
+    }
+}
+
 /// C++ `normalized_golden_angle` (base/math.h).
 const NORMALIZED_GOLDEN_ANGLE: f32 = 137.50776 / 360.0;
 

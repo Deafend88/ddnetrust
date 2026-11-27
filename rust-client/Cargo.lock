@@ -511,6 +511,7 @@ dependencies = [
 name = "ddnet-rs"
 version = "0.1.0"
 dependencies = [
+ "ab_glyph",
  "cc",
  "chrono",
  "cpal",

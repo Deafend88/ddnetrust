@@ -1337,8 +1337,12 @@ User review: chat approved; fixes before sound.
   only in our name plates/chat and the C++ spectator cursor; coverage
   (`docs/review/13.4/entities_*`) shows the same tiles (tele, speed-up, switch) but the
   subject drifts on a speed-up lane, so the pictures are 4 px apart.
-  Next: the `cl_text_entities` number overlays (C++ `CMapImages::InitOverlayTextures`),
-  then the asset picker and runtime switching.
+  `rs_parity entities` now also dumps the tune colour map: identical (stock and user packs).
+- Piece b part 3: the `cl_text_entities` numbers (tele, switch number/delay, speed-up
+  force/max speed) from atlases built like C++ `InitOverlayTextures` (`cl_text_entities_size`),
+  glyphs by ab_glyph (DECISIONS 13.4). Screenshot: same numbers, places and sizes
+  (`docs/review/13.4/entities_text_*`).
+- Next: the asset picker on the settings page and switching packs at runtime.
 
 #### Exact next actions (next session starts here)
 State (2026-11-27): 13.1, 13.2 and the 13.2 review fixes done and pushed; stopped for

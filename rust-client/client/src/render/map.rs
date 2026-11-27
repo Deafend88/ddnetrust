@@ -126,14 +126,22 @@ struct EntityLayer {
     /// 2 the speedup arrows (`editor/speed_arrow_array.png`), 3 the tune colours.
     texture: usize,
     layer: TileLayer,
+    /// The number overlays drawn over it with `cl_text_entities` (C++ `m_VisualTeleNumbers`,
+    /// `m_VisualForce`, ...): (atlas texture, tiles).
+    numbers: Vec<(usize, TileLayer)>,
 }
 
 /// C++ `CMapImages`' entities textures [every layer but switch, switch, speedup arrows,
-/// tune colours] and the (pack, mod, masked) they were built for.
+/// tune colours, the bottom, top and center number atlases] and the (pack, mod, masked,
+/// `cl_text_entities_size` if `cl_text_entities`) they were built for.
 struct EntityTextures {
-    key: (String, usize, bool),
-    textures: [Option<TextureId>; 4],
+    key: (String, usize, bool, Option<i32>),
+    textures: [Option<TextureId>; 7],
 }
+
+const OVERLAY_BOTTOM: usize = 4;
+const OVERLAY_TOP: usize = 5;
+const OVERLAY_CENTER: usize = 6;
 
 enum Entry {
     Group(Group),
@@ -220,8 +228,14 @@ impl MapRender {
         storage: &Storage,
         pack: &str,
         info: &EntitiesInfo,
+        text_size: Option<i32>,
     ) {
-        let key = (pack.to_string(), info.mod_type(), !info.dont_mask);
+        let key = (
+            pack.to_string(),
+            info.mod_type(),
+            !info.dont_mask,
+            text_size,
+        );
         if self.entities.as_ref().is_some_and(|e| e.key == key) {
             return;
         }
@@ -244,9 +258,16 @@ impl MapRender {
             .read("editor/speed_arrow_array.png")
             .and_then(|b| crate::image::load_png_file(&b))
             .and_then(|i| array(&i));
+        // C++ InitOverlayTextures, only with cl_text_entities
+        let [bottom, top, center] = text_size
+            .and_then(|size| {
+                let font = storage.read("fonts/DejaVuSans.ttf")?;
+                entities::overlay_atlases(&font, size)
+            })
+            .map_or([None, None, None], |a| a.map(|i| array(&i)));
         self.entities = Some(EntityTextures {
             key,
-            textures: [all, switch, arrows, tune],
+            textures: [all, switch, arrows, tune, bottom, top, center],
         });
     }
 
@@ -293,10 +314,16 @@ impl MapRender {
                 Entry::Quads(q) => self.render_quads(q, batch, view),
                 // C++: CRenderLayerEntityBase: only with an overlay, alpha overlay / 100
                 Entry::Entity(e) if view.overlay != 0 => {
-                    let texture = self.entities.as_ref().and_then(|t| t.textures[e.texture]);
-                    if texture.is_some() {
-                        let alpha = view.overlay as f32 / 100.0;
-                        self.render_tiles(&e.layer, texture, alpha, batch, view);
+                    let texture = |i: usize| self.entities.as_ref().and_then(|t| t.textures[i]);
+                    let alpha = view.overlay as f32 / 100.0;
+                    if texture(e.texture).is_some() {
+                        self.render_tiles(&e.layer, texture(e.texture), alpha, batch, view);
+                    }
+                    // the atlases exist only with cl_text_entities
+                    for (atlas, layer) in &e.numbers {
+                        if texture(*atlas).is_some() {
+                            self.render_tiles(layer, texture(*atlas), alpha, batch, view);
+                        }
                     }
                 }
                 Entry::Entity(_) => {}
@@ -664,17 +691,45 @@ fn entity_layer(map: &Map, l: &[i32]) -> Option<EntityLayer> {
             _ => (t[0], t[1] & !ARROW),
         })
         .collect();
+    let layer = |tiles| TileLayer {
+        width,
+        height,
+        color: [1.0; 4],
+        color_env: -1,
+        color_env_offset: 0,
+        texture: None,
+        tiles,
+    };
+    // the number overlays: C++ GetTileData with CurOverlay 1 and 2
+    fn speedup_shown(t: &[u8]) -> bool {
+        speedup_tile(t[0], t[1], t[2], 0).1 & ARROW != 0
+    }
+    type Number = fn(&[u8]) -> u8;
+    let numbers: Vec<(usize, Number)> = match (flags & 2 != 0, texture) {
+        // IsTeleTileNumberUsedAny: all but TILE_TELECHECKIN(EVIL)
+        (true, _) => vec![(OVERLAY_CENTER, |t| {
+            if t[1] != 31 && t[1] != 63 { t[0] } else { 0 }
+        })],
+        (_, 1) => vec![(OVERLAY_TOP, |t| t[0]), (OVERLAY_BOTTOM, |t| t[3])],
+        (_, 2) => vec![
+            (OVERLAY_BOTTOM, |t| if speedup_shown(t) { t[0] } else { 0 }),
+            (OVERLAY_TOP, |t| if speedup_shown(t) { t[1] } else { 0 }),
+        ],
+        _ => Vec::new(),
+    };
+    let numbers = numbers
+        .into_iter()
+        .map(|(atlas, f)| {
+            (
+                atlas,
+                layer(data.chunks_exact(size).map(|t| (f(t), 0)).collect()),
+            )
+        })
+        .collect();
     Some(EntityLayer {
         texture,
-        layer: TileLayer {
-            width,
-            height,
-            color: [1.0; 4],
-            color_env: -1,
-            color_env_offset: 0,
-            texture: None,
-            tiles,
-        },
+        layer: layer(tiles),
+        numbers,
     })
 }
 

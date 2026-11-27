@@ -988,8 +988,15 @@ impl App {
             // C++: CMapImages::GetEntities with the server's mod and mask
             if let (Some((map, _)), Some(p)) = (&mut s.map, &s.predictor) {
                 let info = ddnet_rs::render::entities::EntitiesInfo::from_game_info(p.game_info);
-                let pack = &self.settings.config.cl_assets_entities;
-                map.set_entities(&mut r.gfx, &self.storage, pack, &info);
+                let cfg = &self.settings.config;
+                let text = (cfg.cl_text_entities != 0).then_some(cfg.cl_text_entities_size);
+                map.set_entities(
+                    &mut r.gfx,
+                    &self.storage,
+                    &cfg.cl_assets_entities,
+                    &info,
+                    text,
+                );
             }
             if let (Some((map, collision)), Some(center)) = (&s.map, center) {
                 let view = View {
