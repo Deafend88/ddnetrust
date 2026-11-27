@@ -9,7 +9,7 @@ use super::core::{PHYSICAL_SIZE, SERVER_TICK_SPEED, count_input};
 use super::teams::MAX_CLIENTS;
 use super::tuning::Param;
 use super::vmath::{
-    Vec2, angle, closest_point_on_line, direction, distance, length, normalize, trunc_i32, vec2,
+    PI, Vec2, angle, closest_point_on_line, direction, distance, length, normalize, trunc_i32, vec2,
 };
 use super::world::{
     GameWorld, NINJA_DURATION, PredictedEvent, create_predicted_event, create_predicted_sound,
@@ -98,6 +98,23 @@ impl GameWorld {
         );
     }
 
+    /// C++: `CGameWorld::CreatePredictedDamageIndEvent`.
+    pub(super) fn damage_ind_event(&mut self, pos: Vec2, angle: f32, amount: i32, id: i32) {
+        let a = 3.0 * PI / 2.0 + angle;
+        let (s, e) = (a - PI / 3.0, a + PI / 3.0);
+        for i in 0..amount {
+            let f = s + (e - s) * ((i + 1) as f32 / (amount + 1) as f32);
+            let ev = PredictedEvent::new(
+                g::NETEVENTTYPE_DAMAGEIND,
+                pos,
+                id,
+                self.game_tick,
+                (f * 256.0) as i32,
+            );
+            create_predicted_event(&self.config, &mut self.predicted_events, ev);
+        }
+    }
+
     /// C++: `CGameWorld::CreatePredictedHammerHitEvent`.
     fn hammer_hit_event(&mut self, pos: Vec2, id: i32) {
         let e = PredictedEvent::new(g::NETEVENTTYPE_HAMMERHIT, pos, id, self.game_tick, -1);
@@ -161,7 +178,7 @@ impl GameWorld {
         }
     }
 
-    /// C++: `CGameWorld::CreateExplosion` (gameworld.cpp:345), without the event.
+    /// C++: `CGameWorld::CreateExplosion` (gameworld.cpp:345).
     pub(super) fn create_explosion(
         &mut self,
         pos: Vec2,
@@ -169,10 +186,16 @@ impl GameWorld {
         weapon: i32,
         no_damage: bool,
         activated_team: i32,
+        id: i32,
     ) {
         let cfg = self.config;
         if owner < 0 && cfg.is_solo && !(weapon == g::WEAPON_SHOTGUN && cfg.is_ddrace) {
             return;
+        }
+        if cfg.is_ddrace && cfg.predict_ddrace {
+            // vanilla has different projectile physics
+            let e = PredictedEvent::new(g::NETEVENTTYPE_EXPLOSION, pos, id, self.game_tick, -1);
+            create_predicted_event(&self.config, &mut self.predicted_events, e);
         }
         let (radius, inner_radius) = (135.0f32, 48.0f32);
         for i in self.find_characters(pos, radius) {
@@ -427,6 +450,7 @@ impl GameWorld {
                     lifetime,
                     false,
                     false,
+                    0,
                     -1,
                 );
                 self.sound(pos, SOUND_GUN_FIRE, id as i32);
@@ -450,6 +474,7 @@ impl GameWorld {
                             lifetime,
                             false,
                             false,
+                            -1,
                             0,
                         );
                     }
@@ -469,6 +494,7 @@ impl GameWorld {
                     lifetime,
                     false,
                     true,
+                    SOUND_GRENADE_EXPLODE,
                     0,
                 );
                 self.sound(pos, SOUND_GRENADE_FIRE, id as i32);

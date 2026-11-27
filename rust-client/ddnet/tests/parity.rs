@@ -1434,6 +1434,7 @@ fn check_weapons(name: &str, col: Rc<Collision>, text: &str) {
     let mut world: Option<GameWorld> = None;
     let (mut ticks, mut runs) = (0, 0);
     let mut tick = 0;
+    let (mut seen_events, mut events_checked) = (0, 0);
     let mut mode = 0;
     for line in text.lines() {
         let w: Vec<&str> = line.split(' ').collect();
@@ -1441,6 +1442,7 @@ fn check_weapons(name: &str, col: Rc<Collision>, text: &str) {
             "run" => {
                 mode = num(w[3]);
                 tick = 0;
+                seen_events = 0;
                 runs += 1;
                 let config = WorldConfig {
                     is_ddrace: mode != 2 && mode != 3,
@@ -1458,7 +1460,7 @@ fn check_weapons(name: &str, col: Rc<Collision>, text: &str) {
                     old_laser: mode == 1,
                     freeze_delay: 3,
                     antiping_players: 1,
-                    predict_events: false,
+                    predict_events: true,
                     snd_enable: true,
                 };
                 let mut wd = GameWorld::new(Rc::clone(&col), config);
@@ -1549,6 +1551,35 @@ fn check_weapons(name: &str, col: Rc<Collision>, text: &str) {
                 wd.projectiles.insert(0, p);
             }
             "totals" => {}
+            "events" => {
+                // the predicted events the tick added (M9 13.3)
+                let wd = world.as_ref().unwrap();
+                let total: usize = num(w[1]) as usize;
+                let new: Vec<String> = wd.predicted_events[seen_events..]
+                    .iter()
+                    .map(|e| {
+                        format!(
+                            "{}:{:08x}:{:08x}:{}:{}:{}",
+                            e.event_id,
+                            e.pos.x.to_bits(),
+                            e.pos.y.to_bits(),
+                            e.id,
+                            e.tick,
+                            e.extra_info
+                        )
+                    })
+                    .collect();
+                assert_eq!(
+                    (wd.predicted_events.len(), new),
+                    (
+                        total,
+                        w[2..].iter().map(|s| s.to_string()).collect::<Vec<_>>()
+                    ),
+                    "{name}, run {runs} (mode {mode}), tick {tick}: predicted events"
+                );
+                seen_events = total;
+                events_checked += total;
+            }
             _ => {
                 let wd = world.as_mut().unwrap();
                 tick += 1;
@@ -1614,6 +1645,7 @@ fn check_weapons(name: &str, col: Rc<Collision>, text: &str) {
     }
     assert_eq!(runs, 30, "{name}");
     assert_eq!(ticks, 30 * 150, "{name}");
+    assert!(events_checked > 0, "{name}: no predicted events");
 }
 
 #[test]

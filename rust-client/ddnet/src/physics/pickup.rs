@@ -369,6 +369,7 @@ impl GameWorld {
                             g::WEAPON_GRENADE,
                             true,
                             team,
+                            p.for_client_id,
                         );
                     }
                     p.marked_for_destroy = true;
@@ -397,7 +398,8 @@ impl GameWorld {
         if p.explosive {
             // only the target's team feels it
             let team = self.teams.team(p.for_client_id);
-            self.create_explosion(p.pos, p.for_client_id, g::WEAPON_GRENADE, true, team);
+            let id = p.for_client_id;
+            self.create_explosion(p.pos, id, g::WEAPON_GRENADE, true, team, id);
         }
         p.marked_for_destroy = true;
     }

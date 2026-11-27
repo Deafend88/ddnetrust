@@ -1288,8 +1288,11 @@ User review: chat approved; fixes before sound.
   the server's copies are suppressed. 15 `snd_*`/`cl_predict_events`/`gfx_high_detail`
   variables from `settings_ddnet.cfg`. `scripts/sound_check.ps1`: device at 48 kHz, 116 of
   116 samples loaded, no errors.
-- Not verified against C++ copies yet: the glue of `CSounds`/`CMapSounds::OnRender` (only
-  the engine under it is); a listening check by the user is pending. No sound settings
+- The prediction world's events are verified: `rs_parity weapons` dumps the C++ world's
+  `m_PredictedEvents` each tick (7 maps x 4500 ticks, identical).
+- Not verified against C++ copies yet: the glue of `CSounds`/`CMapSounds::OnRender` and
+  `HandlePredictedEvents`/`CheckPredictedEventHandled` (the engine and the events under
+  them are); a listening check by the user is pending. No sound settings
   page yet (13.10); values come from `settings_ddnet.cfg`.
 
 #### Exact next actions (next session starts here)

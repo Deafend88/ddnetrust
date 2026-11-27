@@ -1181,6 +1181,9 @@ static int WeaponsMode(const char *pMapFile, const char *pOutFile, bool Verbose)
 	g_Config.m_SvHit = 1;
 	g_Config.m_SvDraggerRange = 700;
 	g_Config.m_SvOldTeleportHook = 0;
+	// the predicted events (sounds, hammer hits) are dumped too (M9 13.3)
+	g_Config.m_ClPredictEvents = 1;
+	g_Config.m_SndEnable = 1;
 
 	static CTuningParams s_aTuning[TuneZone::NUM];
 	const int aIds[WEAPON_CHARS] = {3, 0, 6, 1};
@@ -1244,7 +1247,7 @@ static int WeaponsMode(const char *pMapFile, const char *pOutFile, bool Verbose)
 		Config.m_UseTuneZones = Mode != 5;
 		Config.m_BugDDRaceInput = false;
 		Config.m_NoWeakHookAndBounce = Mode == 1;
-		Config.m_PredictEvents = false;
+		Config.m_PredictEvents = true;
 		Config.m_OldLaser = Mode == 1;
 		if(Mode == 1)
 			World.m_Teams.Team(aIds[2], 1);
@@ -1357,6 +1360,7 @@ static int WeaponsMode(const char *pMapFile, const char *pOutFile, bool Verbose)
 		CNetObj_PlayerInput aInputs[MAX_CLIENTS] = {};
 		int aHold[WEAPON_CHARS][4] = {};
 		int aTotals[5] = {};
+		size_t NumEvents = 0;
 		for(int Tick = 1; Tick <= WEAPON_TICKS; Tick++)
 		{
 			if(Rand() % 25 == 0)
@@ -1452,6 +1456,15 @@ static int WeaponsMode(const char *pMapFile, const char *pOutFile, bool Verbose)
 				fprintf(f, " ]");
 			}
 			fprintf(f, "\n");
+			// the predicted events this tick added (nothing handles them here)
+			fprintf(f, "events %d", (int)World.m_PredictedEvents.size());
+			for(size_t e = NumEvents; e < World.m_PredictedEvents.size(); e++)
+			{
+				const CGameWorld::CPredictedEvent &Ev = World.m_PredictedEvents[e];
+				fprintf(f, " %d:%08x:%08x:%d:%d:%d", Ev.m_EventId, FloatBits(Ev.m_Pos.x), FloatBits(Ev.m_Pos.y), Ev.m_Id, Ev.m_Tick, Ev.m_ExtraInfo);
+			}
+			fprintf(f, "\n");
+			NumEvents = World.m_PredictedEvents.size();
 		}
 		fprintf(f, "totals %d %d %d %d %d\n", aTotals[0], aTotals[1], aTotals[2], aTotals[3], aTotals[4]);
 	}

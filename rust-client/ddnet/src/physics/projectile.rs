@@ -12,10 +12,6 @@ use crate::protocol::generated as g;
 
 /// C++: `LAYER_GAME`, `LAYER_SWITCH` (mapitems.h).
 pub const LAYER_GAME: i32 = 0;
-/// C++ `m_SoundImpact` of the explosive projectiles: only grenades explode, fired
-/// (`SOUND_GRENADE_EXPLODE` passed to the constructor) or from a snapshot (set by
-/// `CProjectile(pGameWorld, Id, pProj)`), so it needs no field.
-const SOUND_IMPACT: i32 = crate::protocol::sounds::SOUND_GRENADE_EXPLODE;
 pub const LAYER_SWITCH: i32 = 4;
 
 /// C++: `CProjectile`.
@@ -30,6 +26,8 @@ pub struct Projectile {
     pub type_: i32,
     pub start_tick: i32,
     pub explosive: bool,
+    /// C++ `m_SoundImpact`: played where an explosive projectile explodes (-1 none).
+    pub sound_impact: i32,
     pub layer: i32,
     pub number: i32,
     pub bouncing: i32,
@@ -98,6 +96,11 @@ impl Projectile {
             type_: d.type_,
             start_tick: d.start_tick,
             explosive,
+            sound_impact: if d.type_ == g::WEAPON_GRENADE {
+                crate::protocol::sounds::SOUND_GRENADE_EXPLODE
+            } else {
+                -1
+            },
             layer: if d.switch_number > 0 {
                 LAYER_SWITCH
             } else {
@@ -124,6 +127,7 @@ impl GameWorld {
         span: i32,
         freeze: bool,
         explosive: bool,
+        sound_impact: i32,
         layer: i32,
     ) {
         let tune_zone = if self.config.use_tune_zones {
@@ -142,6 +146,7 @@ impl GameWorld {
                 type_,
                 start_tick: self.game_tick,
                 explosive,
+                sound_impact,
                 layer,
                 number: 0,
                 bouncing: 0,
@@ -194,10 +199,10 @@ impl GameWorld {
                 && (target.is_none() || !p.freeze || (p.type_ == g::WEAPON_SHOTGUN && collide != 0))
             {
                 let team = target.map_or(-1, |t| self.teams.team(t as i32));
-                self.create_explosion(col_pos, p.owner, p.type_, p.owner == -1, team);
+                self.create_explosion(col_pos, p.owner, p.type_, p.owner == -1, team, p.start_tick);
                 if self.config.is_ddrace && self.config.predict_ddrace {
                     // vanilla has different projectile physics
-                    self.sound(col_pos, SOUND_IMPACT, p.start_tick);
+                    self.sound(col_pos, p.sound_impact, p.start_tick);
                 }
             } else if p.freeze {
                 for c in self.find_characters(cur_pos, 1.0) {
@@ -227,7 +232,13 @@ impl GameWorld {
                     p.direction.y = 0.0;
                 }
                 p.pos += p.direction;
-            } else if p.type_ == g::WEAPON_GUN || !p.freeze {
+            } else if p.type_ == g::WEAPON_GUN {
+                if self.config.is_ddrace && self.config.predict_ddrace {
+                    let angle = -p.direction.x.atan2(p.direction.y);
+                    self.damage_ind_event(cur_pos, angle, 10, p.start_tick);
+                }
+                p.marked_for_destroy = true;
+            } else if !p.freeze {
                 p.marked_for_destroy = true;
             }
         }
@@ -235,8 +246,8 @@ impl GameWorld {
             if p.explosive {
                 let owner_char = self.char_id(p.owner);
                 let team = owner_char.map_or(-1, |o| self.teams.team(o as i32));
-                self.create_explosion(col_pos, p.owner, p.type_, p.owner == -1, team);
-                self.sound(col_pos, SOUND_IMPACT, p.start_tick);
+                self.create_explosion(col_pos, p.owner, p.type_, p.owner == -1, team, p.start_tick);
+                self.sound(col_pos, p.sound_impact, p.start_tick);
             }
             p.marked_for_destroy = true;
         }

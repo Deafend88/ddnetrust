@@ -409,10 +409,9 @@ only matters for names so long that neither file can exist.
 - Sound sets always load on a thread (C++ `cl_threadsoundloading`, default 1); the random
   pick of `GetSampleId` uses our own generator (C++ `rand()`), never the last sample.
 - Predicted events (`cl_predict_events`, DDNet servers set `PREDICT_EVENTS`): the world
-  creates the sound and hammer-hit events of C++ (weapons, ninja, pain, pickups, laser
-  bounces, grenade impacts, hook-attach-player); explosion and damage-indicator events are
-  left out, they only feed particles. A projectile's `m_SoundImpact` has no field: only
-  grenades explode and theirs is always `SOUND_GRENADE_EXPLODE`.
+  creates every event of the C++ prediction world (sounds, hammer hits, explosions, damage
+  indicators; `rs_parity weapons` now dumps them: identical on all maps). Only the sounds
+  and hammer hits are played; explosions and damage indicators feed particles (not ported).
 - `ProcessEvents` runs inside the predictor's snapshot handling (before the prediction, as
   C++ `OnNewSnapshot` before `OnPredict`), so a server event is checked against the
   previous frame's predicted events.
