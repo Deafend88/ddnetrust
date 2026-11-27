@@ -1,0 +1,5 @@
+# rs_parity opus on Sunny Side Up's map sound 0 (extract_map_sounds.py): opusfile's
+# frames rate channels loop_start, then the frame offsets of the 4800-frame windows in
+# opus_sunny.pcm (16-bit, interleaved)
+ok 5238001 48000 2 0
+0 1000000 3000000 5233201

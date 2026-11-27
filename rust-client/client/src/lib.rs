@@ -23,6 +23,7 @@ pub mod media;
 pub mod movement;
 pub mod nameplates;
 pub mod nowplaying;
+pub mod opus;
 pub mod render;
 pub mod scoreboard;
 pub mod skin;

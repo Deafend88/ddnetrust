@@ -385,4 +385,19 @@ only matters for names so long that neither file can exist.
   file is malformed), the extended 32-bit `wvx` stream, legacy (pre-4.0) files.
 - C++ callocs whatever length the header claims (up to INT_MAX frames) and crashes when
   that fails; our allocation is fallible, so such a file fails to load instead.
+- Opus (map sounds): `opus-pure` 0.2.5 (pure Rust, Ogg demuxer included) decodes; on top
+  `client/src/opus.rs` ports what opusfile's `op_read` does in float builds: libopus
+  `opus_pcm_soft_clip` per packet, then `op_float2short_filter` (triangular dither with IIR
+  noise shaping, PRNG seeded with the stream serial, muting after silence, `lrintf`).
+  A float decoder cannot be bit-exact with libopus 1.3.1 on x86, so the tolerance (§13.13
+  answer 1) is: lengths, channels and loop starts exact; samples within 9 steps of 16 bits
+  (peak -71 dBFS), mean difference at most 1 step. Measured on all 60 embedded sounds of
+  `data/maps` and the user's 303 downloaded maps (`rs_parity opus`, 143M samples): all
+  lengths/channels/loop starts identical, worst 9, mean 0.64, 66% of samples identical.
+  The committed test checks Sunny Side Up's sound (4 windows) against opusfile.
+- A damaged Ogg page (CRC) fails the whole Opus sound; opusfile resyncs and plays the
+  rest. A panic inside the third-party decoder is caught and is a failed decode (map
+  sounds come from servers).
+- `LOOP_START=` is parsed with Rust's integer parse (C++ `str_toint`); they differ only on
+  odd spellings such as a leading `+`.
 

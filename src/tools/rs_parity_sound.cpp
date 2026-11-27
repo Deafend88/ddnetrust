@@ -1,16 +1,18 @@
-// "wv" mode of rs_parity: the sound decoders (PLAN §13.3), for
+// "wv" and "opus" modes of rs_parity: the sound decoders (PLAN §13.3), for
 // rust-client/client/tests/sound.rs.
 //
 // CSound (engine/client/sound.cpp) needs SDL and the graphics engine, so its decoder is
 // copied here word for word into a stand-in class of the same name (in its own
-// namespace): CWavpackReader and DecodeWV. Each copy is marked "C++ copy: <file>:<lines>"
+// namespace): CWavpackReader, DecodeWV and DecodeOpus. Each copy is marked "C++ copy: <file>:<lines>"
 // ... "end of copy"; the Rust test `cpp_copies_match_source` checks that every copy is
 // still identical (whitespace aside) to those source lines. What the copies call is the
-// real code: libwavpack from ddnet-libs.
+// real code: libwavpack and opusfile from ddnet-libs.
 //
 // Every .wv file of the given directories is decoded as it is and in 4 damaged variants
 // (cut short, one bit flipped, 8 random bytes, one bit flipped in the first 64 bytes);
 // the dump has the damage, the result and an FNV-1a hash of the 16-bit samples.
+// "opus": every .opus file of a directory (map sounds, see extract_map_sounds.py) is
+// decoded; the result goes to <out dir>/opus.txt and the samples to <out dir>/<name>.pcm.
 
 #include <base/log.h>
 #include <base/mem.h>
@@ -28,6 +30,7 @@
 #include <vector>
 
 extern "C" {
+#include <opusfile.h>
 #include <wavpack.h>
 }
 
@@ -49,7 +52,94 @@ class CSound
 
 public:
 	bool DecodeWV(CSample &Sample, const void *pData, unsigned DataSize, const char *pContextName) const;
+	bool DecodeOpus(CSample &Sample, const void *pData, unsigned DataSize, const char *pContextName) const;
 };
+
+// C++ copy: engine/client/sound.cpp:464-546
+bool CSound::DecodeOpus(CSample &Sample, const void *pData, unsigned DataSize, const char *pContextName) const
+{
+	int OpusError = 0;
+	OggOpusFile *pOpusFile = op_open_memory((const unsigned char *)pData, DataSize, &OpusError);
+	if(pOpusFile)
+	{
+		const int NumChannels = op_channel_count(pOpusFile, -1);
+		if(NumChannels > 2)
+		{
+			op_free(pOpusFile);
+			log_error("sound/opus", "File is not mono or stereo. Filename='%s'", pContextName);
+			return false;
+		}
+
+		const int NumSamples = op_pcm_total(pOpusFile, -1); // per channel!
+		if(NumSamples < 0)
+		{
+			op_free(pOpusFile);
+			log_error("sound/opus", "Failed to get number of samples, error %d. Filename='%s'", NumSamples, pContextName);
+			return false;
+		}
+
+		short *pSampleData = (short *)calloc((size_t)NumSamples * NumChannels, sizeof(short));
+
+		int Pos = 0;
+		while(Pos < NumSamples)
+		{
+			const int Read = op_read(pOpusFile, pSampleData + Pos * NumChannels, (NumSamples - Pos) * NumChannels, nullptr);
+			if(Read < 0)
+			{
+				free(pSampleData);
+				op_free(pOpusFile);
+				log_error("sound/opus", "op_read error %d at %d. Filename='%s'", Read, Pos, pContextName);
+				return false;
+			}
+			else if(Read == 0) // EOF
+				break;
+			Pos += Read;
+		}
+
+		Sample.m_pData = pSampleData;
+		Sample.m_NumFrames = Pos;
+		Sample.m_Rate = 48000;
+		Sample.m_Channels = NumChannels;
+		Sample.m_LoopStart = 0;
+		Sample.m_PausedAt = 0;
+
+		const OpusTags *pTags = op_tags(pOpusFile, -1);
+		if(pTags)
+		{
+			for(int i = 0; i < pTags->comments; ++i)
+			{
+				const char *pComment = pTags->user_comments[i];
+				if(!pComment)
+					continue;
+				if(!str_startswith(pComment, "LOOP_START="))
+					continue;
+				int LoopStart = -1;
+				if(!str_toint(pComment + str_length("LOOP_START="), &LoopStart))
+				{
+					log_error("sound/opus", "Invalid LOOP_START tag. Value='%s' Filename='%s'", pComment + str_length("LOOP_START="), pContextName);
+					break;
+				}
+				if(LoopStart < 0 || LoopStart >= Sample.m_NumFrames)
+				{
+					log_error("sound/opus", "Tag LOOP_START out of range. Value=%d Min=0 Max=%d Filename='%s'", LoopStart, Sample.m_NumFrames - 1, pContextName);
+					break;
+				}
+				Sample.m_LoopStart = LoopStart;
+				break;
+			}
+		}
+
+		op_free(pOpusFile);
+	}
+	else
+	{
+		log_error("sound/opus", "Failed to decode sample, error %d. Filename='%s'", OpusError, pContextName);
+		return false;
+	}
+
+	return true;
+}
+// end of copy
 
 // C++ copy: engine/client/sound.cpp:549-610
 class CWavpackReader
@@ -270,6 +360,38 @@ int WvMode(const char *pOutFile, int NumDirs, const char *const *ppDirs)
 					fprintf(pOut, " fail\n");
 			}
 		}
+	}
+	fclose(pOut);
+	return 0;
+}
+
+int OpusMode(const char *pOutDir, const char *pDir)
+{
+	using namespace rs_sound;
+	FILE *pOut = fopen((std::string(pOutDir) + "/opus.txt").c_str(), "w");
+	if(!pOut)
+		return -1;
+	std::vector<std::string> vNames;
+	for(const auto &Entry : std::filesystem::directory_iterator(pDir))
+		if(Entry.path().extension() == ".opus")
+			vNames.push_back(Entry.path().filename().string());
+	std::sort(vNames.begin(), vNames.end());
+	CSound Sound;
+	for(const std::string &Name : vNames)
+	{
+		std::ifstream File(std::filesystem::path(pDir) / Name, std::ios::binary);
+		const std::vector<unsigned char> vData((std::istreambuf_iterator<char>(File)), std::istreambuf_iterator<char>());
+		CSample Sample;
+		if(!Sound.DecodeOpus(Sample, vData.data(), vData.size(), Name.c_str()))
+		{
+			fprintf(pOut, "file %s fail\n", Name.c_str());
+			continue;
+		}
+		fprintf(pOut, "file %s ok %d %d %d %d\n", Name.c_str(), Sample.m_NumFrames, Sample.m_Rate, Sample.m_Channels, Sample.m_LoopStart);
+		FILE *pPcm = fopen((std::string(pOutDir) + "/" + Name + ".pcm").c_str(), "wb");
+		fwrite(Sample.m_pData, sizeof(short), (size_t)Sample.m_NumFrames * Sample.m_Channels, pPcm);
+		fclose(pPcm);
+		free(Sample.m_pData);
 	}
 	fclose(pOut);
 	return 0;

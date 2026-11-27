@@ -1311,7 +1311,7 @@ fn cpp_copies_match_source() {
             i = end + 1;
         }
     }
-    assert_eq!(copies, 37);
+    assert_eq!(copies, 38);
 }
 
 /// rs_parity's `WeaponZoneTuning`: `ZoneTuning` plus weapon parameters per zone.

@@ -18,6 +18,8 @@ pub struct Decoded {
     pub frames: usize,
     pub rate: u32,
     pub channels: usize,
+    /// C++ `m_LoopStart`: 0, or an Opus file's `LOOP_START` tag
+    pub loop_start: usize,
 }
 
 const BYTES_STORED: u32 = 3;
@@ -1672,5 +1674,6 @@ pub fn decode(data: &[u8]) -> Option<Decoded> {
         frames: num_samples,
         rate: ctx.sample_rate,
         channels: nch,
+        loop_start: 0,
     })
 }

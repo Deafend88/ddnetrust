@@ -96,3 +96,113 @@ fn wavpack_survives_damage() {
         }
     }
 }
+
+/// Map sounds against opusfile: `RS_OPUS_REF` is an `rs_parity opus <dir> <corpus>` output
+/// directory, `RS_OPUS_CORPUS` its corpus. Lengths, channels and loop starts must match;
+/// samples are compared for the largest and the mean difference.
+#[test]
+fn opus_matches_opusfile_corpus() {
+    let (Ok(refdir), Ok(corpus)) = (
+        std::env::var("RS_OPUS_REF"),
+        std::env::var("RS_OPUS_CORPUS"),
+    ) else {
+        return;
+    };
+    let text = std::fs::read_to_string(format!("{refdir}/opus.txt")).unwrap();
+    let (mut worst, mut sum, mut count, mut differ) = (0i32, 0f64, 0usize, 0usize);
+    for line in text.lines() {
+        let w: Vec<&str> = line.split(' ').collect();
+        let got = ddnet_rs::opus::decode(&std::fs::read(format!("{corpus}/{}", w[1])).unwrap());
+        let Some(got) = got else {
+            assert_eq!(w[2], "fail", "{line}");
+            continue;
+        };
+        let s = &got;
+        assert_eq!(
+            format!("ok {} {} {} {}", s.frames, s.rate, s.channels, s.loop_start),
+            w[2..].join(" "),
+            "{line}"
+        );
+        let pcm = std::fs::read(format!("{refdir}/{}.pcm", w[1])).unwrap();
+        let mut file_worst = 0;
+        for (i, b) in pcm.as_chunks::<2>().0.iter().enumerate() {
+            let d = (i16::from_le_bytes([b[0], b[1]]) as i32 - s.data[i] as i32).abs();
+            file_worst = file_worst.max(d);
+            sum += d as f64;
+            differ += (d != 0) as usize;
+        }
+        count += pcm.len() / 2;
+        worst = worst.max(file_worst);
+        println!("{} worst {file_worst}", w[1]);
+    }
+    println!(
+        "opus: {count} samples, {differ} differ, worst {worst}, mean {:.4}",
+        sum / count as f64
+    );
+}
+
+/// Sunny Side Up's map sound against opusfile: exact length, channels and loop start;
+/// 4 windows of samples within the tolerance measured on the corpus (DECISIONS.md 13.3).
+#[test]
+fn opus_matches_opusfile() {
+    let map = ddnet::map::datafile::Datafile::parse(
+        std::fs::read(repo_file("data/maps/Sunny Side Up.map")).unwrap(),
+    )
+    .unwrap();
+    let item = &map.items[map.get_type(7).start]; // MAPITEMTYPE_SOUND
+    let got = ddnet_rs::opus::decode(&map.data(item.data[3]).unwrap()).unwrap();
+    let text =
+        std::fs::read_to_string(repo_file("rust-client/tests/golden/opus_sunny.txt")).unwrap();
+    let mut lines = text.lines().filter(|l| !l.starts_with('#'));
+    let s = &got;
+    assert_eq!(
+        format!("ok {} {} {} {}", s.frames, s.rate, s.channels, s.loop_start),
+        lines.next().unwrap()
+    );
+    let pcm = std::fs::read(repo_file("rust-client/tests/golden/opus_sunny.pcm")).unwrap();
+    let mut want = pcm
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|b| i16::from_le_bytes([b[0], b[1]]));
+    let (mut worst, mut sum, mut n) = (0, 0, 0);
+    for off in lines.next().unwrap().split(' ') {
+        let off: usize = off.parse().unwrap();
+        for &v in &s.data[off * 2..(off + 4800) * 2] {
+            let d = (want.next().unwrap() as i32 - v as i32).abs();
+            worst = worst.max(d);
+            sum += d;
+            n += 1;
+        }
+    }
+    assert!(
+        worst <= 9 && sum as f64 / n as f64 <= 1.0,
+        "worst {worst}, mean {}",
+        sum as f64 / n as f64
+    );
+}
+
+/// Damaged map sounds (they come from servers) never panic the Opus path.
+#[test]
+fn opus_survives_damage() {
+    let map = ddnet::map::datafile::Datafile::parse(
+        std::fs::read(repo_file("data/maps/Sunny Side Up.map")).unwrap(),
+    )
+    .unwrap();
+    let item = &map.items[map.get_type(7).start];
+    let orig = map.data(item.data[3]).unwrap()[..40000].to_vec();
+    let mut seed: u32 = 7;
+    let mut rand = move || {
+        seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12345);
+        (seed >> 8) as usize
+    };
+    for _ in 0..300 {
+        let mut data = orig.clone();
+        for _ in 0..1 + rand() % 24 {
+            let i = rand() % data.len();
+            data[i] = rand() as u8;
+        }
+        data.truncate(rand() % (data.len() + 64));
+        ddnet_rs::opus::decode(&data);
+    }
+}

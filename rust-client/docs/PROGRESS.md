@@ -1266,8 +1266,13 @@ User review: chat approved; fixes before sound.
   `src/tools/rs_parity_sound.cpp`, copies of `CWavpackReader` and `DecodeWV`, linked to the
   real libwavpack): all 131 `data/audio/*.wv` plus 4 damaged variants each (655 cases,
   483 decodes) identical; `client/tests/sound.rs`, plus a no-panic damage test.
-- Next: B Opus (opus-pure + opusfile's trimming, soft clip and dither), C mixer
-  (`CSound` copies), D `CSounds`/`CMapSounds`, call sites, cpal output, settings.
+- Piece B, Opus: `client/src/opus.rs` (opus-pure + ports of opusfile's soft clip and
+  dither). `rs_parity opus` (copy of `DecodeOpus` on real opusfile) over 60 map sounds:
+  lengths/channels/loop starts identical, samples within 9 steps (mean 0.64), DECISIONS.
+  Committed check: Sunny Side Up (`tests/golden/opus_sunny.*`); the corpus check runs with
+  `RS_OPUS_REF`/`RS_OPUS_CORPUS` (see "Regenerate parity data").
+- Next: C mixer (`CSound` copies), D `CSounds`/`CMapSounds`, call sites, cpal output,
+  settings.
 
 #### Exact next actions (next session starts here)
 State (2026-11-27): 13.1, 13.2 and the 13.2 review fixes done and pushed; stopped for
@@ -1373,6 +1378,8 @@ Build the `rs_parity` target like `rs_golden`, then per map (repo root):
     build-rs/rs_parity.exe movement rust-client/tests/golden/movement.txt
     build-rs/rs_parity.exe chat rust-client/tests/golden/chat.txt
     build-rs/rs_parity.exe wv rust-client/tests/golden/wv.txt data/audio
+    python rust-client/scripts/extract_map_sounds.py <corpus dir> data/maps %APPDATA%/DDNet/downloadedmaps
+    build-rs/rs_parity.exe opus <ref dir> <corpus dir>   # then cargo test with RS_OPUS_REF=<ref dir> RS_OPUS_CORPUS=<corpus dir>
     rust-client\scripts\cpp_settings.ps1   # needs build-rs-client\DDNet.exe (PowerShell)
 
 All modes are deterministic: the data regenerates byte for byte.
