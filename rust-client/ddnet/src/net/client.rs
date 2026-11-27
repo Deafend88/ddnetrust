@@ -5,6 +5,7 @@
 use std::collections::VecDeque;
 
 use super::conn::{ChunkUnpacker, Connection, FREQ, State as ConnState};
+use super::serverinfo::{self, ServerInfo};
 use crate::physics::vmath::trunc_i32;
 use crate::protocol::generated::{self as g, GameMsg, ObjPlayerInput};
 use crate::protocol::packer::{
@@ -454,6 +455,11 @@ pub struct Client {
     /// C++: `cl_prediction_margin` (ms), used when the server syncs weapon input.
     pub prediction_margin: i32,
     random: fn() -> [u8; 16],
+    /// C++ `m_CurrentServerInfo` and `m_CurrentServerInfoRequestTime` (-1 once received).
+    server_info: ServerInfo,
+    info_request_time: i64,
+    /// C++ `CServerBrowser::GenerateToken` for the server: 24 bits from a random seed.
+    info_token: i32,
 }
 
 impl Client {
@@ -528,6 +534,12 @@ impl Client {
             repredict: false,
             prediction_margin: 10,
             random,
+            server_info: ServerInfo::default(),
+            info_request_time: 0,
+            info_token: {
+                let r = random();
+                (r[0] as i32) << 16 | (r[1] as i32) << 8 | r[2] as i32
+            },
         }
     }
 
@@ -599,6 +611,7 @@ impl Client {
     /// C++: `CClient::Connect` network part.
     pub fn connect(&mut self, now: i64) {
         self.connection_id = random_uuid(self.random);
+        self.server_info_request();
         self.state = State::Connecting;
         self.conn.connect(now);
     }
@@ -638,9 +651,11 @@ impl Client {
         let Some(mut p) = packet::decode(datagram) else {
             return;
         };
-        if p.flags & PACKETFLAG_CONNLESS != 0
-            || !matches!(self.conn.state(), ConnState::Connect | ConnState::Online)
-        {
+        if p.flags & PACKETFLAG_CONNLESS != 0 {
+            self.on_connless(&p.data);
+            return;
+        }
+        if !matches!(self.conn.state(), ConnState::Connect | ConnState::Online) {
             return;
         }
         if !self.conn.feed(&mut p, now)
@@ -670,6 +685,26 @@ impl Client {
         }
         .pack(&mut p);
         self.send_msg(g::MsgClSay::ID, false, &p, true, false, now);
+    }
+
+    /// C++: `CGameClient::SendSwitchTeam` (gameclient.cpp:3110).
+    pub fn send_switch_team(&mut self, team: i32, now: i64) {
+        let mut p = Packer::default();
+        g::MsgClSetTeam { team }.pack(&mut p);
+        self.send_msg(g::MsgClSetTeam::ID, false, &p, true, false, now);
+    }
+
+    /// C++: `CGameClient::SendKill` (gameclient.cpp:3276) for the main tee; the copy for
+    /// the dummy (`cl_dummy_copy_moves`) comes with the dummy (13.6).
+    pub fn send_kill(&mut self, now: i64) {
+        self.send_msg(
+            g::MsgClKill::ID,
+            false,
+            &Packer::default(),
+            true,
+            false,
+            now,
+        );
     }
 
     fn send_msg(
@@ -931,7 +966,34 @@ impl Client {
         self.pred_tick = 0;
         self.game_time.init(0, now);
         self.predicted_time.init(0, now);
+        self.server_info_request(); // fresh one for timeout protection
         self.next_ping = now + FREQ / 2;
+    }
+
+    /// C++: `CClient::ServerInfoRequest`.
+    fn server_info_request(&mut self) {
+        self.server_info = ServerInfo::default();
+        self.info_request_time = 0;
+    }
+
+    /// C++ `CClient::ServerInfo()`, once the server answered.
+    pub fn server_info(&self) -> Option<&ServerInfo> {
+        (self.info_request_time < 0).then_some(&self.server_info)
+    }
+
+    /// C++: the current-server part of `ProcessServerInfo` (client.cpp:1559): only
+    /// while online with a map, and a type at least as new as the one we have.
+    fn on_connless(&mut self, data: &[u8]) {
+        let Some(mut info) = serverinfo::parse(data) else {
+            return;
+        };
+        let Some(map) = &self.map else { return };
+        if self.conn.state() == ConnState::Online && info.type_ >= self.server_info.type_ {
+            // C++ SetCurrentServerInfo: the map's own name
+            info.map = map.name.clone();
+            self.server_info = info;
+            self.info_request_time = -1;
+        }
     }
 
     /// C++: the `NETMSG_SNAP*` branch of `ProcessServerPacket` (client.cpp:2109).
@@ -1128,6 +1190,11 @@ impl Client {
                 self.repredict = true;
                 self.send_input(now);
             }
+        }
+        // fetch server info if we don't have it
+        if self.info_request_time >= 0 && now > self.info_request_time {
+            self.conn.outbox.push(serverinfo::request(self.info_token));
+            self.info_request_time = now + FREQ * 2;
         }
         // periodically ping server
         if self.next_ping >= 0 && now > self.next_ping {

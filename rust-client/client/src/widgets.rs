@@ -63,11 +63,21 @@ pub fn soft_shadow(shadow: Shadow, rect: egui::Rect, radius: f32) -> Shape {
 
 /// A card: rounded glass panel with a hairline border.
 pub fn panel<R>(ui: &mut Ui, glass: Glass, add: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R> {
+    card(ui, glass, space::XL, add)
+}
+
+/// A panel with `margin` (a `space` step) inside: compact bars use less than a card.
+pub fn card<R>(
+    ui: &mut Ui,
+    glass: Glass,
+    margin: f32,
+    add: impl FnOnce(&mut Ui) -> R,
+) -> InnerResponse<R> {
     let frame = Frame::new()
         .fill(glass.panel_fill())
         .stroke(Stroke::new(1.0, color::BORDER))
         .corner_radius(CornerRadius::same(radius::CARD))
-        .inner_margin(Margin::same(space::XL as i8));
+        .inner_margin(Margin::same(margin as i8));
     glass_frame(ui, glass, false, frame, |ui| ui.vertical(add).inner)
 }
 

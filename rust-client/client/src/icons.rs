@@ -115,9 +115,21 @@ pub const HOOK_STRONG: &str = "\u{f182}";
 pub const HOOK_WEAK: &str = "\u{f181}";
 /// Material Symbols `leaderboard`.
 pub const SCOREBOARD: &str = "\u{f20c}";
+/// Phosphor `binoculars`.
+pub const BINOCULARS: &str = "\u{ea64}";
+/// Material Symbols `refresh`.
+pub const RESPAWN: &str = "\u{e5d5}";
+/// Material Symbols `pause`.
+pub const PAUSE_GAME: &str = "\u{e034}";
+/// Material Symbols `login`.
+pub const JOIN: &str = "\u{ea77}";
+/// Material Symbols `comments_disabled`.
+pub const CHAT_OFF: &str = "\u{e7a2}";
+/// Material Symbols `content_copy`.
+pub const COPY: &str = "\u{e14d}";
 
 /// Every icon above, in order (the gallery shows them all).
-pub const ALL: [&str; 56] = [
+pub const ALL: [&str; 62] = [
     USER,
     FINGERPRINT,
     MONITOR,
@@ -174,4 +186,10 @@ pub const ALL: [&str; 56] = [
     HOOK_STRONG,
     HOOK_WEAK,
     SCOREBOARD,
+    BINOCULARS,
+    RESPAWN,
+    PAUSE_GAME,
+    JOIN,
+    CHAT_OFF,
+    COPY,
 ];

@@ -1,5 +1,6 @@
-//! Minimal menus (M6.8): connect by address, basic settings, quit. Drawn with egui over
-//! the composited world; the full menu design (C++ `CMenus`) comes later.
+//! The start screen (M6.8: connect by address, settings, quit; temporary, M11's home
+//! dashboard replaces it) and the settings page. Drawn with egui over the composited
+//! world; in game the Esc bar (`esc_menu.rs`) opens the settings page.
 
 use std::net::SocketAddr;
 
@@ -181,12 +182,9 @@ enum Page {
 /// What the player chose in the menu this frame.
 pub enum Action {
     Connect(SocketAddr),
-    Disconnect,
-    Resume,
     Quit,
     /// Leaving the settings page: save them.
     SettingsDone,
-    EditHud,
 }
 
 pub struct Menu {
@@ -293,7 +291,25 @@ impl Menu {
         self.picking = Some(kind);
     }
 
-    /// The start screen (`connected` false) or the in-game menu, and the settings page.
+    /// Opens the settings page (the Esc bar's gear).
+    pub fn open_settings_page(&mut self) {
+        self.page = Page::Settings;
+    }
+
+    /// Back from the settings page (its Back button without the save, which the caller
+    /// does).
+    pub fn close_settings(&mut self) {
+        self.page = Page::Main;
+        self.reading_key = None;
+    }
+
+    /// The settings page is open (in game it replaces the Esc bar).
+    pub fn settings_open(&self) -> bool {
+        self.page == Page::Settings
+    }
+
+    /// The start screen (`connected` false) and the settings page; in game the Esc bar
+    /// (`esc_menu`) is the main page.
     pub fn show(
         &mut self,
         ctx: &egui::Context,
@@ -301,6 +317,9 @@ impl Menu {
         settings: &mut Settings,
     ) -> Option<Action> {
         let mut action = None;
+        if connected && self.page == Page::Main {
+            return None;
+        }
         let glass = Glass::from_setting(settings.config.rs_glass);
         // the card is a glass panel: no egui window frame or title bar
         egui::Window::new("menu")
@@ -317,12 +336,11 @@ impl Menu {
                     w::text(ui, title, size::TITLE, Weight::SemiBold, color::TEXT);
                     ui.add_space(space::S);
                     match self.page {
-                        Page::Main => action = self.main_page(ui, connected),
+                        Page::Main => action = self.main_page(ui),
                         Page::Settings => {
                             self.settings_page(ui, settings);
                             if w::button(ui, None, "Back").clicked() {
-                                self.page = Page::Main;
-                                self.reading_key = None;
+                                self.close_settings();
                                 action = Some(Action::SettingsDone);
                             }
                         }
@@ -332,44 +350,30 @@ impl Menu {
         action
     }
 
-    fn main_page(&mut self, ui: &mut egui::Ui, connected: bool) -> Option<Action> {
+    fn main_page(&mut self, ui: &mut egui::Ui) -> Option<Action> {
         let mut action = None;
         // one column of full-width controls, the primary action first
         ui.set_width(MENU_WIDTH);
         ui.with_layout(
             egui::Layout::top_down_justified(egui::Align::Center),
             |ui| {
-                if connected {
-                    if w::accent_button(ui, Some(icons::GAME), "Back to the game").clicked() {
-                        action = Some(Action::Resume);
-                    }
-                    if w::button(ui, Some(icons::MOVE), "Edit HUD").clicked() {
-                        action = Some(Action::EditHud);
-                    }
-                    if w::button(ui, Some(icons::DISCONNECT), "Disconnect").clicked() {
-                        action = Some(Action::Disconnect);
-                    }
-                } else {
-                    let edit = ui.add(
-                        egui::TextEdit::singleline(&mut self.address)
-                            .hint_text("Server address")
-                            .desired_width(f32::INFINITY),
-                    );
-                    let enter = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-                    if w::accent_button(ui, Some(icons::CONNECT), "Connect").clicked() || enter {
-                        match self.address.trim().parse::<SocketAddr>() {
-                            Ok(a) if a.ip().is_loopback() => action = Some(Action::Connect(a)),
-                            Ok(_) => {
-                                self.error = Some("Only local servers (127.0.0.1) for now.".into())
-                            }
-                            Err(_) => {
-                                self.error = Some("Enter an address like 127.0.0.1:8303.".into())
-                            }
+                let edit = ui.add(
+                    egui::TextEdit::singleline(&mut self.address)
+                        .hint_text("Server address")
+                        .desired_width(f32::INFINITY),
+                );
+                let enter = edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                if w::accent_button(ui, Some(icons::CONNECT), "Connect").clicked() || enter {
+                    match self.address.trim().parse::<SocketAddr>() {
+                        Ok(a) if a.ip().is_loopback() => action = Some(Action::Connect(a)),
+                        Ok(_) => {
+                            self.error = Some("Only local servers (127.0.0.1) for now.".into())
                         }
+                        Err(_) => self.error = Some("Enter an address like 127.0.0.1:8303.".into()),
                     }
-                    if let Some(e) = &self.error {
-                        ui.colored_label(color::DANGER, e);
-                    }
+                }
+                if let Some(e) = &self.error {
+                    ui.colored_label(color::DANGER, e);
                 }
                 if w::button(ui, Some(icons::GEAR), "Settings").clicked() {
                     self.page = Page::Settings;

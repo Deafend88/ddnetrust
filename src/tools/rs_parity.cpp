@@ -114,6 +114,7 @@ int MsgsMode(IMap *pMap, CCollision *pCollision, const char *pOutFile); // rs_pa
 int AntiPingMode(CCollision *pCollision, const char *pOutFile); // rs_parity_antiping.cpp
 int ChatMode(const char *pOutFile); // rs_parity_chat.cpp
 int ScoreboardMode(const char *pOutFile); // rs_parity_scoreboard.cpp
+int MenusMode(const char *pOutFile); // rs_parity_menus.cpp
 int WvMode(const char *pOutFile, int NumDirs, const char *const *ppDirs); // rs_parity_sound.cpp
 int OpusMode(const char *pOutDir, const char *pDir); // rs_parity_sound.cpp
 int MixerMode(const char *pOutFile, const char *pAudioDir); // rs_parity_sound.cpp
@@ -3100,6 +3101,8 @@ int main(int argc, const char **argv)
 		return ChatMode(argv[2]);
 	if(argc == 3 && str_comp(argv[1], "scoreboard") == 0)
 		return ScoreboardMode(argv[2]);
+	if(argc == 3 && str_comp(argv[1], "menus") == 0)
+		return MenusMode(argv[2]);
 	if(argc >= 4 && str_comp(argv[1], "wv") == 0)
 		return WvMode(argv[2], argc - 3, argv + 3);
 	if(argc == 4 && str_comp(argv[1], "opus") == 0)

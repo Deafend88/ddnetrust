@@ -2,6 +2,7 @@
 
 pub mod client;
 pub mod conn;
+pub mod serverinfo;
 
 use std::io::{self, ErrorKind};
 use std::net::{SocketAddr, UdpSocket};

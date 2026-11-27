@@ -799,3 +799,80 @@ fn antiping_smoothing_steps() {
     assert!(max.0.is_finite() && max.1.is_finite());
     drop(server);
 }
+
+/// 13.5: the Esc menu's messages reach the server like C++'s (`SendSwitchTeam`,
+/// `SendKill`, `say /pause`), and the current server's info arrives (`ServerInfo()`).
+#[test]
+fn esc_menu_messages_reach_server() {
+    let Some(exe) = server_binary() else {
+        eprintln!("SKIPPED: no DDNet-Server (set DDNET_SERVER or build the game-server target)");
+        return;
+    };
+    let (server, port) = start_server_with(&exe, "coverage", &[], &["sv_name \"  rs   test \""]);
+    let socket = net::connect_socket(format!("127.0.0.1:{port}").parse().unwrap()).unwrap();
+    let start = Instant::now();
+    let mut client = Client::new(PlayerInfo::default(), "", net::random_bytes);
+    client.connect(net::now(start));
+    let run = |client: &mut Client, secs: u64, done: &dyn Fn(&Client) -> bool| {
+        let deadline = Instant::now() + Duration::from_secs(secs);
+        while Instant::now() < deadline && !done(client) {
+            net::pump(&socket, client, net::now(start)).unwrap();
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    };
+    run(&mut client, 15, &|c| {
+        local_x(c).is_some() && c.server_info().is_some()
+    });
+    let info = client.server_info().expect("server info");
+    // the name's spaces cleaned like C++ str_clean_whitespaces
+    assert_eq!(
+        (info.name.as_str(), info.map.as_str()),
+        ("rs test", "coverage")
+    );
+    assert!(info.version.contains("0.6"), "{info:?}");
+    let log = || fs::read_to_string(server.dir.join("server.log")).unwrap();
+    // the local player's team and DDNet player flags in the current snapshot
+    let state = |c: &Client| {
+        let id = c.local_id()?;
+        let item = |t| {
+            c.snapshot()
+                .iter()
+                .find(|it| it.type_id == t && it.id == id)
+        };
+        let team = g::ObjPlayerInfo::from_ints(&item(g::NETOBJTYPE_PLAYERINFO)?.data).team;
+        let flags = item(g::NETOBJTYPE_DDNETPLAYER).map_or(0, |it| it.data[0]);
+        Some((team, flags))
+    };
+    type Step<'a> = (&'a dyn Fn(&mut Client, i64), &'a dyn Fn(&Client) -> bool);
+    let steps: [Step; 4] = [
+        (
+            &|c, now| c.send_switch_team(g::TEAM_SPECTATORS, now),
+            &|c| state(c).is_some_and(|s| s.0 == g::TEAM_SPECTATORS),
+        ),
+        (&|c, now| c.send_switch_team(g::TEAM_RED, now), &|c| {
+            state(c).is_some_and(|s| s.0 == g::TEAM_RED)
+        }),
+        (
+            &|c, now| c.send_kill(now),
+            // C++ WEAPON_SELF is -2
+            &|_| log().contains("victim='0:nameless tee' weapon=-2"),
+        ),
+        (&|c, now| c.say(0, "/pause", now), &|c| {
+            state(c).is_some_and(|s| s.1 & g::EXPLAYERFLAG_PAUSED != 0)
+        }),
+    ];
+    for (n, (send, done)) in steps.into_iter().enumerate() {
+        // the server rate-limits team changes and kills (sv_team_change_delay etc.)
+        run(&mut client, 4, &|_| false);
+        send(&mut client, net::now(start));
+        run(&mut client, 3, done);
+        assert!(
+            done(&client),
+            "step {n}: {:?}
+{}",
+            state(&client),
+            log()
+        );
+    }
+    drop(server);
+}

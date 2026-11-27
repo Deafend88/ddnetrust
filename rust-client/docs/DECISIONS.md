@@ -441,6 +441,7 @@ only matters for names so long that neither file can exist.
   screenshot (`docs/review/13.4/entities_text_*`), not bit for bit. FreeType itself would
   need a vendored C library for one-pixel differences in small digits.
 
+
 ## 2026-11-28 — flaky `prediction_matches_server_with_antiping`
 
 - Two causes, both in the test, neither in the client: (1) C++ antiping predicts a grenade
@@ -451,3 +452,18 @@ only matters for names so long that neither file can exist.
   sometimes landed in a dm1 death tile, which freezes in the test commands' practice mode,
   so no grenade or laser was fired. The live test now runs with `tune explosion_strength 0`;
   the explosion force stays checked against C++ at full strength by `rs_parity antiping`.
+
+## 2026-11-28 — M9 13.5: in-game Esc menu
+
+- The C++ Game page hides Kill and Pause in team play when the menu is narrower than 855
+  px (`ShowDDRaceButtons`); our bar always has room, so they always show.
+- The auto spectator camera button (`<auto camera>` in `rs_parity menus`) is part of the
+  checked rules but hidden until spectating lands (13.7); Record demo (13.8), Dummy
+  (13.6), Ghost/Vote tabs (13.8/13.7) and Browser (M11) are hidden; there is no editor.
+- Players tab: no country flags and no emoticon-ignore toggle (emoticons come in 13.7);
+  a friend toggle shows at once (C++ updates `m_Friend` on the next snapshot).
+- Info tab: no "Favorite" (no browser yet), no community icon, no "Teams" line (needs the
+  server's `sv_team`, which the client does not get yet).
+- The server-info token is 24 random bits per client (C++ hashes a random seed with the
+  address; both are unpredictable to the server, which only echoes it).
+- The MOTD is cut at 899 bytes like C++, but never inside a UTF-8 character.

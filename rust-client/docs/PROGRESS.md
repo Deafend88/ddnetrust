@@ -1352,25 +1352,62 @@ User review: chat approved; fixes before sound.
   `docs/review/13.4/asset_picker.png` (gallery, 4th argument). Live switching is checked
   by code path and the gates only; not clicked through in a running client yet.
 
+#### 13.3/13.4 review (2026-11-28): approved by the user
+Sound works, asset pack switching works in the running client.
+
+#### Process fixes (2026-11-28)
+- CLAUDE.md: full gates before every push, never `commit && push` behind a failing test,
+  no build/scratch folders in commits; `.gitignore` covers `rust-client/target*/` and
+  scratch dirs.
+- `prediction_matches_server_with_antiping` flake found and fixed (DECISIONS): the test's
+  own grenades. C++ antiping predicts a grenade from the snapshot's position rounded to
+  1/100, so a blast on the tee can be one velocity step off in C++ too; and grenade
+  knockback made the path timing-dependent, sometimes into a dm1 death tile (frozen in
+  practice mode, so no grenade/laser fired). Reproduced only under CPU load (2 of 4 runs
+  with all cores busy); the test now runs with `tune explosion_strength 0` (the force
+  stays checked by `rs_parity antiping`): 12 of 12 under the same load, entity counts
+  stable.
+
+#### 13.5 (2026-11-28): in-game Esc menu — done, waiting for the user's review
+- `client/src/esc_menu.rs`: the final Esc menu per the concept: a compact glass bar over
+  the running game, tabs as a segmented control (Game, Players, Info), Game pills with
+  icons (Spectate / Join red / Join blue / Join game, Respawn = `Cl_Kill`, Pause ↔ Join
+  game = `say /pause`), a divider and Disconnect in muted red (with C++'s confirmation
+  as Yes/No pills when the race time passes `cl_confirm_disconnect_time`), round icon
+  buttons on the right with tooltips (Edit HUD, settings, quit), an "Esc to close" pill
+  centred under it. The settings icon opens the settings page; Esc goes back to the bar.
+  Players tab: other players by name with tee, clan, chat-ignore and friend toggles
+  (friends saved). Info tab: server name, address, ping, version, password, Copy info,
+  game type, map, score/time limit, round, MOTD (`Sv_Motd`).
+  Hidden until their step: Record demo, Ghost (13.8), Dummy (13.6), Vote and the auto
+  spectator camera (13.7), Browser (M11); no editor, so no editor button.
+- `ddnet/src/net/serverinfo.rs`: the current-server info request (`gie3` with the
+  extended token, every 2 s until answered) and the `inf3`/`iext` parsing of
+  `ProcessServerInfo` (it was on the "not yet sent" list). `Client::send_switch_team`,
+  `send_kill`.
+- The 6.8 menu is now only the start screen (temporary until M11's home dashboard) and
+  the settings page.
+- Verified: `rs_parity menus` (new `src/tools/rs_parity_menus.cpp`, a copy of
+  `RenderGame`'s button rules, menus_ingame.cpp:140-251) on all 1536 state combinations:
+  identical (`client/tests/esc_menu.rs`). Live (`esc_menu_messages_reach_server`): server
+  info arrives (name cleaned like C++), Spectate and Join game change the team in the
+  snapshot, Respawn kills (`weapon=-2`), `/pause` sets the paused flag. Serverinfo unit
+  tests (accept/reject rules, garbage).
+- Review: `docs/review/13.5/esc_0.png` (Game), `esc_1.png` (Players), `esc_2.png` (Info),
+  made by `scripts/esc_menu_check.ps1` (local server, two bots, `--esc-tab N`).
+
 #### Exact next actions (next session starts here)
-State (2026-11-28): 13.3 (sound) and 13.4 (crosshair, asset packs, entities overlay,
-picker) done and pushed; stopped for the user's review:
-- 13.3: a listening check (jump, hook, weapons, chat, a map with ambient sounds, e.g.
-  Sunny Side Up: map sounds never played before the `CSoundSource` size fix).
-- 13.4: `docs/review/13.4/` (entities, entity numbers, asset picker); switching packs in
-  the menu of a running client (not clicked through yet).
-- `prediction_matches_server_with_antiping` stays flaky: 3 of 6 runs failed on the
-  pre-session commit 5a52216ba too, so it predates this work; not investigated.
-Then: 13.5 (Esc menu).
+State (2026-11-28): 13.5 done and pushed; stopped for the user's review of
+`docs/review/13.5/`. Then 13.6 (dummy).
+Queued for the HUD polish (user, 2026-11-28; not now): an option to draw the race
+status's weapons in the pack's own colours instead of white silhouettes (thin custom-pack
+sprites become unreadable bars).
 
 Earlier state (2026-11-27): 13.1, 13.2 and the 13.2 review fixes done and pushed.
 Queued (user, 2026-11-27; not done yet):
 - HUD dark glow (`style::HUD_SHADOW` / the watermark's glow) far too big and noticeable:
   make it tiny and barely visible.
 - Watermark: reduce the gap between icons and values.
-Open: `ddnet/tests/server.rs` `prediction_matches_server_with_antiping` is flaky (about
-1 in 3 runs, also on the clean tree before these fixes: one 1-unit `vel_x` mismatch,
-failing runs end at ~11 s instead of ~22 s); not investigated.
 
 Previous state: M8 (8.1-8.8) done and pushed; stopped for the user's review of
 8.5-8.8. Review material: `docs/review/8.7/` (gun/grenade/laser, DDNet-rs predicted vs
@@ -1408,7 +1445,6 @@ wanted.
 
 ## Not yet sent by the Rust client (a default C++ client sends these)
 - `/timeout <code>` chat after ~50 snapshots: needs the timeout seed config.
-- Connectionless server-info request after entering the game (server browser format).
 - HTTP map download (deferred, PLAN §8).
 - Not done: a byte-level capture of the C++ *client's* handshake to diff against ours
   (PLAN §5 M3). Needs a C++ client build (`CLIENT=ON`, SDL); the pieces are covered by
@@ -1464,6 +1500,7 @@ Build the `rs_parity` target like `rs_golden`, then per map (repo root):
     build-rs/rs_parity.exe camera rust-client/tests/golden/camera.txt
     build-rs/rs_parity.exe movement rust-client/tests/golden/movement.txt
     build-rs/rs_parity.exe chat rust-client/tests/golden/chat.txt
+    build-rs/rs_parity.exe menus rust-client/tests/golden/menus.txt
     build-rs/rs_parity.exe wv rust-client/tests/golden/wv.txt data/audio
     build-rs/rs_parity.exe mixer rust-client/tests/golden/mixer.txt data/audio
     build-rs/rs_parity.exe mapsounds "data/maps/Sunny Side Up.map" rust-client/tests/golden/mapsounds_sunny.txt   # more: one <ref>/<name>.txt per map of <maps> (ASCII copies), then RS_MAPSOUNDS_REF=<ref> RS_MAPSOUNDS_MAPS=<maps>

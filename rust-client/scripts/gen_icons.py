@@ -86,6 +86,12 @@ ICONS = [
 	("HOOK_STRONG", "material", "arrow_circle_up"),  # their hook is stronger than ours
 	("HOOK_WEAK", "material", "arrow_circle_down"),  # their hook is weaker than ours
 	("SCOREBOARD", "material", "leaderboard"),  # scoreboard
+	("BINOCULARS", "phosphor", "binoculars"),  # spectate
+	("RESPAWN", "material", "refresh"),  # respawn (kill)
+	("PAUSE_GAME", "material", "pause"),  # pause in the game (/pause)
+	("JOIN", "material", "login"),  # join the game
+	("CHAT_OFF", "material", "comments_disabled"),  # ignore a player's chat
+	("COPY", "material", "content_copy"),  # copy to the clipboard
 ]
 
 

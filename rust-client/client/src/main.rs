@@ -4,7 +4,7 @@
 //! the menu go to our own `%APPDATA%\DDNet-rs\settings.cfg`. F12 saves a screenshot.
 //!
 //! Usage: ddnet-rs [server ip:port] [--data-dir PATH] [--vsync] [--size WxH] [--view X,Y]
-//!        [--follow CLIENT_ID] [--screenshot-after SECONDS] [--no-grab] [--fire WEAPON]
+//!        [--follow CLIENT_ID] [--screenshot-after SECONDS] [--no-grab] [--fire WEAPON] [--esc-tab TAB]
 //!
 //! `--fire` (scripted captures): 2 s after the map shows, says `/weapons` (a practice
 //! command on a local test server) and then keeps shooting that weapon (0 hammer, 1 gun,
@@ -31,6 +31,7 @@ use ddnet_rs::config::{
     KEY_MOUSE_WHEEL_RIGHT, KEY_MOUSE_WHEEL_UP, KEY_RSHIFT, Settings, split_line,
 };
 use ddnet_rs::controls::{self, Controls, GameState, PlayerState};
+use ddnet_rs::esc_menu::{self, EscMenu};
 use ddnet_rs::gfx::batch::Batch;
 use ddnet_rs::gfx::{self, Gfx, Size, block_on};
 use ddnet_rs::hud::{self, HudData, Widget};
@@ -81,6 +82,8 @@ struct Options {
     no_grab: bool,
     /// Keep shooting this weapon (scripted captures).
     fire: Option<i32>,
+    /// Open the Esc menu on this tab once in the game (screenshots).
+    esc_tab: Option<usize>,
 }
 
 /// The window and what draws into it.
@@ -124,6 +127,10 @@ struct Session {
     map_sounds: Option<MapSounds>,
     /// The session went online (C++ `OnStateChange(STATE_ONLINE)` resets the sounds).
     online: bool,
+    /// C++ `CMotd::m_aServerMotd`.
+    motd: String,
+    /// C++ `m_LastRaceTick` (for `cl_confirm_disconnect_time`).
+    last_race_tick: i32,
 }
 
 impl Session {
@@ -150,6 +157,8 @@ impl Session {
             clients_tick: None,
             map_sounds: None,
             online: false,
+            motd: String::new(),
+            last_race_tick: -1,
         })
     }
 
@@ -341,6 +350,66 @@ impl Session {
         (plates, bars)
     }
 
+    /// C++: the `m_LastRaceTick` part of `OnNewSnapshot` (gameclient.cpp:2459).
+    fn update_race_tick(&mut self) {
+        let Some(p) = &self.predictor else { return };
+        let (version, flags, flags2) = p.game_info;
+        // C++ m_GameInfo.m_Race: the flag from GameInfoEx version 3 on, else the game
+        // type's race (what GetGameInfo computes before the version-2 entity flags)
+        let race = if version >= 3 {
+            flags & g::GAMEINFOFLAG_RACE != 0
+        } else {
+            ddnet_rs::render::entities::EntitiesInfo::from_game_info((
+                version.min(1),
+                flags,
+                flags2,
+            ))
+            .race
+        };
+        let local = self.client.local_id();
+        let has_char = |items: &[ddnet::protocol::snapshot::Item]| {
+            (items.iter()).any(|it| it.type_id == g::NETOBJTYPE_CHARACTER && Some(it.id) == local)
+        };
+        let prev = (self.client.prev_game_tick()).and_then(|t| self.client.snapshot_at(t));
+        if let Some(info) = self.item(g::NETOBJTYPE_GAMEINFO)
+            && race
+            && self.client.state() == State::Online
+            && !self.spec_info().0
+            && has_char(self.client.snapshot())
+            && prev.is_some_and(has_char)
+        {
+            let info = g::ObjGameInfo::from_ints(&info.data);
+            let race_flag = info.game_state_flags & g::GAMESTATEFLAG_RACETIME != 0;
+            self.last_race_tick = if race_flag { -info.warmup_timer } else { -1 };
+        }
+    }
+
+    /// C++ `CGameClient::CurrentRaceTime` (seconds).
+    fn current_race_time(&self) -> i32 {
+        if self.last_race_tick < 0 {
+            return 0;
+        }
+        // C++ GameTickSpeed(): SERVER_TICK_SPEED
+        (self.client.game_tick().unwrap_or(0) - self.last_race_tick) / 50
+    }
+
+    /// What the Esc bar's Game tab reads (C++ `CMenus::RenderGame`).
+    fn esc_state(&self) -> esc_menu::GameState {
+        let c = &self.clients;
+        let local = usize::try_from(c.local_id).ok().map(|id| &c.clients[id]);
+        esc_menu::GameState {
+            has_local_id: local.is_some(),
+            local_team: c.infos.iter().flatten().find(|i| i.local).map(|i| i.team),
+            game_info: self.item(g::NETOBJTYPE_GAMEINFO).is_some(),
+            paused: local.is_some_and(|l| l.paused),
+            spec: local.is_some_and(|l| l.spec),
+            team_play: self.team_play(),
+            received_ddnet_player: c.received_ddnet_player,
+            show_ddrace_buttons: true,
+            dummy_connecting: false,
+        }
+    }
+
     /// C++ `IsTeamPlay()`: `GAMEFLAG_TEAMS` in the snapshot's game info.
     fn team_play(&self) -> bool {
         (self.client.snapshot().iter())
@@ -392,6 +461,8 @@ struct App {
     running: Option<Running>,
     session: Option<Session>,
     menu: Menu,
+    /// The in-game menu (Esc).
+    esc: EscMenu,
     /// The HUD widgets.
     hud: Vec<Box<dyn Widget>>,
     /// C++ `CChat` (kept across connections like its sent history; reset on connect).
@@ -509,6 +580,56 @@ impl App {
         self.menu_visible() || self.editor.open || self.player_open
     }
 
+    /// What the Esc bar's choice does (C++ `RenderGame`'s buttons and `SetActive(false)`).
+    fn on_esc_action(&mut self, a: esc_menu::Action) {
+        use esc_menu::Action as A;
+        let now = net::now(self.start);
+        match a {
+            A::SetTeam(team) => {
+                if let Some(s) = &mut self.session {
+                    s.client.send_switch_team(team, now);
+                }
+                self.menu.open = false;
+            }
+            A::Kill => {
+                if let Some(s) = &mut self.session {
+                    s.client.send_kill(now);
+                }
+                self.menu.open = false;
+            }
+            A::Pause => {
+                // C++: Console()->ExecuteLine("say /pause")
+                self.chat.send_chat(0, "/pause", now);
+                self.menu.open = false;
+            }
+            A::Disconnect | A::Quit => self.disconnect(),
+            A::Settings => self.menu.open_settings_page(),
+            A::EditHud => self.open_editor(),
+            A::ToggleChatIgnore(id) => {
+                let s = self.session.as_mut();
+                if let Some(c) = s.and_then(|s| s.clients.clients.get_mut(id as usize)) {
+                    c.chat_ignore = !c.chat_ignore;
+                }
+            }
+            A::ToggleFriend(id) => {
+                let Some(s) = &mut self.session else { return };
+                let Some(c) = s.clients.clients.get_mut(id as usize) else {
+                    return;
+                };
+                let friends = &mut self.settings.friends;
+                if c.friend {
+                    friends.remove(&c.name, &c.clan);
+                } else {
+                    friends.add(&c.name, &c.clan);
+                }
+                // C++ updates m_Friend with the next snapshot; show it at once
+                let ignore_clan = self.settings.config.cl_friends_ignore_clan != 0;
+                c.friend = friends.is_friend(&c.name, &c.clan, true, ignore_clan);
+                self.save_settings();
+            }
+        }
+    }
+
     fn open_editor(&mut self) {
         self.menu.open = false;
         self.player_open = false;
@@ -615,8 +736,13 @@ impl App {
                 self.close_editor();
             } else if self.player_open {
                 self.player_open = false;
+            } else if self.session.is_some() && self.menu.open && self.menu.settings_open() {
+                // in game the settings page goes back to the Esc bar
+                self.menu.close_settings();
+                self.save_settings();
             } else {
                 self.menu.open = !self.menu.open;
+                self.esc.reset();
             }
         }
         if press {
@@ -785,6 +911,10 @@ impl App {
                 eprintln!("Some map sounds could not be loaded.");
             }
             s.map_shown_at = Some(Instant::now());
+            if let Some(tab) = self.options.esc_tab {
+                self.menu.open = true;
+                self.esc.tab = tab;
+            }
         }
         Ok(())
     }
@@ -887,6 +1017,7 @@ impl App {
                 match msg {
                     g::GameMsg::SvRecord(m) => s.clients.on_record(m.server_time_best),
                     g::GameMsg::SvRecordLegacy(m) => s.clients.on_record(m.server_time_best),
+                    g::GameMsg::SvMotd(m) => s.motd = esc_menu::motd_text(&m.message),
                     // gameclient.cpp:1148
                     g::GameMsg::SvSoundGlobal(m) if cfg.snd_game != 0 => {
                         use ddnet::protocol::sounds::*;
@@ -960,6 +1091,7 @@ impl App {
                 };
                 s.clients
                     .on_new_snapshot(s.client.snapshot(), &ctx, p.time_score);
+                s.update_race_tick();
             }
             // C++: CChat::OnRender's queued send; the lines to send go out as Cl_Say
             self.chat.on_render(now);
@@ -1125,7 +1257,7 @@ impl App {
         r.gfx.render(&mut batch, &world, size);
         let target = surface_frame.texture.create_view(&Default::default());
         r.gfx.composite(&target, size);
-        let mut action = None;
+        let (mut action, mut esc_action) = (None, None);
         let connected = self.session.is_some();
         // the settings may have changed the look
         let c = &self.settings.config;
@@ -1168,6 +1300,7 @@ impl App {
         let chat_session = self.session.as_ref().filter(|s| s.map.is_some());
         if menu_visible || data.is_some() || chat_session.is_some() {
             let (menu, settings, widgets) = (&mut self.menu, &mut self.settings, &mut self.hud);
+            let esc = &mut self.esc;
             let (editor, chat, heads) = (&mut self.editor, &mut self.chat, &mut self.chat_heads);
             let now = net::now(self.start);
             let held = self.scoreboard_held;
@@ -1234,6 +1367,31 @@ impl App {
                 if menu_visible {
                     action = menu.show(ctx, connected, settings);
                 }
+                if let Some(s) = chat_session
+                    && menu_visible
+                    && !menu.settings_open()
+                {
+                    let player_name = player_info(settings).name;
+                    let mut view = esc_menu::View {
+                        glass: Glass::from_setting(settings.config.rs_glass),
+                        game: s.esc_state(),
+                        clients: &s.clients,
+                        show_chat_friends: settings.config.cl_show_chat_friends != 0,
+                        heads,
+                        server: s.client.server_info(),
+                        address: &s.server,
+                        player_name: &player_name,
+                        map: s.client.map().map_or("", |m| m.name.as_str()),
+                        game_info: (s.item(g::NETOBJTYPE_GAMEINFO))
+                            .map(|it| g::ObjGameInfo::from_ints(&it.data)),
+                        motd: &s.motd,
+                        confirm_disconnect: {
+                            let limit = settings.config.cl_confirm_disconnect_time;
+                            limit >= 0 && s.current_race_time() / 60 >= limit
+                        },
+                    };
+                    esc_action = esc.show(ctx, &mut view);
+                }
             });
         }
         if !menu_visible && !self.editor.open && !self.player_open && !self.chat.is_active() {
@@ -1260,15 +1418,18 @@ impl App {
         }
         match action {
             Some(Action::Connect(addr)) => self.connect(addr),
-            Some(Action::Disconnect) => self.disconnect(),
-            Some(Action::Resume) => self.menu.open = false,
             Some(Action::SettingsDone) => self.save_settings(),
-            Some(Action::EditHud) => self.open_editor(),
             Some(Action::Quit) => {
                 self.disconnect();
                 event_loop.exit();
             }
             None => {}
+        }
+        if let Some(a) = esc_action {
+            self.on_esc_action(a);
+            if a == esc_menu::Action::Quit {
+                event_loop.exit();
+            }
         }
         if editor_done {
             self.close_editor();
@@ -1478,10 +1639,11 @@ fn parse_args() -> Result<Options, String> {
         screenshot_after: None,
         no_grab: false,
         fire: None,
+        esc_tab: None,
     };
     let mut args = std::env::args().skip(1).peekable();
     if let Some(a) = args.next_if(|a| !a.starts_with("--")) {
-        let server: SocketAddr = a.parse().map_err(|_| "usage: ddnet-rs [server ip:port] [--data-dir PATH] [--vsync] [--size WxH] [--view X,Y] [--follow CLIENT_ID] [--screenshot-after SECONDS] [--no-grab] [--fire WEAPON]")?;
+        let server: SocketAddr = a.parse().map_err(|_| "usage: ddnet-rs [server ip:port] [--data-dir PATH] [--vsync] [--size WxH] [--view X,Y] [--follow CLIENT_ID] [--screenshot-after SECONDS] [--no-grab] [--fire WEAPON] [--esc-tab TAB]")?;
         if !server.ip().is_loopback() {
             return Err(format!(
                 "refusing {server}: only local (loopback) servers are allowed for now"
@@ -1513,6 +1675,7 @@ fn parse_args() -> Result<Options, String> {
                 ));
             }
             "--fire" => o.fire = Some(value()?.parse().map_err(|_| "--fire WEAPON")?),
+            "--esc-tab" => o.esc_tab = Some(value()?.parse().map_err(|_| "--esc-tab TAB")?),
             "--screenshot-after" => {
                 o.screenshot_after =
                     Some(value()?.parse().map_err(|_| "--screenshot-after SECONDS")?)
@@ -1616,6 +1779,7 @@ fn main() {
         sounds,
         music_state: None,
         menu: Menu::new(options.server, &storage),
+        esc: EscMenu::default(),
         hud,
         chat: Chat::default(),
         chat_heads: TeeHeads::new(&storage),

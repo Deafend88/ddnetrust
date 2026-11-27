@@ -91,6 +91,9 @@ pub struct Config {
     pub cl_predict_freeze: i32,
     /// C++ chat (config_variables.h:90-93, 357, 409-414, 628-653, 743-747).
     pub cl_showchat: i32,
+    /// C++ `cl_confirm_disconnect_time` (config_variables.h:753): minutes of race time
+    /// after which Disconnect asks first (-1 never).
+    pub cl_confirm_disconnect_time: i32,
     pub cl_show_chat_friends: i32,
     pub cl_show_chat_team_members_only: i32,
     pub cl_show_chat_system: i32,
@@ -222,6 +225,7 @@ impl Default for Config {
             cl_prediction_margin: 10,
             cl_predict_freeze: 1,
             cl_showchat: 1,
+            cl_confirm_disconnect_time: 20,
             cl_show_chat_friends: 0,
             cl_show_chat_team_members_only: 0,
             cl_show_chat_system: 1,
@@ -395,6 +399,7 @@ impl Config {
             "cl_prediction_margin" => Int(&mut self.cl_prediction_margin, 1, 300),
             "cl_predict_freeze" => Int(&mut self.cl_predict_freeze, 0, 2),
             "cl_showchat" => Int(&mut self.cl_showchat, 0, 2),
+            "cl_confirm_disconnect_time" => Int(&mut self.cl_confirm_disconnect_time, -1, 1440),
             "cl_show_chat_friends" => Int(&mut self.cl_show_chat_friends, 0, 1),
             "cl_show_chat_team_members_only" => Int(&mut self.cl_show_chat_team_members_only, 0, 1),
             "cl_show_chat_system" => Int(&mut self.cl_show_chat_system, 0, 1),
@@ -530,7 +535,7 @@ impl Config {
 }
 
 /// Every variable name `Config::var` knows.
-pub const VAR_NAMES: [&str; 118] = [
+pub const VAR_NAMES: [&str; 119] = [
     "player_name",
     "player_skin",
     "player_use_custom_color",
@@ -578,6 +583,7 @@ pub const VAR_NAMES: [&str; 118] = [
     "cl_prediction_margin",
     "cl_predict_freeze",
     "cl_showchat",
+    "cl_confirm_disconnect_time",
     "cl_show_chat_friends",
     "cl_show_chat_team_members_only",
     "cl_show_chat_system",

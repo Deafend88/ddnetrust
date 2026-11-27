@@ -7,6 +7,7 @@ pub mod camera;
 pub mod chat;
 pub mod config;
 pub mod controls;
+pub mod esc_menu;
 pub mod freezebars;
 pub mod gallery;
 pub mod gfx;
