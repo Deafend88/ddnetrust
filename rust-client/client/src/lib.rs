@@ -27,6 +27,7 @@ pub mod opus;
 pub mod render;
 pub mod scoreboard;
 pub mod skin;
+pub mod sound;
 pub mod statusbar;
 pub mod statusview;
 pub mod storage;

@@ -206,3 +206,125 @@ fn opus_survives_damage() {
         ddnet_rs::opus::decode(&data);
     }
 }
+
+fn f32h(h: &str) -> f32 {
+    f32::from_bits(u32::from_str_radix(h, 16).unwrap())
+}
+
+/// The engine against copies of C++ `CSound` (`rs_parity mixer`): loads with rate
+/// conversion at 48 and 44.1 kHz, 5000 random calls per rate, every result and every mix.
+#[test]
+fn mixer_matches_cpp() {
+    use ddnet::physics::vmath::vec2;
+    use ddnet_rs::sound::{Sound, VoiceHandle};
+    let text = std::fs::read_to_string(repo_file("rust-client/tests/golden/mixer.txt")).unwrap();
+    let (mut sound, mut decoded, mut mixes) = (None::<Sound>, Vec::new(), 0);
+    for line in text.lines() {
+        let (call, result) = line.split_once(" = ").unwrap_or((line, ""));
+        let w: Vec<&str> = call.split(' ').collect();
+        let int = |i: usize| w[i].parse::<i32>().unwrap();
+        if w[0] == "run" {
+            sound = Some(Sound::new(int(1), int(2) as u32));
+            decoded.clear();
+            continue;
+        }
+        let s = sound.as_mut().unwrap();
+        let got = match w[0] {
+            "load" => {
+                let mut d = wavpack::decode(
+                    &std::fs::read(repo_file(&format!("data/audio/{}", w[1]))).unwrap(),
+                )
+                .unwrap();
+                d.loop_start = int(2) as usize;
+                decoded.push(d.clone());
+                assert_eq!(s.load(d).to_string(), w[3], "{line}");
+                continue;
+            }
+            "reload" => s.load(decoded[int(1) as usize].clone()).to_string(),
+            "play" => {
+                let (ch, id, flags, vol) = (int(2) as usize, int(3), int(4), f32h(w[5]));
+                let pos = vec2(f32h(w[6]), f32h(w[7]));
+                let h = match int(1) {
+                    0 => s.play(ch, id, flags, vol, vec2(0.0, 0.0)),
+                    1 => s.play_at(ch, id, flags, vol, pos),
+                    _ => s.play(ch, id, flags, vol, pos),
+                };
+                format!("{} {}", h.id, h.age)
+            }
+            "voice" => {
+                let h = VoiceHandle {
+                    id: int(2),
+                    age: int(3),
+                };
+                let (a, b, c) = (f32h(w[4]), f32h(w[5]), f32h(w[6]));
+                match int(1) {
+                    0 => s.set_voice_volume(h, a),
+                    1 => s.set_voice_falloff(h, a),
+                    2 => s.set_voice_position(h, vec2(b, c)),
+                    3 => s.set_voice_time_offset(h, b),
+                    4 => s.set_voice_circle(h, b),
+                    _ => s.set_voice_rectangle(h, b, c),
+                }
+                String::new()
+            }
+            "channel" => {
+                s.set_channel(int(1) as usize, f32h(w[2]), f32h(w[3]));
+                String::new()
+            }
+            "listener" => {
+                s.set_listener_position(vec2(f32h(w[1]), f32h(w[2])));
+                String::new()
+            }
+            "sample" => {
+                let id = int(2);
+                let r = match int(1) {
+                    0 => {
+                        s.stop(id);
+                        0.0
+                    }
+                    1 => {
+                        s.pause(id);
+                        0.0
+                    }
+                    2 => s.is_playing(id) as i32 as f32,
+                    3 => {
+                        s.set_sample_current_time(id, f32h(w[3]));
+                        0.0
+                    }
+                    4 => s.sample_current_time(id),
+                    _ => s.sample_total_time(id),
+                };
+                format!("{:08x}", r.to_bits())
+            }
+            "stopvoice" => {
+                s.stop_voice(VoiceHandle {
+                    id: int(1),
+                    age: int(2),
+                });
+                String::new()
+            }
+            "stopall" => {
+                s.stop_all();
+                String::new()
+            }
+            "unload" => {
+                s.unload_sample(int(1));
+                String::new()
+            }
+            "volume" => {
+                s.volume = int(1);
+                String::new()
+            }
+            "mix" => {
+                let frames = int(1) as u32;
+                let mut out = vec![0x5555i16; frames as usize * 2];
+                s.mix(&mut out, frames);
+                mixes += 1;
+                format!("{:016x}", fnv(&out))
+            }
+            _ => panic!("{line}"),
+        };
+        assert_eq!(got, result, "{line}");
+    }
+    assert_eq!(mixes, 3301);
+}

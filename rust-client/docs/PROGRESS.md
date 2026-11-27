@@ -1271,7 +1271,13 @@ User review: chat approved; fixes before sound.
   lengths/channels/loop starts identical, samples within 9 steps (mean 0.64), DECISIONS.
   Committed check: Sunny Side Up (`tests/golden/opus_sunny.*`); the corpus check runs with
   `RS_OPUS_REF`/`RS_OPUS_CORPUS` (see "Regenerate parity data").
-- Next: C mixer (`CSound` copies), D `CSounds`/`CMapSounds`, call sites, cpal output,
+- Piece C, mixer: `client/src/sound.rs` (C++ `CSound` without the device: sample slots,
+  voices, channels, `Play`/`Stop`/voice setters, `RateConvert`, `AdvanceVoice`, `Mix`).
+  `rs_parity mixer` (copies of `CSample`/`CChannel`/`CVoice` and 37 `CSound` members in a
+  stand-in class): 19 real samples at 48 and 44.1 kHz, 2 x 5000 random calls, 3301 mixes,
+  every result identical (`client/tests/sound.rs`). Found on the way: C++ starts channels
+  1-15 at volume 0 (`= {{255, 0}}`).
+- Next: D `CSounds`/`CMapSounds`, call sites, cpal output (SDL's fixed 512-frame chunks),
   settings.
 
 #### Exact next actions (next session starts here)
@@ -1378,6 +1384,7 @@ Build the `rs_parity` target like `rs_golden`, then per map (repo root):
     build-rs/rs_parity.exe movement rust-client/tests/golden/movement.txt
     build-rs/rs_parity.exe chat rust-client/tests/golden/chat.txt
     build-rs/rs_parity.exe wv rust-client/tests/golden/wv.txt data/audio
+    build-rs/rs_parity.exe mixer rust-client/tests/golden/mixer.txt data/audio
     python rust-client/scripts/extract_map_sounds.py <corpus dir> data/maps %APPDATA%/DDNet/downloadedmaps
     build-rs/rs_parity.exe opus <ref dir> <corpus dir>   # then cargo test with RS_OPUS_REF=<ref dir> RS_OPUS_CORPUS=<corpus dir>
     rust-client\scripts\cpp_settings.ps1   # needs build-rs-client\DDNet.exe (PowerShell)
