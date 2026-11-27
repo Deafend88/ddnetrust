@@ -95,6 +95,11 @@ versionsrv
 generated
 target
 
+# rust-client build and scratch output (never commit these)
+rust-client/target*/
+rust-client/**/scratch/
+rust-client/**/*.scratch.*
+
 /build*
 /integration_test/*
 /source_date_epoch

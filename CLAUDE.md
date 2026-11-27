@@ -54,4 +54,10 @@ Read `rust-client/docs/PLAN.md`, `rust-client/docs/PROGRESS.md` and `git log` fi
 - After each verified step: `cargo build`, `cargo clippy --all-targets -- -D warnings`,
   `cargo fmt --check` and `cargo test` must all pass. Then commit and push to `origin`
   (the user's fork) only; never push to `upstream`.
+- Run the full gates before every push, not only after a step. Never chain
+  `git commit && git push` behind a failing or skipped test: commit and push only after
+  reading the gate results.
+- No build output or scratch folders in commits (`target*/`, scratch dirs, test captures
+  outside `docs/review/`); extend `.gitignore` when a new one appears, and check
+  `git status` before each commit.
 - Update `rust-client/docs/PROGRESS.md` before stopping, especially near a usage limit.
