@@ -21,6 +21,7 @@ use super::projectile::Projectile;
 use super::teams::{MAX_CLIENTS, NUM_DDRACE_TEAMS, TeamsCore};
 use super::tuning::{Param, Tuning};
 use super::vmath::{Vec2, distance, dot, normalize, trunc_i32, vec2};
+use crate::protocol::sounds::{SOUND_PICKUP_NINJA, SOUND_WEAPON_SWITCH};
 use std::rc::Rc;
 
 use crate::protocol::generated::{
@@ -89,6 +90,74 @@ pub struct WorldConfig {
     pub freeze_delay: i32,
     /// C++: `g_Config.m_ClAntiPingPlayers` (default 1).
     pub antiping_players: i32,
+    /// C++: `g_Config.m_ClPredictEvents && m_WorldConfig.m_PredictEvents`.
+    pub predict_events: bool,
+    /// C++: `g_Config.m_SndEnable` (`CreatePredictedSound` checks it).
+    pub snd_enable: bool,
+}
+
+/// C++: `CGameWorld::CPredictedEvent`: an event (sound, hammer hit) the prediction saw
+/// before the server sends it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PredictedEvent {
+    pub event_id: i32,
+    /// C++ truncates the position to ints (net events carry ints).
+    pub pos: Vec2,
+    pub id: i32,
+    pub tick: i32,
+    pub extra_info: i32,
+    pub handled: bool,
+}
+
+impl PredictedEvent {
+    pub fn new(event_id: i32, pos: Vec2, id: i32, tick: i32, extra_info: i32) -> Self {
+        let pos = vec2(pos.x as i32 as f32, pos.y as i32 as f32);
+        PredictedEvent {
+            event_id,
+            pos,
+            id,
+            tick,
+            extra_info,
+            handled: false,
+        }
+    }
+}
+
+/// C++: `CGameWorld::CreatePredictedEvent`.
+pub fn create_predicted_event(
+    config: &WorldConfig,
+    events: &mut Vec<PredictedEvent>,
+    e: PredictedEvent,
+) {
+    if !config.predict_events {
+        return;
+    }
+    // prediction is ran multiple times per tick, check if event already exists
+    if !events.iter().any(|o| {
+        o.event_id == e.event_id
+            && o.extra_info == e.extra_info
+            && o.pos == e.pos
+            && o.id == e.id
+            && o.tick == e.tick
+    }) {
+        events.push(e);
+    }
+}
+
+/// C++: `CGameWorld::CreatePredictedSound`.
+pub fn create_predicted_sound(
+    config: &WorldConfig,
+    events: &mut Vec<PredictedEvent>,
+    tick: i32,
+    pos: Vec2,
+    sound: i32,
+    id: i32,
+) {
+    if !config.snd_enable {
+        return;
+    }
+    let e = PredictedEvent::new(g::NETEVENTTYPE_SOUNDWORLD, pos, id, tick, sound);
+    create_predicted_event(config, events, e);
 }
 
 /// The non-core part of C++ `CCharacter`; its core lives in `GameWorld::core`.
@@ -144,7 +213,15 @@ pub(super) struct Ctx<'w> {
     teams: &'w mut TeamsCore,
     switchers: &'w mut [super::core::Switcher],
     cores: &'w mut [Option<CharacterCore>],
+    pub(super) events: &'w mut Vec<PredictedEvent>,
     me: usize,
+}
+
+impl Ctx<'_> {
+    /// C++: `GameWorld()->CreatePredictedSound`.
+    pub(super) fn sound(&mut self, pos: Vec2, sound: i32, id: i32) {
+        create_predicted_sound(self.config, self.events, self.game_tick, pos, sound, id);
+    }
 }
 
 /// C++: `CNetObj_Character` starts with the `CNetObj_CharacterCore` fields.
@@ -218,13 +295,14 @@ impl Character {
         w.teams.team(self.id)
     }
 
-    pub(super) fn set_weapon(&mut self, c: &mut CharacterCore, w: &Ctx, weapon: i32) {
+    pub(super) fn set_weapon(&mut self, c: &mut CharacterCore, w: &mut Ctx, weapon: i32) {
         if weapon == c.active_weapon {
             return;
         }
         self.last_weapon = c.active_weapon;
         self.queued_weapon = -1;
         self.set_active_weapon(c, w, weapon);
+        w.sound(self.pos, SOUND_WEAPON_SWITCH, self.id);
     }
 
     pub(super) fn set_active_weapon(&mut self, c: &mut CharacterCore, w: &Ctx, weapon: i32) {
@@ -284,14 +362,14 @@ impl Character {
         }
     }
 
-    pub(super) fn remove_ninja(&mut self, c: &mut CharacterCore, w: &Ctx) {
+    pub(super) fn remove_ninja(&mut self, c: &mut CharacterCore, w: &mut Ctx) {
         c.ninja.current_move_time = 0;
         c.weapons[g::WEAPON_NINJA as usize].got = false;
         c.active_weapon = self.last_weapon;
         self.set_weapon(c, w, c.active_weapon);
     }
 
-    pub(super) fn do_weapon_switch(&mut self, c: &mut CharacterCore, w: &Ctx) {
+    pub(super) fn do_weapon_switch(&mut self, c: &mut CharacterCore, w: &mut Ctx) {
         if self.reload_timer != 0 || self.queued_weapon == -1 {
             return;
         }
@@ -301,7 +379,7 @@ impl Character {
         self.set_weapon(c, w, self.queued_weapon);
     }
 
-    fn handle_weapon_switch(&mut self, c: &mut CharacterCore, w: &Ctx) {
+    fn handle_weapon_switch(&mut self, c: &mut CharacterCore, w: &mut Ctx) {
         if self.num_inputs < 2 {
             return;
         }
@@ -351,7 +429,7 @@ impl Character {
     pub(super) fn give_weapon(
         &mut self,
         c: &mut CharacterCore,
-        w: &Ctx,
+        w: &mut Ctx,
         weapon: i32,
         remove: bool,
     ) {
@@ -373,7 +451,7 @@ impl Character {
         c.weapons[weapon as usize].got = !remove;
     }
 
-    pub(super) fn give_ninja(&mut self, c: &mut CharacterCore, w: &Ctx) {
+    pub(super) fn give_ninja(&mut self, c: &mut CharacterCore, w: &mut Ctx) {
         c.ninja.activation_tick = w.game_tick;
         let ninja = &mut c.weapons[g::WEAPON_NINJA as usize];
         ninja.got = true;
@@ -384,6 +462,9 @@ impl Character {
             self.last_weapon = c.active_weapon;
         }
         self.set_active_weapon(c, w, g::WEAPON_NINJA);
+        if w.config.is_vanilla {
+            w.sound(self.pos, SOUND_PICKUP_NINJA, self.id);
+        }
     }
 
     fn on_predicted_input(&mut self, config: &WorldConfig, new: &ObjPlayerInput) {
@@ -408,7 +489,7 @@ impl Character {
     fn on_direct_input(
         &mut self,
         c: &mut CharacterCore,
-        w: &Ctx,
+        w: &mut Ctx,
         new: &ObjPlayerInput,
     ) -> Option<bool> {
         if !w.config.bug_ddrace_input && new.player_flags & g::PLAYERFLAG_CHATTING != 0 {
@@ -1057,6 +1138,8 @@ pub struct GameWorld {
     pub(super) doors: Vec<Door>,
     /// C++: `m_LocalClientId`, set by `net_obj_begin`.
     pub(super) local_id: i32,
+    /// C++: `m_PredictedEvents`.
+    pub predicted_events: Vec<PredictedEvent>,
 }
 
 impl GameWorld {
@@ -1080,6 +1163,7 @@ impl GameWorld {
             plasmas: Vec::new(),
             doors: Vec::new(),
             local_id: -1,
+            predicted_events: Vec::new(),
         }
     }
 
@@ -1117,6 +1201,7 @@ impl GameWorld {
             teams: &mut self.teams,
             switchers: &mut self.core.switchers,
             cores: &mut self.core.characters,
+            events: &mut self.predicted_events,
             me,
         }
     }

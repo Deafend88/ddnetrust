@@ -19,18 +19,24 @@ use crate::map::Map;
 use crate::net::client::{self, Client, PredictMsg, Timing};
 use crate::net::conn::FREQ;
 use crate::physics::collision::Collision;
-use crate::physics::core::{CharacterCore, WorldCore, read_ddnet};
+use crate::physics::core::{
+    COREEVENT_AIR_JUMP, COREEVENT_GROUND_JUMP, COREEVENT_HOOK_ATTACH_GROUND,
+    COREEVENT_HOOK_ATTACH_PLAYER, COREEVENT_HOOK_HIT_NOHOOK, CharacterCore, PHYSICAL_SIZE,
+    WorldCore, read_ddnet,
+};
 use crate::physics::teams::{MAX_CLIENTS, NUM_DDRACE_TEAMS, TEAM_FLOCK, TeamsCore};
 use crate::physics::tuning::{Param, Tuning};
 use crate::physics::vmath::{Vec2, length, mix, vec2};
 use crate::physics::world::{
-    GameWorld, NUM_TUNE_ZONES, TUNE_ZONE_OVERRIDE_NONE, WorldConfig, core_obj,
+    GameWorld, NUM_TUNE_ZONES, PredictedEvent, TUNE_ZONE_OVERRIDE_NONE, WorldConfig, core_obj,
+    create_predicted_sound,
 };
 use crate::protocol::generated::{
     self as g, MsgSvPreInput, ObjCharacter, ObjCharacterCore, ObjDDNetCharacter, ObjDDNetLaser,
     ObjGameInfoEx, ObjPlayerInput, ObjSpectatorInfo, ObjSwitchState,
 };
 use crate::protocol::snapshot::Item;
+use crate::protocol::sounds::*;
 
 const TICK_SPEED: i32 = 50;
 const TILE_SWITCHTIMEDOPEN: i32 = 22;
@@ -63,6 +69,13 @@ pub struct PredictConfig {
     pub antiping_percent: i32,
     /// 0 off, 1 on, 2 partial (the local tee may move in freeze the last 1-2 ticks).
     pub predict_freeze: i32,
+    /// C++: `cl_predict_events` (default 0).
+    pub predict_events: bool,
+    /// C++: `snd_enable`, `snd_game`, `snd_gun`, `snd_long_pain`.
+    pub snd_enable: bool,
+    pub snd_game: bool,
+    pub snd_gun: bool,
+    pub snd_long_pain: bool,
 }
 
 impl Default for PredictConfig {
@@ -79,8 +92,23 @@ impl Default for PredictConfig {
             antiping_limit: 0,
             antiping_percent: 100,
             predict_freeze: 1,
+            predict_events: false,
+            snd_enable: true,
+            snd_game: true,
+            snd_gun: true,
+            snd_long_pain: true,
         }
     }
+}
+
+/// A sound the game wants played: C++'s `m_Sounds.PlayAt` (CHN_WORLD, volume 1) and
+/// `m_MapSounds.PlayAt` calls of `OnNewSnapshot` and `OnPredict`, in call order.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum SoundEvent {
+    /// A sound set (`protocol::sounds::SOUND_*`) at a world position.
+    World(i32, Vec2),
+    /// A map sound (`NETEVENTTYPE_MAPSOUNDWORLD`) at a world position.
+    MapWorld(i32, Vec2),
 }
 
 /// C++: `CGameClient::LoadMapSettings` (gameclient.cpp:4208): every tune zone reset, then
@@ -239,6 +267,15 @@ pub struct Predictor {
     expecting_tuning_since: i32,
     /// C++: `m_aClients[i].m_aPreInputs`, indexed by intended tick % 200.
     pre_inputs: Vec<Vec<MsgSvPreInput>>,
+    /// C++ `m_GameInfo.m_RaceSounds` and `m_PredictEvents`.
+    race_sounds: bool,
+    predict_events: bool,
+    /// C++: `m_aLastNewPredictedTick[Dummy]`.
+    last_new_predicted_tick: i32,
+    /// `IntraGameTick` of the frame, for the positions of `OnNewSnapshot`'s effects.
+    intra_tick: f32,
+    /// This frame's sounds, drained by the client.
+    pub sound_events: Vec<SoundEvent>,
 }
 
 /// C++: a `CClientData` core after `CCharacterCore::Reset` (`CClientData::Reset`).
@@ -317,6 +354,11 @@ impl Predictor {
             allow_zoom: false,
             history: BTreeMap::new(),
             stats: Stats::default(),
+            race_sounds: false,
+            predict_events: false,
+            last_new_predicted_tick: -1,
+            intra_tick: 0.0,
+            sound_events: Vec::new(),
             tuning: Tuning::default(),
             received_tuning: false,
             local_tune_zone: -1,
@@ -336,10 +378,12 @@ impl Predictor {
             self.on_message(msg);
         }
         self.new_tick = false; // C++: cleared at the end of the previous frame's OnRender
+        self.sound_events.clear();
         let switches = std::mem::take(&mut client.snapshot_switches);
         let repredict = std::mem::take(&mut client.repredict);
         let client = &*client;
         let input_at = |t| client.input_at(t);
+        self.intra_tick = client.timing(now).intra_tick;
         for (prev, cur) in switches {
             let Some(items) = client.snapshot_at(cur) else {
                 continue;
@@ -627,6 +671,7 @@ impl Predictor {
         self.game_paused = state & g::GAMESTATEFLAG_PAUSED != 0;
         self.predicting = self.local_char().is_some() && !spectating && !paused;
         (self.spectating, self.world_paused) = (spectating, paused);
+        self.process_events(items, tick);
 
         // game info: C++ GetGameInfo, only what prediction reads
         let info = items
@@ -671,6 +716,12 @@ impl Predictor {
         };
         let no_weak = version >= 8 && flags2 & g::GAMEINFOFLAG2_NO_WEAK_HOOK != 0;
         self.hud_ddrace = version >= 7 && flags2 & g::GAMEINFOFLAG2_HUD_DDRACE != 0;
+        self.race_sounds = ddrace || fng || block_worlds;
+        self.predict_events = if version >= 11 {
+            flags2 & g::GAMEINFOFLAG2_PREDICT_EVENTS != 0
+        } else {
+            flags & g::GAMEINFOFLAG_GAMETYPE_VANILLA != 0
+        };
         let race = ddrace || fastcap || flags & g::GAMEINFOFLAG_GAMETYPE_RACE != 0;
         self.time_score = if version >= 0 {
             flags & g::GAMEINFOFLAG_TIMESCORE != 0
@@ -744,9 +795,130 @@ impl Predictor {
         let override_zone = ext_of(items, self.local_id).map(|e| e.tune_zone_override);
         self.update_local_tuning(local_pos, override_zone);
 
+        self.detect_air_jumps();
         self.new_tick = true;
         self.compare_with_server(tick);
         self.update_prediction(items, tick, input_at);
+    }
+
+    /// C++: the sounds of `CGameClient::ProcessEvents` (gameclient.cpp:1404): hammer hits and
+    /// spawns (through `CEffects`), world sounds the prediction did not already play, map
+    /// sounds. The other events only make particles.
+    fn process_events(&mut self, items: &[Item], tick: i32) {
+        let c = self.config;
+        for it in items {
+            let d = ints(it, 3);
+            let pos = vec2(d[0] as f32, d[1] as f32);
+            match it.type_id {
+                g::NETEVENTTYPE_HAMMERHIT => {
+                    let e = PredictedEvent::new(it.type_id, pos, -1, tick, -1);
+                    if !self.check_predicted_event_handled(e) && c.snd_game {
+                        self.sound_events
+                            .push(SoundEvent::World(SOUND_HAMMER_HIT, pos));
+                    }
+                }
+                g::NETEVENTTYPE_SPAWN if c.snd_game => {
+                    self.sound_events
+                        .push(SoundEvent::World(SOUND_PLAYER_SPAWN, pos));
+                }
+                g::NETEVENTTYPE_SOUNDWORLD => {
+                    let id = d[2];
+                    if !c.snd_game || self.race_sound_off(id) {
+                        continue;
+                    }
+                    let e = PredictedEvent::new(it.type_id, pos, -1, tick, id);
+                    if !self.check_predicted_event_handled(e) {
+                        self.sound_events.push(SoundEvent::World(id, pos));
+                    }
+                }
+                g::NETEVENTTYPE_MAPSOUNDWORLD => {
+                    self.sound_events.push(SoundEvent::MapWorld(d[2], pos));
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn race_sound_off(&self, id: i32) -> bool {
+        race_sound_off(&self.config, self.race_sounds, id)
+    }
+
+    /// C++: `CGameWorld::CheckPredictedEventHandled` on `m_PredictedWorld`: a server event
+    /// the prediction already played (any tick up to the event's), which it forgets then.
+    fn check_predicted_event_handled(&mut self, check: PredictedEvent) -> bool {
+        let Some(w) = &mut self.predicted_world else {
+            return false;
+        };
+        let Some(i) = w.predicted_events.iter().position(|e| {
+            e.handled
+                && e.event_id == check.event_id
+                && e.pos == check.pos
+                && e.tick <= check.tick
+                && e.extra_info == check.extra_info
+        }) else {
+            return false;
+        };
+        w.predicted_events.remove(i);
+        true
+    }
+
+    /// C++: "detect air jump for other players" of `OnNewSnapshot` (gameclient.cpp:2405)
+    /// without a dummy: the local tee only when not predicting.
+    fn detect_air_jumps(&mut self) {
+        let predict = self.predict_on();
+        for i in 0..MAX_CLIENTS {
+            let Some(ch) = &self.chars[i] else {
+                continue;
+            };
+            if ch.cur.jumped & 2 == 0 || ch.prev.jumped & 2 != 0 {
+                continue;
+            }
+            if predict && i as i32 == self.local_id {
+                continue;
+            }
+            let prev = vec2(ch.prev.x as f32, ch.prev.y as f32);
+            let pos = mix(
+                prev,
+                vec2(ch.cur.x as f32, ch.cur.y as f32),
+                self.intra_tick,
+            );
+            if !self.col.is_on_ground(prev, PHYSICAL_SIZE) && self.config.snd_game {
+                self.sound_events
+                    .push(SoundEvent::World(SOUND_PLAYER_AIRJUMP, pos));
+            }
+        }
+    }
+
+    /// C++: `CGameClient::HandlePredictedEvents` (gameclient.cpp:3819), its sounds.
+    fn handle_predicted_events(
+        c: &PredictConfig,
+        race_sounds: bool,
+        out: &mut Vec<SoundEvent>,
+        w: &mut GameWorld,
+        tick: i32,
+    ) {
+        let mut i = 0;
+        while i < w.predicted_events.len() {
+            let e = w.predicted_events[i];
+            if !e.handled && e.tick <= tick {
+                if e.event_id == g::NETEVENTTYPE_SOUNDWORLD {
+                    if race_sound_off(c, race_sounds, e.extra_info) {
+                        w.predicted_events.remove(i);
+                        continue;
+                    }
+                    out.push(SoundEvent::World(e.extra_info, e.pos));
+                } else if e.event_id == g::NETEVENTTYPE_HAMMERHIT && c.snd_game {
+                    out.push(SoundEvent::World(SOUND_HAMMER_HIT, e.pos));
+                }
+                w.predicted_events[i].handled = true;
+                i += 1;
+            } else if tick - e.tick > 3 * TICK_SPEED {
+                // remove too old events
+                w.predicted_events.remove(i);
+            } else {
+                i += 1;
+            }
+        }
     }
 
     /// C++: the `NETOBJTYPE_SWITCHSTATE` part of `OnNewSnapshot`.
@@ -1294,7 +1466,14 @@ impl Predictor {
         let before = self.predicted_char;
         let before_render: Vec<Vec2> = (0..MAX_CLIENTS).map(|i| self.smooth_pos(i, t)).collect();
 
+        // PredictedEvents are only handled in predicted world, so update them here
+        if let Some(pw) = &self.predicted_world {
+            self.world.predicted_events = pw.predicted_events.clone();
+        }
         let mut w = self.world.copy_world();
+        // C++ reads g_Config.m_ClPredictEvents and g_Config.m_SndEnable live
+        w.config.predict_events = self.config.predict_events && self.predict_events;
+        w.config.snd_enable = self.config.snd_enable;
         // don't predict inactive players, or entities from other teams
         for i in 0..MAX_CLIENTS {
             if let Some((ch, _)) = w.character(i)
@@ -1368,6 +1547,43 @@ impl Predictor {
                 }
             }
             store_pred_pos(&mut self.pred_pos, &mut self.pred_pos_tick, &w, tick);
+
+            // check if we want to trigger effects
+            if tick > self.last_new_predicted_tick {
+                self.last_new_predicted_tick = tick;
+                if let Some((_, core)) = w.character(local) {
+                    let (pos, events) = (core.pos, core.triggered_events);
+                    let snd = c.snd_game;
+                    if c.predict && snd && events & COREEVENT_AIR_JUMP != 0 {
+                        self.sound_events
+                            .push(SoundEvent::World(SOUND_PLAYER_AIRJUMP, pos));
+                    }
+                    if snd {
+                        for (ev, sound) in [
+                            (COREEVENT_GROUND_JUMP, SOUND_PLAYER_JUMP),
+                            (COREEVENT_HOOK_ATTACH_GROUND, SOUND_HOOK_ATTACH_GROUND),
+                            (COREEVENT_HOOK_HIT_NOHOOK, SOUND_HOOK_NOATTACH),
+                        ] {
+                            if events & ev != 0 {
+                                self.sound_events.push(SoundEvent::World(sound, pos));
+                            }
+                        }
+                        if events & COREEVENT_HOOK_ATTACH_PLAYER != 0 {
+                            let tick = w.game_tick;
+                            create_predicted_sound(
+                                &w.config,
+                                &mut w.predicted_events,
+                                tick,
+                                pos,
+                                SOUND_HOOK_ATTACH_PLAYER,
+                                self.local_id,
+                            );
+                        }
+                    }
+                }
+            }
+            let out = &mut self.sound_events;
+            Self::handle_predicted_events(&c, self.race_sounds, out, &mut w, tick);
         }
         // detect mispredictions of other players and make corrections smoother
         self.smooth(t, &before_render);
@@ -1387,6 +1603,13 @@ impl Predictor {
         self.history = self.history.split_off(&(cur - TICK_SPEED));
         self.predicted_world = Some(w);
     }
+}
+
+/// C++: `m_GameInfo.m_RaceSounds` with `snd_gun`/`snd_long_pain` off.
+fn race_sound_off(c: &PredictConfig, race_sounds: bool, id: i32) -> bool {
+    race_sounds
+        && ((id == SOUND_GUN_FIRE && !c.snd_gun)
+            || (id == SOUND_PLAYER_PAIN_LONG && !c.snd_long_pain))
 }
 
 /// C++: `vec2[j]`.

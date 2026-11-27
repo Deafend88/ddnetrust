@@ -400,4 +400,22 @@ only matters for names so long that neither file can exist.
   sounds come from servers).
 - `LOOP_START=` is parsed with Rust's integer parse (C++ `str_toint`); they differ only on
   odd spellings such as a leading `+`.
+- Device: cpal (WASAPI) at the device's rate (SDL opens with ALLOW_FREQUENCY_CHANGE). The
+  callback pulls `Mix` in SDL's fixed chunks of `snd_buffer_size` frames, so looping
+  voices restart at the same frames as in C++. Stereo goes into the first two device
+  channels, mono devices get the mean. Not ported: reopening the device after it is
+  unplugged (C++ `UpdateDevice`) and `AdvancePlayback` (voices advancing without a
+  device): without a device nothing plays and nothing advances.
+- Sound sets always load on a thread (C++ `cl_threadsoundloading`, default 1); the random
+  pick of `GetSampleId` uses our own generator (C++ `rand()`), never the last sample.
+- Predicted events (`cl_predict_events`, DDNet servers set `PREDICT_EVENTS`): the world
+  creates the sound and hammer-hit events of C++ (weapons, ninja, pain, pickups, laser
+  bounces, grenade impacts, hook-attach-player); explosion and damage-indicator events are
+  left out, they only feed particles. A projectile's `m_SoundImpact` has no field: only
+  grenades explode and theirs is always `SOUND_GRENADE_EXPLODE`.
+- `ProcessEvents` runs inside the predictor's snapshot handling (before the prediction, as
+  C++ `OnNewSnapshot` before `OnPredict`), so a server event is checked against the
+  previous frame's predicted events.
+- No dummy: the other-players air-jump check skips only the predicted local tee.
+- The map-sound warning is printed to stderr (C++ shows a warning popup).
 

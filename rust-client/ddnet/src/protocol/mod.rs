@@ -6,4 +6,5 @@ pub mod netobj;
 pub mod packer;
 pub mod packet;
 pub mod snapshot;
+pub mod sounds;
 pub mod varint;

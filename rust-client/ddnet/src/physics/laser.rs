@@ -198,6 +198,7 @@ impl GameWorld {
                 if l.bounces > bounce_num {
                     l.energy = -1.0;
                 }
+                self.sound(l.pos, crate::protocol::sounds::SOUND_LASER_BOUNCE, l.id);
             }
         } else if !self.laser_hit_character(l, l.pos, to) {
             l.from = l.pos;

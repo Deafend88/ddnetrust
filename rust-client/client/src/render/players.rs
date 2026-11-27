@@ -12,7 +12,7 @@ use std::collections::HashMap;
 use ddnet::map::ints_to_str;
 use ddnet::net::client::Client;
 use ddnet::physics::collision::Collision;
-use ddnet::physics::vmath::{PI, Vec2, angle, direction, distance, mix, normalize, vec2};
+use ddnet::physics::vmath::{PI, Vec2, angle, direction, distance, length, mix, normalize, vec2};
 use ddnet::predict::Rendered;
 use ddnet::protocol::generated as g;
 use ddnet::protocol::snapshot::Item;
@@ -122,6 +122,8 @@ pub struct Players {
     quads: Quads,
     sprites: Sprites,
     skins: Skins,
+    /// Where tees skidded this frame (C++ `CEffects::SkidTrail` calls, for their sound).
+    pub skids: Vec<Vec2>,
 }
 
 /// A snapshot item's ints as an object (`SecureUnpackObj` already sized them).
@@ -147,6 +149,7 @@ impl Players {
             quads: Quads::default(),
             sprites: Sprites::load(gfx, storage),
             skins: Skins::default(),
+            skids: Vec::new(),
         }
     }
 
@@ -284,9 +287,12 @@ impl Players {
             self.render_hook(batch, client, &screen, p, &by_id);
         }
         // render everyone else's tee, then our own
-        for p in ordered {
-            self.render_player(batch, client, collision, &screen, p, local, gunfire);
-        }
+        self.skids = ordered
+            .into_iter()
+            .filter_map(|p| {
+                self.render_player(batch, client, collision, &screen, p, local, gunfire)
+            })
+            .collect();
     }
 
     /// C++: `CPlayers::RenderHook` (players.cpp:477).
@@ -377,13 +383,13 @@ impl Players {
         p: &Drawn,
         local: Option<i32>,
         gunfire: bool,
-    ) {
+    ) -> Option<Vec2> {
         let (prev, player) = (&p.r.prev, &p.r.cur);
         let position = p.r.pos;
         let [l, t, r, b] = *screen;
         // C++: CScreenRect::Inside
         if !(position.x >= l && position.x <= r && position.y >= t && position.y <= b) {
-            return;
+            return None;
         }
         let mut info = p.info;
         let alpha = 1.0;
@@ -460,6 +466,9 @@ impl Players {
             let t = (last_attack_time * 2.0).clamp(0.0, 1.0);
             state.add(&ANIMATIONS[ANIM_NINJA_SWING], t, 1.0);
         }
+
+        // do skidding
+        let skid = (!in_air && want_other_dir && length(vel * 50.0) > 500.0).then_some(position);
 
         // draw gun
         if player.weapon >= 0 && info.flags & TEE_NO_WEAPON == 0 {
@@ -571,5 +580,6 @@ impl Players {
                 batch.set_rotation(0.0);
             }
         }
+        skid
     }
 }

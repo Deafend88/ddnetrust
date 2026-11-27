@@ -203,7 +203,10 @@ fn camera_matches_cpp() {
 /// Our settings after loading `file` (none: defaults), in the C++ saved-config form:
 /// our variables (sorted) and the bind lines in C++ order.
 fn saved(file: Option<&[u8]>) -> (Vec<String>, Vec<String>) {
-    let s = Settings::load(file.as_slice());
+    // scripts/cpp_settings.ps1 starts the C++ client with "snd_enable 0" after the file
+    let mut files = file.as_slice().to_vec();
+    files.push(b"snd_enable 0");
+    let s = Settings::load(&files);
     let mut vars = s.config.serialize(false);
     vars.sort();
     (vars, s.binds.serialize())

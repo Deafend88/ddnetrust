@@ -21,7 +21,7 @@ use ddnet::net;
 use ddnet::net::client::{CameraState, Client, PlayerInfo, State};
 use ddnet::physics::collision::Collision;
 use ddnet::physics::vmath::vec2;
-use ddnet::predict::{Predictor, Rendered};
+use ddnet::predict::{Predictor, Rendered, SoundEvent};
 use ddnet::protocol::generated as g;
 use ddnet_rs::assets;
 use ddnet_rs::camera::{self, Camera, Frame};
@@ -37,12 +37,14 @@ use ddnet_rs::hud::{self, HudData, Widget};
 use ddnet_rs::hud_editor::Editor;
 use ddnet_rs::island::Island;
 use ddnet_rs::killfeed::Killfeed;
+use ddnet_rs::mapsounds::MapSounds;
 use ddnet_rs::media::{self, Media};
 use ddnet_rs::movement::Movement;
 use ddnet_rs::nowplaying::NowPlayingCard;
 use ddnet_rs::render::items::{self, Items};
 use ddnet_rs::render::map::{MapRender, View, hsl_packed_to_rgb};
 use ddnet_rs::render::players::Players;
+use ddnet_rs::sounds::{self, Sounds};
 use ddnet_rs::statusbar::StatusBar;
 use ddnet_rs::storage::{self, Storage};
 use ddnet_rs::style::{self, Glass};
@@ -116,6 +118,10 @@ struct Session {
     clients: Clients,
     /// The snapshot tick `clients` was last updated for.
     clients_tick: Option<i32>,
+    /// C++ `CMapSounds` of the session's map.
+    map_sounds: Option<MapSounds>,
+    /// The session went online (C++ `OnStateChange(STATE_ONLINE)` resets the sounds).
+    online: bool,
 }
 
 impl Session {
@@ -140,6 +146,8 @@ impl Session {
             center: None,
             clients: Clients::default(),
             clients_tick: None,
+            map_sounds: None,
+            online: false,
         })
     }
 
@@ -386,6 +394,10 @@ struct App {
     hud: Vec<Box<dyn Widget>>,
     /// C++ `CChat` (kept across connections like its sent history; reset on connect).
     chat: Chat,
+    /// C++ `CSounds` and the sound engine.
+    sounds: Sounds,
+    /// What `CMenus::UpdateMusicState` last saw (offline, `snd_enable`, `snd_enable_music`).
+    music_state: Option<(bool, i32, i32)>,
     /// Tee heads for the chat lines and the scoreboard.
     chat_heads: TeeHeads,
     /// C++ `CScoreboard::m_Active` (`+scoreboard` held).
@@ -527,11 +539,20 @@ impl App {
 
     /// Drops the session (its collision with it) and frees its map textures.
     fn end_session(&mut self) {
-        if let Some(s) = self.session.take()
-            && let (Some((map, _)), Some(r)) = (s.map, &mut self.running)
-        {
+        let Some(mut s) = self.session.take() else {
+            return self.close_menus();
+        };
+        // C++: CMapSounds::OnStateChange -> Clear
+        if let Some(ms) = s.map_sounds.take() {
+            ms.clear(&mut self.sounds);
+        }
+        if let (Some((map, _)), Some(r)) = (s.map, &mut self.running) {
             map.free(&mut r.gfx);
         }
+        self.close_menus();
+    }
+
+    fn close_menus(&mut self) {
         self.menu.open = false;
         self.player_open = false;
         if self.editor.open {
@@ -733,6 +754,10 @@ impl App {
         if s.client.state() == State::Offline {
             return Err(format!("disconnected: '{}'", s.client.conn.error()));
         }
+        // C++: CSounds::OnStateChange(STATE_ONLINE) -> OnReset
+        if s.client.state() == State::Online && !std::mem::replace(&mut s.online, true) {
+            self.sounds.reset();
+        }
         if s.map.is_none()
             && s.client.state() == State::Online
             && let Some(r) = &mut self.running
@@ -745,6 +770,16 @@ impl App {
                 Rc::clone(&collision),
             ));
             s.predictor = Some(Predictor::new(collision, &m));
+            let mut warning = false;
+            s.map_sounds = Some(MapSounds::load(
+                &m,
+                &self.storage,
+                &mut self.sounds,
+                &mut warning,
+            ));
+            if warning {
+                eprintln!("Some map sounds could not be loaded.");
+            }
             s.map_shown_at = Some(Instant::now());
         }
         Ok(())
@@ -822,9 +857,32 @@ impl App {
             events = std::mem::take(&mut s.client.messages);
             for msg in &events {
                 // C++: Sv_Record / Sv_RecordLegacy carry the map's best time
+                let cfg = &self.settings.config;
                 match msg {
                     g::GameMsg::SvRecord(m) => s.clients.on_record(m.server_time_best),
                     g::GameMsg::SvRecordLegacy(m) => s.clients.on_record(m.server_time_best),
+                    // gameclient.cpp:1148
+                    g::GameMsg::SvSoundGlobal(m) if cfg.snd_game != 0 => {
+                        use ddnet::protocol::sounds::*;
+                        let ctf = [
+                            SOUND_CTF_DROP,
+                            SOUND_CTF_RETURN,
+                            SOUND_CTF_CAPTURE,
+                            SOUND_CTF_GRAB_EN,
+                            SOUND_CTF_GRAB_PL,
+                        ];
+                        if ctf.contains(&m.sound_id) {
+                            self.sounds.enqueue(sounds::CHN_GLOBAL, m.sound_id);
+                        } else {
+                            self.sounds.play(sounds::CHN_GLOBAL, m.sound_id, 1.0, cfg);
+                        }
+                    }
+                    // gameclient.cpp:1228
+                    g::GameMsg::SvMapSoundGlobal(m) => {
+                        if let Some(ms) = &s.map_sounds {
+                            ms.play(&mut self.sounds, sounds::CHN_GLOBAL, m.sound_id, None, cfg);
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -844,6 +902,20 @@ impl App {
                     p.config = self.settings.config.predict_config();
                     s.client.prediction_margin = self.settings.config.cl_prediction_margin;
                     p.update(&mut s.client, now);
+                    let cfg = &self.settings.config;
+                    for e in std::mem::take(&mut p.sound_events) {
+                        match e {
+                            SoundEvent::World(set, pos) => {
+                                self.sounds.play_at(sounds::CHN_WORLD, set, 1.0, pos, cfg);
+                            }
+                            SoundEvent::MapWorld(id, pos) => {
+                                if let Some(ms) = &s.map_sounds {
+                                    let ch = sounds::CHN_WORLD;
+                                    ms.play(&mut self.sounds, ch, id, Some(pos), cfg);
+                                }
+                            }
+                        }
+                    }
                     rendered = p.rendered(&s.client.timing(now));
                     p.predicted_freeze_end()
                 }
@@ -868,8 +940,17 @@ impl App {
             for (team, line) in self.chat.sends.drain(..) {
                 s.client.say(team, &line, now);
             }
-            // ponytail: chat sounds are dropped until sound support (PLAN §13.3)
-            self.chat.sounds.clear();
+            // C++ CChat::AddLine's sounds (chat.cpp:891-936)
+            for kind in self.chat.sounds.drain(..) {
+                use ddnet::protocol::sounds::*;
+                let set = match kind {
+                    chat::Sound::Server => SOUND_CHAT_SERVER,
+                    chat::Sound::Highlight => SOUND_CHAT_HIGHLIGHT,
+                    chat::Sound::Client => SOUND_CHAT_CLIENT,
+                };
+                self.sounds
+                    .play(sounds::CHN_GUI, set, 1.0, &self.settings.config);
+            }
             // C++: CGameClient::OnRender: UpdatePositions, UpdateCamera, CCamera::OnRender
             let local = s.local_pos(&rendered, self.options.follow);
             let frame = s.camera_frame(self.start, frame_time);
@@ -877,6 +958,18 @@ impl App {
             s.camera.update(s.controls.mouse_pos, &frame, config);
             if let Some((x, y)) = local {
                 s.camera.on_render(&mut s.controls, vec2(x, y), config);
+            }
+            // C++: CMapSounds::OnRender (online only)
+            if s.client.state() == State::Online && s.map_sounds.is_some() {
+                let round_start = s
+                    .item(g::NETOBJTYPE_GAMEINFO)
+                    .map(|it| ddnet::items::pad(&it.data, 3)[2]);
+                let t = s.client.timing(now);
+                let ticks = (t.prev_game_tick, t.game_tick, t.intra_tick, round_start);
+                let (center, time) = (s.camera.center, s.envelope_time());
+                if let Some(ms) = &mut s.map_sounds {
+                    ms.on_render(&mut self.sounds, ticks, center, time, config);
+                }
             }
             center = match (self.options.view, local) {
                 (Some(v), _) => Some(v),
@@ -918,6 +1011,9 @@ impl App {
                     local_freeze_end,
                     (s.predictor.as_ref()).is_some_and(|p| p.antiping_gunfire()),
                 );
+                for &pos in &r.players.skids {
+                    self.sounds.skid(pos, 1.0, &self.settings.config);
+                }
                 map.render_foreground(&mut batch, &view);
                 // the game layer's world rect (C++ Graphics()->GetScreen() there)
                 let aspect = size.width as f32 / size.height as f32;
@@ -937,6 +1033,22 @@ impl App {
                 world_view = Some(rect);
             }
         }
+        // C++ CMenus::UpdateMusicState (on its triggers) and CSounds::OnRender
+        let cfg = &self.settings.config;
+        let music = (self.session.is_none(), cfg.snd_enable, cfg.snd_enable_music);
+        if self.music_state != Some(music) {
+            self.music_state = Some(music);
+            let should_play = music.0 && music.1 != 0 && music.2 != 0;
+            let menu = ddnet::protocol::sounds::SOUND_MENU;
+            let playing = self.sounds.is_playing(menu);
+            if should_play && !playing {
+                self.sounds.enqueue(sounds::CHN_MUSIC, menu);
+            } else if !should_play && playing {
+                self.sounds.stop(menu);
+            }
+        }
+        let listener = (self.session.as_ref()).map_or(vec2(0.0, 0.0), |s| s.camera.center);
+        self.sounds.on_render(listener, self.focused, cfg);
         let surface_frame = match r.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(t)
             | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
@@ -1437,7 +1549,10 @@ fn main() {
                 .map(|w| w.default_placement())
         },
     );
+    let sounds = Sounds::new(&storage, &settings.config);
     let mut app = App {
+        sounds,
+        music_state: None,
         menu: Menu::new(options.server, &storage),
         hud,
         chat: Chat::default(),

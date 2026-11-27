@@ -1277,8 +1277,20 @@ User review: chat approved; fixes before sound.
   stand-in class): 19 real samples at 48 and 44.1 kHz, 2 x 5000 random calls, 3301 mixes,
   every result identical (`client/tests/sound.rs`). Found on the way: C++ starts channels
   1-15 at volume 0 (`= {{255, 0}}`).
-- Next: D `CSounds`/`CMapSounds`, call sites, cpal output (SDL's fixed 512-frame chunks),
-  settings.
+- Piece D, integration: `client/src/sounds.rs` (C++ `CSounds`: sets loaded on a thread
+  through the storage order, channels, `GetSampleId`, the 300 ms queue, cpal device in
+  SDL's chunks), `client/src/mapsounds.rs` (C++ `CMapSounds`: embedded and `mapres/`
+  sounds, sound-layer sources, round time, envelopes, parallax). Call sites: Sv_SoundGlobal
+  (CTF sounds queued), Sv_MapSoundGlobal, the snapshot events (hammer hit, spawn, world and
+  map sounds), the predicted jump/hook/air-jump sounds, other tees' air jumps, skids,
+  chat sounds, menu music. The prediction world creates C++'s predicted sound events
+  (`cl_predict_events`, which the user has on) and `HandlePredictedEvents` plays them;
+  the server's copies are suppressed. 15 `snd_*`/`cl_predict_events`/`gfx_high_detail`
+  variables from `settings_ddnet.cfg`. `scripts/sound_check.ps1`: device at 48 kHz, 116 of
+  116 samples loaded, no errors.
+- Not verified against C++ copies yet: the glue of `CSounds`/`CMapSounds::OnRender` (only
+  the engine under it is); a listening check by the user is pending. No sound settings
+  page yet (13.10); values come from `settings_ddnet.cfg`.
 
 #### Exact next actions (next session starts here)
 State (2026-11-27): 13.1, 13.2 and the 13.2 review fixes done and pushed; stopped for

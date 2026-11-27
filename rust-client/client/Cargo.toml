@@ -7,6 +7,8 @@ description = "DDNet client with rendering, built on the ddnet crate"
 publish = false
 
 [dependencies]
+# audio output (WASAPI on Windows), PLAN §13.13 answer 1
+cpal = "0.18.2"
 chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 ddnet = { path = "../ddnet" }
 egui = "0.37"

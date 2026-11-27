@@ -12,6 +12,10 @@ use crate::protocol::generated as g;
 
 /// C++: `LAYER_GAME`, `LAYER_SWITCH` (mapitems.h).
 pub const LAYER_GAME: i32 = 0;
+/// C++ `m_SoundImpact` of the explosive projectiles: only grenades explode, fired
+/// (`SOUND_GRENADE_EXPLODE` passed to the constructor) or from a snapshot (set by
+/// `CProjectile(pGameWorld, Id, pProj)`), so it needs no field.
+const SOUND_IMPACT: i32 = crate::protocol::sounds::SOUND_GRENADE_EXPLODE;
 pub const LAYER_SWITCH: i32 = 4;
 
 /// C++: `CProjectile`.
@@ -191,6 +195,10 @@ impl GameWorld {
             {
                 let team = target.map_or(-1, |t| self.teams.team(t as i32));
                 self.create_explosion(col_pos, p.owner, p.type_, p.owner == -1, team);
+                if self.config.is_ddrace && self.config.predict_ddrace {
+                    // vanilla has different projectile physics
+                    self.sound(col_pos, SOUND_IMPACT, p.start_tick);
+                }
             } else if p.freeze {
                 for c in self.find_characters(cur_pos, 1.0) {
                     let team = self.teams.team(c as i32) as usize;
@@ -228,6 +236,7 @@ impl GameWorld {
                 let owner_char = self.char_id(p.owner);
                 let team = owner_char.map_or(-1, |o| self.teams.team(o as i32));
                 self.create_explosion(col_pos, p.owner, p.type_, p.owner == -1, team);
+                self.sound(col_pos, SOUND_IMPACT, p.start_tick);
             }
             p.marked_for_destroy = true;
         }

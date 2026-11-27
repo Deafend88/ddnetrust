@@ -7,6 +7,7 @@ use super::vmath::{Vec2, distance, normalize, trunc_i32, vec2};
 use super::world::GameWorld;
 use crate::items::{LaserData, PickupData};
 use crate::protocol::generated as g;
+use crate::protocol::sounds::*;
 
 /// C++: `PICKUP_PHYSICS_RADIUS` and `CPickup::ms_CollisionExtraSize`.
 const PICKUP_PHYSICS_RADIUS: f32 = 14.0;
@@ -181,8 +182,8 @@ impl GameWorld {
             let team_super = self.teams.team_super();
             match p.type_ {
                 g::POWERUP_FREEZE => {
-                    if cfg.predict_ddrace {
-                        self.freeze(c);
+                    if cfg.predict_ddrace && self.freeze(c) {
+                        self.sound(p.pos, SOUND_PICKUP_HEALTH, c as i32);
                     }
                 }
                 g::POWERUP_ARMOR => {
@@ -203,6 +204,7 @@ impl GameWorld {
                         core.ninja.current_move_time = 0;
                         if sound {
                             ch.last_weapon = g::WEAPON_GUN;
+                            w.sound(p.pos, SOUND_PICKUP_ARMOR, ch.id);
                         }
                         if core.active_weapon >= g::WEAPON_SHOTGUN {
                             ch.set_active_weapon(core, w, g::WEAPON_HAMMER);
@@ -224,6 +226,7 @@ impl GameWorld {
                             slot.got = false;
                             slot.ammo = 0;
                             ch.last_weapon = g::WEAPON_GUN;
+                            w.sound(p.pos, SOUND_PICKUP_ARMOR, ch.id);
                         }
                         if core.active_weapon == weapon {
                             ch.set_active_weapon(core, w, g::WEAPON_HAMMER);
@@ -245,6 +248,18 @@ impl GameWorld {
                         let w = self.core.characters[c].as_ref().unwrap().weapons[sub as usize];
                         if !w.got || w.ammo != -1 {
                             self.with_char(c, |ch, core, w| ch.give_weapon(core, w, sub, false));
+                            if ddrace {
+                                let sound = match sub {
+                                    g::WEAPON_GRENADE => Some(SOUND_PICKUP_GRENADE),
+                                    g::WEAPON_SHOTGUN | g::WEAPON_LASER => {
+                                        Some(SOUND_PICKUP_SHOTGUN)
+                                    }
+                                    _ => None,
+                                };
+                                if let Some(sound) = sound {
+                                    self.sound(p.pos, sound, c as i32);
+                                }
+                            }
                         }
                     }
                 }

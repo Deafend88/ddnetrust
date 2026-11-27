@@ -11,8 +11,12 @@ use super::tuning::Param;
 use super::vmath::{
     Vec2, angle, closest_point_on_line, direction, distance, length, normalize, trunc_i32, vec2,
 };
-use super::world::{GameWorld, NINJA_DURATION, fire_delay};
+use super::world::{
+    GameWorld, NINJA_DURATION, PredictedEvent, create_predicted_event, create_predicted_sound,
+    fire_delay,
+};
 use crate::protocol::generated as g;
+use crate::protocol::sounds::*;
 
 /// C++: `g_Config.m_SvHit` and `g_Config.m_SvDeepfly`: server settings the client never
 /// receives, so the client's own defaults (1) apply.
@@ -80,6 +84,24 @@ impl GameWorld {
             }
         }
         closest
+    }
+
+    /// C++: `CGameWorld::CreatePredictedSound`.
+    pub(super) fn sound(&mut self, pos: Vec2, sound: i32, id: i32) {
+        create_predicted_sound(
+            &self.config,
+            &mut self.predicted_events,
+            self.game_tick,
+            pos,
+            sound,
+            id,
+        );
+    }
+
+    /// C++: `CGameWorld::CreatePredictedHammerHitEvent`.
+    fn hammer_hit_event(&mut self, pos: Vec2, id: i32) {
+        let e = PredictedEvent::new(g::NETEVENTTYPE_HAMMERHIT, pos, id, self.game_tick, -1);
+        create_predicted_event(&self.config, &mut self.predicted_events, e);
     }
 
     /// C++: `CCharacter::TakeDamage`: only the force counts.
@@ -264,6 +286,8 @@ impl GameWorld {
                 self.chars[id].as_ref().unwrap().hit_objects.len() < MAX_CLIENTS,
                 "m_aHitObjects overflow"
             );
+            let target = self.chars[i].as_ref().unwrap().pos;
+            self.sound(target, SOUND_NINJA_HIT, id as i32);
             self.chars[id].as_mut().unwrap().hit_objects.push(i as i32);
             self.take_damage(i, vec2(0.0, -10.0));
         }
@@ -289,7 +313,8 @@ impl GameWorld {
         }
     }
 
-    /// C++: `CCharacter::FireWeapon` (character.cpp:257), without sounds and events.
+    /// C++: `CCharacter::FireWeapon` (character.cpp:257); of the events only the sounds and
+    /// hammer hits (the others only feed particles).
     pub(super) fn fire_weapon(&mut self, id: usize) {
         {
             let ch = self.chars[id].as_ref().unwrap();
@@ -323,6 +348,7 @@ impl GameWorld {
             let me = self.chars[id].as_mut().unwrap();
             if me.pain_sound_timer <= 0 && me.latest_prev_input.fire & 1 == 0 {
                 me.pain_sound_timer = SERVER_TICK_SPEED;
+                self.sound(ch.pos, SOUND_PLAYER_PAIN_LONG, id as i32);
             }
             return;
         }
@@ -335,11 +361,19 @@ impl GameWorld {
         let ticks = SERVER_TICK_SPEED as f32;
         match weapon {
             g::WEAPON_HAMMER if !c.hammer_hit_disabled => {
+                self.sound(pos, SOUND_HAMMER_FIRE, id as i32);
                 let mut hits = 0;
                 for t in self.find_characters(proj_start, PHYSICAL_SIZE * 0.5) {
                     if t == id || !self.can_collide(id, t as i32) {
                         continue;
                     }
+                    let tp = self.chars[t].as_ref().unwrap().pos;
+                    let hit_pos = if length(tp - proj_start) > 0.0 {
+                        tp - normalize(tp - proj_start) * PHYSICAL_SIZE * 0.5
+                    } else {
+                        proj_start
+                    };
+                    self.hammer_hit_event(hit_pos, id as i32);
                     let target = self.chars[t].as_ref().unwrap();
                     let (tpos, mr, snap_weapon, game_team) = (
                         target.pos,
@@ -395,6 +429,7 @@ impl GameWorld {
                     false,
                     -1,
                 );
+                self.sound(pos, SOUND_GUN_FIRE, id as i32);
             }
             g::WEAPON_SHOTGUN => {
                 if self.config.is_vanilla {
@@ -422,6 +457,7 @@ impl GameWorld {
                     let reach = tuning.get(Param::LaserReach);
                     self.spawn_laser(pos, dir, reach, id as i32, g::WEAPON_SHOTGUN);
                 }
+                self.sound(pos, SOUND_SHOTGUN_FIRE, id as i32);
             }
             g::WEAPON_GRENADE => {
                 let lifetime = trunc_i32(ticks * tuning.get(Param::GrenadeLifetime));
@@ -435,10 +471,12 @@ impl GameWorld {
                     true,
                     0,
                 );
+                self.sound(pos, SOUND_GRENADE_FIRE, id as i32);
             }
             g::WEAPON_LASER => {
                 let reach = tuning.get(Param::LaserReach);
                 self.spawn_laser(pos, dir, reach, id as i32, g::WEAPON_LASER);
+                self.sound(pos, SOUND_LASER_FIRE, id as i32);
             }
             g::WEAPON_NINJA => {
                 let me = self.chars[id].as_mut().unwrap();
@@ -448,6 +486,7 @@ impl GameWorld {
                 c.ninja.current_move_time = NINJA_MOVETIME * SERVER_TICK_SPEED / 1000;
                 // clamp to prevent massive MoveBox calculation lag with SG bug
                 c.ninja.old_vel_amount = trunc_i32(length(c.vel).clamp(0.0, 6000.0));
+                self.sound(pos, SOUND_NINJA_FIRE, id as i32);
             }
             _ => {}
         }

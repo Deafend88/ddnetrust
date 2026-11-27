@@ -1458,6 +1458,8 @@ fn check_weapons(name: &str, col: Rc<Collision>, text: &str) {
                     old_laser: mode == 1,
                     freeze_delay: 3,
                     antiping_players: 1,
+                    predict_events: false,
+                    snd_enable: true,
                 };
                 let mut wd = GameWorld::new(Rc::clone(&col), config);
                 wd.tunings = zones.clone();
@@ -2057,6 +2059,7 @@ fn check_antiping(name: &str, map: &Map, col: Rc<Collision>, text: &str) {
                     predict_freeze: v[9],
                     antiping_grenade: v[10] != 0,
                     antiping_gunfire: v[11] != 0,
+                    ..Default::default()
                 };
                 p = Some(pr);
                 inputs.clear();
