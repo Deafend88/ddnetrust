@@ -1232,10 +1232,37 @@ are final unless the user changes them:
   (`toggle_scoreboard_cursor`: friend/mute/spectate), left for 13.5/13.7; `--follow`
   showed a grey world in the live check (not investigated).
 
+#### 13.2 review fixes (2026-11-27) — done
+User review: chat approved; fixes before sound.
+- Status pill: the freeze tint is painted under the weapons (it washed them out).
+- Frozen tee: `scripts/freeze_compare.ps1` freezes the C++ client, then DDNet-rs (rcon
+  `freeze`, `deep`, `livefreeze`, `sv_max_afk_time 0`): same tee in every state (ninja
+  skin and no weapon when frozen, blink/pain eyes like the server's emote). The "two
+  states" in the 13.2 capture was Alice standing exactly on Bob (his tee and gun behind
+  her); `scoreboard_check.ps1` now steps off him. Only difference left: C++ freezing-flake
+  particles (particles are not ported). The yellow wedges on the C++ tee are its cursor.
+- Tee icons (scoreboard, chat, killfeed): the whole idle tee with feet, centred like C++
+  `RenderIdleTeeAtCenter` (skin metrics); scoreboard tee 21 -> 23 px (`size::TEE`).
+- Scoreboard: DDRace team tint pastel (lightness 0.8, alpha 0.24); ping coloured with C++
+  `GetPingTextColor` (a hue ramp: HSL((300 - clamp(ping, 0, 300)) / 1000, 1, 0.5), green
+  at 0, yellow near 150, red from 300; no fixed thresholds in C++) behind
+  `cl_enable_ping_color`.
+- `/ponytail-review` of 13.2: one `style::rgb` instead of three copies; the name column
+  now starts after the 23 px tee.
+- `--follow` grey screen: the server sends far tees only with `sv_show_all_default 1`,
+  so the camera had no centre; it now falls back to our own tee.
+- Captures: `docs/review/13.2b/`.
+
 #### Exact next actions (next session starts here)
-State (2026-11-27): 13.1 chat and 13.2 scoreboard/name plates/freeze bars done and
-pushed; stopped for the user's review of 13.1-13.2 (`docs/review/13.1`, `13.2`). Then:
-13.3 sound. Open: `/ponytail-review` was not run on the 13.2 diff (usage limit).
+State (2026-11-27): 13.1, 13.2 and the 13.2 review fixes done and pushed; stopped for
+the user's look at `docs/review/13.2b/`. Then: 13.3 sound.
+Queued (user, 2026-11-27; not done yet):
+- HUD dark glow (`style::HUD_SHADOW` / the watermark's glow) far too big and noticeable:
+  make it tiny and barely visible.
+- Watermark: reduce the gap between icons and values.
+Open: `ddnet/tests/server.rs` `prediction_matches_server_with_antiping` is flaky (about
+1 in 3 runs, also on the clean tree before these fixes: one 1-unit `vel_x` mismatch,
+failing runs end at ~11 s instead of ~22 s); not investigated.
 
 Previous state: M8 (8.1-8.8) done and pushed; stopped for the user's review of
 8.5-8.8. Review material: `docs/review/8.7/` (gun/grenade/laser, DDNet-rs predicted vs
