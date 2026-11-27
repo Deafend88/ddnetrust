@@ -1353,8 +1353,17 @@ User review: chat approved; fixes before sound.
   by code path and the gates only; not clicked through in a running client yet.
 
 #### Exact next actions (next session starts here)
-State (2026-11-27): 13.1, 13.2 and the 13.2 review fixes done and pushed; stopped for
-the user's look at `docs/review/13.2b/`. Then: 13.3 sound.
+State (2026-11-28): 13.3 (sound) and 13.4 (crosshair, asset packs, entities overlay,
+picker) done and pushed; stopped for the user's review:
+- 13.3: a listening check (jump, hook, weapons, chat, a map with ambient sounds, e.g.
+  Sunny Side Up: map sounds never played before the `CSoundSource` size fix).
+- 13.4: `docs/review/13.4/` (entities, entity numbers, asset picker); switching packs in
+  the menu of a running client (not clicked through yet).
+- `prediction_matches_server_with_antiping` stays flaky: 3 of 6 runs failed on the
+  pre-session commit 5a52216ba too, so it predates this work; not investigated.
+Then: 13.5 (Esc menu).
+
+Earlier state (2026-11-27): 13.1, 13.2 and the 13.2 review fixes done and pushed.
 Queued (user, 2026-11-27; not done yet):
 - HUD dark glow (`style::HUD_SHADOW` / the watermark's glow) far too big and noticeable:
   make it tiny and barely visible.
