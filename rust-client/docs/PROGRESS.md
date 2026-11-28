@@ -1428,10 +1428,40 @@ Sound works, asset pack switching works in the running client.
   Live `dummy_joins_walks_and_swaps`: the dummy joins as `[D] main`, walks while the
   main tee stands, the swap back moves the main tee, `cl_dummy_hammer` hammers,
   disconnect leaves the main tee playing.
+- Piece b, the inputs: `controls.rs` keeps the other tee's controls (`Controls::other`;
+  C++ indexes its arrays by `cl_dummy`, we swap the two on a switch); `snap_input` does
+  copy moves and dummy control into `m_DummyInput` (`DummySnap::input`) and the other
+  tee; `on_dummy_swap` is `OnDummySwap` (`cl_dummy_resetonswitch`, the fire handover);
+  `DummySnap::snap` is `OnSnapInput` for the other tee (hammer every 25th call).
+  Verified: `rs_parity dummy` (new `src/tools/rs_parity_dummy.cpp`: word-for-word copies
+  of `SnapInput`, `ResetInput`, `OnDummySwap`, `OnSnapInput`, `SendInput`; 63 copies
+  checked now): 20,000 random events (binds, mouse, dummy settings, swaps, chat/menu/
+  scoreboard/spectating), ~8,000 SendInput rounds; `client/tests/input.rs
+  dummy_inputs_match_cpp`: every sent input, both tees' input/last input/mouse and the
+  other tee's state identical; 6 of 6 mutations caught. Found on the way (M6 bug,
+  fixed): in chat or a menu C++ sends the input with the target already following the
+  mouse (the final copy in `SnapInput` overwrites the early one); we sent the old one.
+- Piece c, the prediction: `predict.rs` ports the dummy branches of `UpdatePrediction`
+  (the dummy's inputs while advancing the server world, `SetInput` on a skip, local in
+  `NetCharAdd`), `OnPredict` (both tees' inputs, the lower id first,
+  `m_IsDummySwapping`, the dummy's prev/predicted cores, `m_aLastNewPredictedTick[2]` and
+  its air jump), `ApplyPreInputs` (skips `m_aLocalIds[0]` and the connected dummy),
+  `UpdateRenderedCharacters` (the dummy rendered like the local tee), the air-jump sound
+  rule, `PredictDummy()` (`cl_predict_dummy`, paused from `DDNetPlayer`) and the tuning
+  state per connection. `Client::input_of(tick, is_dummy)` is `GetInput(tick, IsDummy)`.
+  Verified: `rs_parity antiping` gained a dummy in a third of the runs (half with
+  `cl_dummy 1`), its inputs on the other connection, paused phases, `cl_predict_dummy 0`
+  runs and frames right after a swap: 100% on all 7 maps; 9 of 9 mutations caught.
+  Driver bug fixed on the way: it set `m_aGameTime[0]`, the copies read
+  `m_aGameTime[cl_dummy]`. Note: `rs_parity antiping` does not regenerate byte for byte
+  (the driver keys entity ids by heap address); every run is valid C++ output for the
+  Rust test, which replays the file.
 
 #### Exact next actions (next session starts here)
-State (2026-11-28): 13.5 two-row layout done and pushed; stopped for the user's review
-of `docs/review/13.5/`. Then 13.6 (dummy).
+State (2026-11-28): 13.6 pieces a-c (connection, inputs, prediction) pushed; next piece d:
+settings and binds (`cl_dummy*`, `dummy_*`, `dummy_connect`/`dummy_disconnect`/
+`toggle cl_dummy`), the dummy socket and swap in `main.rs`, the Esc menu Dummy pill, HUD/
+camera; then 13.7.
 Queued for the HUD polish (user, 2026-11-28; not now): an option to draw the race
 status's weapons in the pack's own colours instead of white silhouettes (thin custom-pack
 sprites become unreadable bars).
