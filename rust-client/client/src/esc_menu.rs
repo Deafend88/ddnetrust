@@ -1,4 +1,4 @@
-//! The in-game menu (Esc, PLAN §13.5, C++ `menus_ingame.cpp`) in our design: a compact
+//! The in-game menu (Esc, PLAN §13.5, C++ `menus_ingame.cpp`) in our design: a
 //! bar across the top over the running game. Tabs as a segmented control, the Game tab's
 //! actions as pills, Disconnect apart in muted red, icon buttons on the right; the other
 //! tabs open a panel under the bar. Parts whose feature comes later stay hidden (Ghost
@@ -145,8 +145,6 @@ pub struct EscMenu {
     pub tab: usize,
     /// Disconnect asks first (C++ `PopupConfirm`).
     confirming: bool,
-    /// The Game tab's actions' width last frame, to centre them.
-    actions_width: f32,
 }
 
 /// What the bar shows.
@@ -286,8 +284,8 @@ impl EscMenu {
         self.confirming = false;
     }
 
-    /// The bar: tabs on the left, icon buttons on the right, the Game tab's actions
-    /// centred on the bar between them (on a row of their own when they do not fit).
+    /// The bar, as in the concept: row 1 tabs on the left and icon buttons on the right;
+    /// row 2 (Game tab only) the actions.
     fn bar(&mut self, ui: &mut Ui, v: &View) -> Option<Action> {
         let mut action = None;
         ui.spacing_mut().item_spacing = egui::vec2(space::M, space::M);
@@ -299,10 +297,10 @@ impl EscMenu {
         let ltr = Layout::left_to_right(Align::Center);
         // top-aligned: a Frame in a centred row lands its margin too low, and the
         // control is as tall as the row anyway
-        let (_, tabs) = row_in(ui, row, Layout::left_to_right(Align::Min), |ui| {
+        row_in(ui, row, Layout::left_to_right(Align::Min), |ui| {
             w::segmented_sized(ui, &mut self.tab, &TABS, size::TITLE, h);
         });
-        let (_, buttons) = row_in(ui, row, Layout::right_to_left(Align::Center), |ui| {
+        row_in(ui, row, Layout::right_to_left(Align::Center), |ui| {
             if round_button(ui, icons::POWER, "Quit").clicked() {
                 action = Some(Action::Quit);
             }
@@ -316,19 +314,9 @@ impl EscMenu {
         if self.tab != 0 {
             return action;
         }
-        // centred by last frame's width; a changed width draws the frame again
-        let aw = self.actions_width;
-        let mut at = row;
-        at.min.x = row.center().x - aw / 2.0;
-        if at.min.x < tabs.right() + space::XL || at.min.x + aw > buttons.left() - space::XL {
-            (at, _) = ui.allocate_exact_size(full, Sense::hover());
-            at.min.x = (at.center().x - aw / 2.0).max(at.left());
-        }
-        let (a, used) = row_in(ui, at, ltr, |ui| self.game_row(ui, v));
-        if (used.width() - aw).abs() > 0.5 {
-            self.actions_width = used.width();
-            ui.ctx().request_discard("esc menu actions re-centred");
-        }
+        // the actions get a row of their own: row 1 keeps room for more tabs
+        let (at, _) = ui.allocate_exact_size(full, Sense::hover());
+        let (a, _) = row_in(ui, at, ltr, |ui| self.game_row(ui, v));
         action.or(a)
     }
 
@@ -490,7 +478,8 @@ fn info(ui: &mut Ui, v: &View) {
         .fill(color::SURFACE_RAISED)
         .corner_radius(CornerRadius::same(radius::PILL))
         .min_size(egui::vec2(0.0, size::CONTROL_LARGE));
-        if ui.add(copy).clicked() {
+        // as wide as its words, not the (justified) column
+        if ui.horizontal(|ui| ui.add(copy)).inner.clicked() {
             ui.ctx().copy_text(format!(
                 "{}\nAddress: ddnet://{}\nMy IGN: {}\n",
                 s.name, v.address, v.player_name

@@ -1402,9 +1402,12 @@ Sound works, asset pack switching works in the running client.
   screen). Players: tee (40 pt), name and clan columns, toggles aligned. Info: Server
   and Game as two equal columns of label/value rows, MOTD below. Insets 24 pt on all
   sides, 12 pt between controls and rows. Captures in `docs/review/13.5/` redone.
+- Second review (user, 2026-11-28): back to the concept's two rows. Row 1: tabs left,
+  icon buttons right (room for Vote, Ghost, Browser later). Row 2, Game tab only: the
+  action pills. Tabs and actions never share a row. Copy info no longer stretches.
 
 #### Exact next actions (next session starts here)
-State (2026-11-28): 13.5 layout rework done and pushed; stopped for the user's review
+State (2026-11-28): 13.5 two-row layout done and pushed; stopped for the user's review
 of `docs/review/13.5/`. Then 13.6 (dummy).
 Queued for the HUD polish (user, 2026-11-28; not now): an option to draw the race
 status's weapons in the pack's own colours instead of white silhouettes (thin custom-pack

@@ -1169,9 +1169,8 @@ Players, Info, Browser, Ghost, Vote; icon buttons on the right (demos, editor,
 settings, quit). Row 2 (Game tab): pills with Material Rounded icons — Spectate,
 Respawn (`Cl_Kill`), Pause, Record demo, Dummy control — a divider, Disconnect in muted
 red. Other tabs open a
-rounded panel under the bar. Review 2026-11-28: no "Esc to close" hint; larger controls,
-one full-width row (tabs left, actions centred, icon buttons right), tab panels large and
-centred. Each pill shows the C++ label state (Pause ↔ Join game,
+rounded panel under the bar. Review 2026-11-28: no "Esc to close" hint; larger controls, the
+bar full width, tab panels large and centred. Tabs and actions never share a row. Each pill shows the C++ label state (Pause ↔ Join game,
 Record ↔ Stop record, Spectate ↔ Join game) and the C++ visibility rules.
 Tabs and pills whose feature lands in a later step stay hidden until then (Ghost → 13.8,
 Dummy → 13.6, Vote → 13.7); Browser stays hidden until M11 (§13.12 q4). The editor
