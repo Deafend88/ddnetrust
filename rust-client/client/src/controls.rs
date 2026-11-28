@@ -1,7 +1,7 @@
-//! Mouse and game input. C++: `CControls` (game/client/components/controls.cpp) for one
-//! playing player (no dummy, no spectating, no chat or menus yet), the console
-//! commands binds run (`+left`, `+fire`, `zoom+`, ...), and the winit to C++ key id
-//! mapping (C++ key ids are SDL scancodes).
+//! Mouse and game input. C++: `CControls` (game/client/components/controls.cpp) for the
+//! main tee and the dummy (not spectating), the console commands binds run (`+left`,
+//! `+fire`, `zoom+`, ...), and the winit to C++ key id mapping (C++ key ids are SDL
+//! scancodes).
 
 use ddnet::physics::vmath::{Vec2, length, normalize_pre_length, trunc_i32, vec2};
 use ddnet::protocol::generated as g;
@@ -28,21 +28,22 @@ pub enum PlayerState {
     InMenu,
 }
 
+/// One tee's part of `CControls` (C++ `m_aMousePos[i]`, `m_aInputData[i]`, ...).
 #[derive(Clone, Debug)]
-pub struct Controls {
-    /// C++ `m_aMousePos[0]`: the aim, relative to the tee.
+pub struct TeeControls {
+    /// C++ `m_aMousePos`: the aim, relative to the tee.
     pub mouse_pos: Vec2,
     pub input_type: MouseInputType,
-    /// C++ `m_aInputData[0]` (the input fields the commands set).
+    /// C++ `m_aInputData` (the input fields the commands set).
     pub input: g::ObjPlayerInput,
-    /// C++ `m_aInputDirectionLeft[0]`, `m_aInputDirectionRight[0]`.
+    /// C++ `m_aInputDirectionLeft`, `m_aInputDirectionRight`.
     pub left: i32,
     pub right: i32,
-    /// C++ `m_aLastData[0]`: the input of the last SnapInput.
-    last: g::ObjPlayerInput,
+    /// C++ `m_aLastData`: the input of the last SnapInput.
+    pub last: g::ObjPlayerInput,
 }
 
-impl Default for Controls {
+impl Default for TeeControls {
     fn default() -> Self {
         Self {
             mouse_pos: vec2(0.0, 0.0),
@@ -53,6 +54,56 @@ impl Default for Controls {
             last: g::ObjPlayerInput::default(),
         }
     }
+}
+
+impl TeeControls {
+    /// C++: `CControls::ResetInput`: release movement, jump and fire (from the last
+    /// snapped input).
+    pub fn reset_input(&mut self) {
+        let l = &mut self.last;
+        l.direction = 0;
+        if l.fire & 1 != 0 {
+            l.fire += 1;
+        }
+        l.fire &= ddnet::physics::core::INPUT_STATE_MASK;
+        l.jump = 0;
+        self.input = self.last;
+        (self.left, self.right) = (0, 0);
+    }
+}
+
+/// `CControls`: the active tee's state (C++ index `cl_dummy`, reached through `Deref`)
+/// and the other tee's (index `!cl_dummy`); `on_dummy_swap` exchanges them.
+#[derive(Clone, Debug, Default)]
+pub struct Controls {
+    active: TeeControls,
+    pub other: TeeControls,
+}
+
+impl std::ops::Deref for Controls {
+    type Target = TeeControls;
+    fn deref(&self) -> &TeeControls {
+        &self.active
+    }
+}
+
+impl std::ops::DerefMut for Controls {
+    fn deref_mut(&mut self) -> &mut TeeControls {
+        &mut self.active
+    }
+}
+
+/// The dummy settings `SnapInput` reads (C++ `cl_dummy_copy_moves`, `cl_dummy_control`,
+/// `cl_dummy_jump`, `cl_dummy_fire`, `cl_dummy_hook`) and whether the local player
+/// follows someone else (C++ `m_Snap.m_SpecInfo.m_Active && m_SpectatorId >= 0`).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DummyControl {
+    pub copy_moves: bool,
+    pub control: bool,
+    pub jump: i32,
+    pub fire: i32,
+    pub hook: i32,
+    pub spectating_other: bool,
 }
 
 /// What the input commands need to know about the game.
@@ -205,18 +256,21 @@ impl Controls {
     }
 
     /// C++: `CControls::SnapInput` (controls.cpp:241): the input to send. Playing, the
-    /// mouse position becomes the target; chatting or in a menu the input is reset
-    /// (unless the server has the DDRace input bug) and the copy to send keeps the
-    /// previous target, as in C++. `scoreboard`: C++ `m_Scoreboard.IsActive()`.
+    /// mouse position becomes the target and the dummy settings feed `dummy` (C++
+    /// `m_DummyInput`) and the other tee's input; chatting or in a menu the input is
+    /// reset (unless the server has the DDRace input bug) and only the target follows
+    /// the mouse. `scoreboard`: C++ `m_Scoreboard.IsActive()`.
     pub fn snap_input(
         &mut self,
         state: PlayerState,
         scoreboard: bool,
         bug_ddrace_input: bool,
+        ctl: DummyControl,
+        dummy: &mut g::ObjPlayerInput,
     ) -> g::ObjPlayerInput {
         let in_menu = state != PlayerState::Playing;
-        let i = &mut self.input;
-        i.player_flags = match state {
+        let t = &mut self.active;
+        t.input.player_flags = match state {
             PlayerState::Chatting => g::PLAYERFLAG_CHATTING,
             PlayerState::InMenu => g::PLAYERFLAG_IN_MENU,
             PlayerState::Playing => g::PLAYERFLAG_PLAYING,
@@ -224,51 +278,87 @@ impl Controls {
             g::PLAYERFLAG_SCOREBOARD
         } else {
             0
-        } | match self.input_type {
+        } | match t.input_type {
             MouseInputType::Automated => g::PLAYERFLAG_INPUT_ABSOLUTE,
             MouseInputType::Absolute => g::PLAYERFLAG_INPUT_ABSOLUTE | g::PLAYERFLAG_INPUT_MANUAL,
             MouseInputType::Relative => g::PLAYERFLAG_INPUT_MANUAL,
         };
-        self.last.player_flags = i.player_flags;
-        let sent;
+        t.last.player_flags = t.input.player_flags;
         if in_menu {
             if !bug_ddrace_input {
-                self.reset_input();
+                t.reset_input();
             }
-            sent = self.input;
-            self.input.target_x = trunc_i32(self.mouse_pos.x);
-            self.input.target_y = trunc_i32(self.mouse_pos.y);
+            // C++ copies the input here too, but the copy at the end is what is sent
+            t.input.target_x = trunc_i32(t.mouse_pos.x);
+            t.input.target_y = trunc_i32(t.mouse_pos.y);
         } else {
-            let i = &mut self.input;
-            i.target_x = trunc_i32(self.mouse_pos.x);
-            i.target_y = trunc_i32(self.mouse_pos.y);
+            let i = &mut t.input;
+            i.target_x = trunc_i32(t.mouse_pos.x);
+            i.target_y = trunc_i32(t.mouse_pos.y);
             if i.target_x == 0 && i.target_y == 0 {
                 i.target_x = 1;
-                self.mouse_pos.x = 1.0;
+                t.mouse_pos.x = 1.0;
             }
-            i.direction = match (self.left != 0, self.right != 0) {
+            i.direction = match (t.left != 0, t.right != 0) {
                 (true, false) => -1,
                 (false, true) => 1,
                 _ => 0,
             };
-            sent = *i;
+            // dummy copy moves (controls.cpp:319)
+            if ctl.copy_moves {
+                // don't copy any input to dummy when spectating others
+                if !ctl.spectating_other {
+                    let (i, l) = (&t.input, &t.last);
+                    dummy.direction = i.direction;
+                    dummy.hook = i.hook;
+                    dummy.jump = i.jump;
+                    dummy.player_flags = i.player_flags;
+                    dummy.target_x = i.target_x;
+                    dummy.target_y = i.target_y;
+                    dummy.wanted_weapon = i.wanted_weapon;
+                    if !ctl.control {
+                        dummy.fire = dummy.fire.wrapping_add(i.fire.wrapping_sub(l.fire));
+                    }
+                    let next = i.next_weapon.wrapping_sub(l.next_weapon);
+                    dummy.next_weapon = dummy.next_weapon.wrapping_add(next);
+                    let prev = i.prev_weapon.wrapping_sub(l.prev_weapon);
+                    dummy.prev_weapon = dummy.prev_weapon.wrapping_add(prev);
+                }
+                self.other.input = *dummy;
+            }
+            if ctl.control {
+                dummy.jump = ctl.jump;
+                if ctl.fire != 0 {
+                    dummy.fire = ctl.fire;
+                } else if dummy.fire & 1 != 0 {
+                    dummy.fire = dummy.fire.wrapping_add(1);
+                }
+                dummy.hook = ctl.hook;
+                self.other.input = *dummy;
+            }
         }
-        self.last = self.input;
-        sent
+        self.active.last = self.active.input;
+        self.active.input
     }
 
-    /// C++: `CControls::ResetInput`: release movement, jump and fire (from the last
-    /// snapped input).
-    fn reset_input(&mut self) {
-        let l = &mut self.last;
-        l.direction = 0;
-        if l.fire & 1 != 0 {
-            l.fire += 1;
+    /// C++: `CGameClient::OnDummySwap` (gameclient.cpp:513), after `cl_dummy` changed:
+    /// the tees' states change places, `cl_dummy_resetonswitch` (1 the dummy, 2 the
+    /// player) releases one tee's keys, the tee left behind keeps its input as `dummy`
+    /// (C++ `m_DummyInput`), and the newly active one gets that input's fire count.
+    pub fn on_dummy_swap(&mut self, reset_on_switch: i32, dummy: &mut g::ObjPlayerInput) {
+        std::mem::swap(&mut self.active, &mut self.other);
+        if reset_on_switch != 0 {
+            let t = if reset_on_switch == 2 {
+                &mut self.active
+            } else {
+                &mut self.other
+            };
+            t.reset_input();
+            t.input.hook = 0;
         }
-        l.fire &= ddnet::physics::core::INPUT_STATE_MASK;
-        l.jump = 0;
-        self.input = self.last;
-        (self.left, self.right) = (0, 0);
+        let prev_dummy_fire = dummy.fire;
+        *dummy = self.other.input;
+        self.active.input.fire = prev_dummy_fire;
     }
 }
 

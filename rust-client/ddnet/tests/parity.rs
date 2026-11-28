@@ -1287,6 +1287,7 @@ fn cpp_copies_match_source() {
         "src/tools/rs_parity_assets.cpp",
         "src/tools/rs_parity_entities.cpp",
         "src/tools/rs_parity_menus.cpp",
+        "src/tools/rs_parity_dummy.cpp",
     ] {
         let text = std::fs::read_to_string(repo_file(tool)).unwrap();
         let lines: Vec<&str> = text.lines().collect();
@@ -1314,7 +1315,7 @@ fn cpp_copies_match_source() {
             i = end + 1;
         }
     }
-    assert_eq!(copies, 58);
+    assert_eq!(copies, 63);
 }
 
 /// rs_parity's `WeaponZoneTuning`: `ZoneTuning` plus weapon parameters per zone.

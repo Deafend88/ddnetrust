@@ -494,12 +494,9 @@ pub struct Client {
     last_dummy_connect_time: i64,
     /// C++ `CGameClient::m_LastDummyConnected`.
     last_dummy_connected: bool,
-    /// C++ `m_DummyInput`: what the other tee sends; the controls keep it current
-    /// (copy moves, dummy control, swaps), `snap_dummy_input` fires its hammer.
-    pub dummy_input: ObjPlayerInput,
-    /// C++ `m_HammerInput`, `m_DummyFire`.
-    hammer_input: ObjPlayerInput,
-    dummy_fire: i32,
+    /// C++ `m_DummyInput`, `m_HammerInput`, `m_DummyFire`: what the other tee sends.
+    /// The controls keep its input current (copy moves, dummy control, swaps).
+    pub dummy_snap: DummySnap,
     /// C++ `cl_dummy_hammer`, `cl_dummy_restore_weapon`, `cl_dummy_copy_moves`; the
     /// caller keeps them current.
     pub dummy_hammer: bool,
@@ -599,9 +596,7 @@ impl Client {
             dummy_send_conn_info: false,
             last_dummy_connect_time: 0,
             last_dummy_connected: false,
-            dummy_input: ObjPlayerInput::default(),
-            hammer_input: ObjPlayerInput::default(),
-            dummy_fire: 0,
+            dummy_snap: DummySnap::default(),
             dummy_hammer: false,
             dummy_restore_weapon: true,
             dummy_copy_moves: false,
@@ -1635,34 +1630,12 @@ impl Client {
         Some(input)
     }
 
-    /// C++: `CGameClient::OnSnapInput` for the other tee (gameclient.cpp:527): its
-    /// `m_DummyInput`, or every 25th call a hammer hit at the active tee.
+    /// C++: `CGameClient::OnSnapInput` for the other tee, once its id is known.
     fn snap_dummy_input(&mut self, force: bool) -> Option<ObjPlayerInput> {
         self.links[!self.dummy as usize].local_id?;
-        if !self.dummy_hammer {
-            if self.dummy_fire != 0 {
-                self.dummy_input.fire = (self.hammer_input.fire.wrapping_add(1)) & !1;
-                self.dummy_fire = 0;
-            }
-            let d = &self.dummy_input;
-            if !force && d.direction == 0 && d.jump == 0 && d.hook == 0 {
-                return None;
-            }
-            return Some(self.dummy_input);
-        }
-        if self.dummy_fire % 25 != 0 {
-            self.dummy_fire += 1;
-            return None;
-        }
-        self.dummy_fire += 1;
-        self.hammer_input.fire = self.hammer_input.fire.wrapping_add(1) | 1;
-        self.hammer_input.wanted_weapon = g::WEAPON_HAMMER + 1;
-        if !self.dummy_restore_weapon {
-            self.dummy_input.wanted_weapon = g::WEAPON_HAMMER + 1;
-        }
-        self.hammer_input.target_x = trunc_i32(self.hammer_dir.0);
-        self.hammer_input.target_y = trunc_i32(self.hammer_dir.1);
-        Some(self.hammer_input)
+        let (hammer, restore) = (self.dummy_hammer, self.dummy_restore_weapon);
+        self.dummy_snap
+            .snap(force, hammer, restore, self.hammer_dir)
     }
 
     /// C++: the messages `CGameClient::OnNewSnapshot` sends (gameclient.cpp:2255), and
@@ -1798,6 +1771,53 @@ impl Client {
         self.last_deadzone = deadzone;
         self.last_follow_factor = follow_factor;
         self.last_dummy_connected = self.dummy_connected;
+    }
+}
+
+/// C++: the other tee's input state of `CGameClient` (`m_DummyInput`, `m_HammerInput`,
+/// `m_DummyFire`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct DummySnap {
+    pub input: ObjPlayerInput,
+    pub hammer_input: ObjPlayerInput,
+    pub fire: i32,
+}
+
+impl DummySnap {
+    /// C++: `CGameClient::OnSnapInput` with `Dummy` (gameclient.cpp:527) once
+    /// `m_aLocalIds[!cl_dummy]` is known: `input`, or with `cl_dummy_hammer` every 25th
+    /// call a hammer hit towards `hammer_dir`. `None`: nothing to send.
+    pub fn snap(
+        &mut self,
+        force: bool,
+        hammer: bool,
+        restore_weapon: bool,
+        hammer_dir: (f32, f32),
+    ) -> Option<ObjPlayerInput> {
+        if !hammer {
+            if self.fire != 0 {
+                self.input.fire = self.hammer_input.fire.wrapping_add(1) & !1;
+                self.fire = 0;
+            }
+            let d = &self.input;
+            if !force && d.direction == 0 && d.jump == 0 && d.hook == 0 {
+                return None;
+            }
+            return Some(self.input);
+        }
+        if self.fire % 25 != 0 {
+            self.fire += 1;
+            return None;
+        }
+        self.fire += 1;
+        self.hammer_input.fire = self.hammer_input.fire.wrapping_add(1) | 1;
+        self.hammer_input.wanted_weapon = g::WEAPON_HAMMER + 1;
+        if !restore_weapon {
+            self.input.wanted_weapon = g::WEAPON_HAMMER + 1;
+        }
+        self.hammer_input.target_x = trunc_i32(hammer_dir.0);
+        self.hammer_input.target_y = trunc_i32(hammer_dir.1);
+        Some(self.hammer_input)
     }
 }
 

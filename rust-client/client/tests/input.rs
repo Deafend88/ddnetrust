@@ -297,7 +297,13 @@ fn menu_input_follows_cpp() {
         }
     }
     c.mouse_pos = vec2(100.0, -50.0);
-    let playing = c.snap_input(PlayerState::Playing, false, false);
+    let playing = c.snap_input(
+        PlayerState::Playing,
+        false,
+        false,
+        Default::default(),
+        &mut Default::default(),
+    );
     assert_eq!(
         (playing.direction, playing.jump, playing.fire, playing.hook),
         (-1, 1, 1, 1)
@@ -311,18 +317,35 @@ fn menu_input_follows_cpp() {
     }
     assert!(s.binds.on_input(a, true, false, true, none).is_empty());
     c.mouse_pos = vec2(30.0, 40.0);
-    let menu = c.snap_input(PlayerState::InMenu, false, false);
+    let menu = c.snap_input(
+        PlayerState::InMenu,
+        false,
+        false,
+        Default::default(),
+        &mut Default::default(),
+    );
     assert_eq!(menu.player_flags & g::PLAYERFLAG_PLAYING, 0);
     assert_ne!(menu.player_flags & g::PLAYERFLAG_IN_MENU, 0);
     assert_eq!(
         (menu.direction, menu.jump, menu.fire, menu.hook),
         (0, 0, 2, 1)
     );
-    assert_eq!((menu.target_x, menu.target_y), (100, -50)); // previous target
+    // the target follows the mouse: C++ sends the input after updating it (dummy.txt)
+    assert_eq!((menu.target_x, menu.target_y), (30, 40));
     // with the DDRace input bug the input is not reset
     let mut d = Controls::default();
     d.input.jump = 1;
-    assert_eq!(d.snap_input(PlayerState::InMenu, false, true).jump, 1);
+    assert_eq!(
+        d.snap_input(
+            PlayerState::InMenu,
+            false,
+            true,
+            Default::default(),
+            &mut Default::default()
+        )
+        .jump,
+        1
+    );
 }
 
 /// M6.8: our settings file reloads to the same settings, on top of any C++ file.
@@ -339,4 +362,163 @@ fn own_settings_file_round_trips() {
         assert_eq!(again.config, s.config);
         assert_eq!(again.binds.serialize(), s.binds.serialize());
     }
+}
+
+fn input(s: &str) -> g::ObjPlayerInput {
+    let v: Vec<i32> = s.split(',').map(|x| x.parse().unwrap()).collect();
+    g::ObjPlayerInput::from_ints(&v)
+}
+
+fn ints(i: &g::ObjPlayerInput) -> String {
+    let v: Vec<String> = i.to_ints().iter().map(i32::to_string).collect();
+    v.join(",")
+}
+
+/// 13.6: `dummy.txt` from `rs_parity dummy` (copies of CControls::SnapInput/ResetInput,
+/// CGameClient::OnDummySwap/OnSnapInput and CClient::SendInput): random binds, mouse
+/// moves, dummy settings (copy moves, dummy control, hammer, reset on switch) and
+/// swaps; at each SendInput both tees' inputs and last inputs, the mouse, the sent input,
+/// and the other tee's `m_DummyInput`/`m_HammerInput`/`m_DummyFire` must match.
+#[test]
+fn dummy_inputs_match_cpp() {
+    use ddnet::net::client::DummySnap;
+    use ddnet_rs::controls::DummyControl;
+    let text = golden("dummy.txt");
+    let cfg = Config::default();
+    let mut camera = Camera::default();
+    let frame = Frame {
+        local_time: 0.0,
+        frame_time: 0.0,
+        allow_zoom: true,
+    };
+    let mut controls = Controls::default();
+    let mut snap = DummySnap::default();
+    let (mut dummy, mut last_dummy) = (false, false);
+    let mut c: Vec<i32> = vec![0; 17];
+    let mut pos = [vec2(0.0, 0.0); 3]; // local character, clients 3 and 5
+    let (mut snaps, mut others) = (0, 0);
+    for (n, line) in text.lines().enumerate() {
+        let f: Vec<&str> = line.split(' ').collect();
+        let at = format!("line {}: {line}", n + 1);
+        match f[0] {
+            "cfg" => {
+                c = f[1..18].iter().map(|x| x.parse().unwrap()).collect();
+                for (i, p) in pos.iter_mut().enumerate() {
+                    *p = vec2(float(f[18 + 2 * i]), float(f[19 + 2 * i]));
+                }
+            }
+            "dummy" => {
+                dummy = f[1] == "1";
+                if dummy != last_dummy {
+                    controls.on_dummy_swap(c[7], &mut snap.input);
+                }
+                last_dummy = dummy;
+            }
+            "key" => {
+                let (key, value): (usize, i32) = (f[2].parse().unwrap(), f[3].parse().unwrap());
+                let names = [
+                    "+left",
+                    "+right",
+                    "+jump",
+                    "+hook",
+                    "+fire",
+                    "+nextweapon",
+                    "+prevweapon",
+                ];
+                let (name, stroke) = match names.get(key) {
+                    Some(n) => (n.to_string(), value == 1),
+                    None => (format!("+weapon{value}"), true),
+                };
+                controls.execute(
+                    stroke,
+                    &name,
+                    GameState::default(),
+                    &mut camera,
+                    &frame,
+                    &cfg,
+                );
+            }
+            "mouse" => {
+                controls.mouse_pos = vec2(float(f[2]), float(f[3]));
+                controls.input_type = [
+                    MouseInputType::Absolute,
+                    MouseInputType::Relative,
+                    MouseInputType::Automated,
+                ][f[4].parse::<usize>().unwrap()];
+            }
+            "snap" => {
+                snaps += 1;
+                let state = if c[13] != 0 {
+                    PlayerState::Chatting
+                } else if c[14] != 0 {
+                    PlayerState::InMenu
+                } else {
+                    PlayerState::Playing
+                };
+                let ctl = DummyControl {
+                    copy_moves: c[0] != 0,
+                    control: c[1] != 0,
+                    jump: c[2],
+                    fire: c[3],
+                    hook: c[4],
+                    spectating_other: c[11] != 0 && c[12] >= 0,
+                };
+                let sent = controls.snap_input(state, c[15] != 0, c[16] != 0, ctl, &mut snap.input);
+                if f[1] != "0" {
+                    assert_eq!(ints(&sent), f[2], "sent input, {at}");
+                }
+                // C++ arrays by tee: [cl_dummy] is our active tee
+                let tee = |t: usize| {
+                    if (t == 1) == dummy {
+                        &*controls
+                    } else {
+                        &controls.other
+                    }
+                };
+                for t in 0..2 {
+                    let k = 3 + 4 * t;
+                    let tc = tee(t);
+                    assert_eq!(ints(&tc.input), f[k], "tee {t} input, {at}");
+                    assert_eq!(ints(&tc.last), f[k + 1], "tee {t} last, {at}");
+                    let mouse = (bits(tc.mouse_pos.x), bits(tc.mouse_pos.y));
+                    assert_eq!(
+                        mouse,
+                        (f[k + 2].into(), f[k + 3].into()),
+                        "tee {t} mouse, {at}"
+                    );
+                }
+                assert_eq!(ints(&snap.input), f[11], "dummy input, {at}");
+            }
+            "other" => {
+                others += 1;
+                let (force, known) = (f[1] == "1", f[2] == "1");
+                let pre = DummySnap {
+                    input: input(f[3]),
+                    hammer_input: input(f[4]),
+                    fire: f[5].parse().unwrap(),
+                };
+                assert_eq!(snap, pre, "state before OnSnapInput, {at}");
+                let other_id = c[9 + !dummy as usize];
+                let p = pos[if other_id == 3 { 1 } else { 2 }];
+                let dir = (pos[0].x - p.x, pos[0].y - p.y);
+                let got = if known {
+                    snap.snap(force, c[5] != 0, c[6] != 0, dir)
+                } else {
+                    None
+                };
+                assert_eq!(got.is_some(), f[7] != "0", "sent or not, {at}");
+                if let Some(got) = got {
+                    assert_eq!(ints(&got), f[8], "sent, {at}");
+                }
+                let post = DummySnap {
+                    input: input(f[9]),
+                    hammer_input: input(f[10]),
+                    fire: f[11].parse().unwrap(),
+                };
+                assert_eq!(snap, post, "state after OnSnapInput, {at}");
+            }
+            _ => {}
+        }
+    }
+    assert!(snaps > 5000 && others > 5000, "{snaps} {others}");
 }

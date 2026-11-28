@@ -1533,6 +1533,7 @@ Build the `rs_parity` target like `rs_golden`, then per map (repo root):
     build-rs/rs_parity.exe camera rust-client/tests/golden/camera.txt
     build-rs/rs_parity.exe movement rust-client/tests/golden/movement.txt
     build-rs/rs_parity.exe chat rust-client/tests/golden/chat.txt
+    build-rs/rs_parity.exe dummy rust-client/tests/golden/dummy.txt
     build-rs/rs_parity.exe menus rust-client/tests/golden/menus.txt
     build-rs/rs_parity.exe wv rust-client/tests/golden/wv.txt data/audio
     build-rs/rs_parity.exe mixer rust-client/tests/golden/mixer.txt data/audio

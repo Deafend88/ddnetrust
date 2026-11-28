@@ -30,7 +30,7 @@ use ddnet_rs::config::{
     KEY_ESCAPE, KEY_LAST, KEY_LSHIFT, KEY_MOUSE_WHEEL_DOWN, KEY_MOUSE_WHEEL_LEFT,
     KEY_MOUSE_WHEEL_RIGHT, KEY_MOUSE_WHEEL_UP, KEY_RSHIFT, Settings, split_line,
 };
-use ddnet_rs::controls::{self, Controls, GameState, PlayerState};
+use ddnet_rs::controls::{self, Controls, DummyControl, GameState, PlayerState};
 use ddnet_rs::esc_menu::{self, EscMenu};
 use ddnet_rs::gfx::batch::Batch;
 use ddnet_rs::gfx::{self, Gfx, Size, block_on};
@@ -859,7 +859,11 @@ impl App {
         };
         let on_death = config.cl_scoreboard_on_death != 0;
         let scoreboard = scoreboard::is_active(&s.scoreboard_state(self.scoreboard_held, on_death));
-        s.client.input = s.controls.snap_input(state, scoreboard, bug_input);
+        let ctl = DummyControl::default(); // the dummy settings come with 13.6 piece d
+        let dummy = &mut s.client.dummy_snap.input;
+        s.client.input = s
+            .controls
+            .snap_input(state, scoreboard, bug_input, ctl, dummy);
         if let (Some(weapon), Some(shown)) = (self.options.fire, s.map_shown_at) {
             let elapsed = shown.elapsed().as_secs_f64();
             if elapsed > 2.0 && !std::mem::replace(&mut s.weapons_asked, true) {
