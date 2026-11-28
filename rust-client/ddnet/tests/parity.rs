@@ -1153,7 +1153,7 @@ fn messages_match_cpp() {
                             &mut Unpacker::new(&bytes),
                             ddnet::physics::tuning::NUM_PARAMS,
                         );
-                        p.on_message(PredictMsg::TuneParams(ints));
+                        p.on_message(PredictMsg::TuneParams(0, ints));
                         let t = p.received_tuning();
                         format!(
                             "{:08x} {}",

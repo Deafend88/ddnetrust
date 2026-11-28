@@ -93,7 +93,7 @@ fn main() {
                 }
             }
             if client.state() == State::Offline {
-                println!("disconnected: '{}'", client.conn.error());
+                println!("disconnected: '{}'", client.conn().error());
                 return;
             }
             last_state = client.state();

@@ -1,6 +1,7 @@
-//! Client protocol flow for one connection, sans-IO. C++: the network parts of
-//! `CClient` (`src/engine/client/client.cpp`), `CSmoothTime` (`smooth_time.cpp`) and the
-//! messages `CGameClient` sends (`gameclient.cpp`). No dummy, demos, rcon or 0.7.
+//! Client protocol flow, sans-IO: the main connection and the dummy's. C++: the network
+//! parts of `CClient` (`src/engine/client/client.cpp`), `CSmoothTime`
+//! (`smooth_time.cpp`) and the messages `CGameClient` sends (`gameclient.cpp`). No
+//! demos or 0.7.
 
 use std::collections::VecDeque;
 
@@ -27,6 +28,7 @@ const MAX_SNAPSHOT_PACKSIZE: usize = 900;
 const MAX_MAP_SIZE: i32 = 1024 * 1024 * 1024; // C++: 1 GiB check in NETMSG_MAP_CHANGE
 const NUM_INPUTS: usize = 200;
 const SHOW_OTHERS_DEFAULT: i32 = 0; // C++: cl_show_others
+const SHOW_OTHERS_NOT_SET: i32 = -1;
 const SHOW_SPECTATOR_COUNT_DEFAULT: i32 = 1; // C++: cl_showhud_spectator_count
 
 // System message ids. C++: `src/engine/shared/protocol.h`.
@@ -48,6 +50,7 @@ const NETMSG_PING: i32 = 22;
 const NETMSG_PING_REPLY: i32 = 23;
 // C++: `SERVERCAPFLAG_*` (protocol_ex.h)
 const SERVERCAPFLAG_PINGEX: i32 = 1 << 3;
+const SERVERCAPFLAG_ALLOWDUMMY: i32 = 1 << 4;
 const SERVERCAPFLAG_SYNCWEAPONINPUT: i32 = 1 << 5;
 
 /// Player settings sent in `Cl_StartInfo`. Defaults are the C++ config defaults.
@@ -140,8 +143,9 @@ pub fn spectating(items: &[Item], local_id: Option<i32>) -> bool {
 /// A game message the prediction world needs, in the form the C++ handler reads it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PredictMsg {
-    /// `Sv_TuneParams`: the ints read before the first unpack error.
-    TuneParams(Vec<i32>),
+    /// `Sv_TuneParams` on connection 0 (main) or 1 (dummy): the ints read before the
+    /// first unpack error.
+    TuneParams(usize, Vec<i32>),
     /// `Sv_TeamsState` (or its legacy form): the team ints read before the first
     /// unpack error (at most `MAX_CLIENTS`).
     TeamsState(Vec<i32>),
@@ -178,6 +182,7 @@ pub enum State {
 /// Only the capabilities this client acts on so far.
 struct Capabilities {
     ping_ex: bool,
+    allow_dummy: bool,
     sync_weapon_input: bool,
 }
 
@@ -185,6 +190,7 @@ impl Capabilities {
     fn new(version: i32, flags: i32) -> Self {
         Self {
             ping_ex: version >= 3 && flags & SERVERCAPFLAG_PINGEX != 0,
+            allow_dummy: version < 4 || flags & SERVERCAPFLAG_ALLOWDUMMY != 0,
             sync_weapon_input: version >= 5 && flags & SERVERCAPFLAG_SYNCWEAPONINPUT != 0,
         }
     }
@@ -384,19 +390,11 @@ pub struct Map {
     pub data: Vec<u8>,
 }
 
-pub struct Client {
-    pub conn: Connection,
-    state: State,
-    player: PlayerInfo,
-    password: String,
-    connection_id: [u8; 16],
-    caps: Capabilities,
-    can_receive_caps: bool,
-    download: Option<MapDownload>,
-    map: Option<Map>,
-
-    // snapshots (C++: m_aSnapshotStorage, m_aapSnapshots, ...)
-    static_sizes: [usize; MAX_NETOBJSIZES],
+/// One connection's part of `CClient` (`m_aNetClient[i]`, `m_aSnapshotStorage[i]`,
+/// `m_aInputs[i]`, ...) and of `CGameClient` (`m_aLocalIds[i]`, ...). Index 0 is the
+/// main connection, 1 the dummy's (C++ `CONN_MAIN`, `CONN_DUMMY`).
+struct Link {
+    net: Connection,
     storage: VecDeque<StoredSnapshot>,
     prev_tick: Option<i32>,
     cur_tick: Option<i32>,
@@ -406,33 +404,117 @@ pub struct Client {
     snapshot_parts: u64,
     incoming: Vec<u8>,
     incoming_size: usize,
+    game_time: SmoothTime,
+    pred_tick: i32,
+    inputs: [SentInput; NUM_INPUTS],
+    current_input: usize,
+    /// C++ `m_aLocalIds[i]`: learned while this connection is the active one.
+    local_id: Option<i32>,
+    /// C++ `m_aDDRaceMsgSent[i]`, `m_aShowOthers[i]`, `m_aEnableSpectatorCount[i]`.
+    ddrace_msg_sent: bool,
+    show_others: i32,
+    spectator_count: i32,
+}
+
+impl Default for Link {
+    fn default() -> Self {
+        Self {
+            net: Connection::default(),
+            storage: VecDeque::new(),
+            prev_tick: None,
+            cur_tick: None,
+            received_snapshots: 0,
+            ack_game_tick: -1,
+            current_recv_tick: 0,
+            snapshot_parts: 0,
+            incoming: vec![0; snapshot::MAX_SIZE],
+            incoming_size: 0,
+            game_time: SmoothTime::default(),
+            pred_tick: 0,
+            inputs: [SentInput {
+                tick: -1,
+                data: ObjPlayerInput::default(),
+                predicted_time: 0,
+                time: 0,
+            }; NUM_INPUTS],
+            current_input: 0,
+            local_id: None,
+            ddrace_msg_sent: false,
+            show_others: SHOW_OTHERS_NOT_SET,
+            spectator_count: -1,
+        }
+    }
+}
+
+pub struct Client {
+    links: [Link; 2],
+    state: State,
+    player: PlayerInfo,
+    /// What `Cl_StartInfo` of the dummy sends (C++ `DummyName()` and the `dummy_*`
+    /// settings); the caller keeps it current.
+    pub dummy_player: PlayerInfo,
+    password: String,
+    connection_id: [u8; 16],
+    caps: Capabilities,
+    can_receive_caps: bool,
+    download: Option<MapDownload>,
+    map: Option<Map>,
+    static_sizes: [usize; MAX_NETOBJSIZES],
     snap_crc_errors: i32,
 
-    // timing and input (C++: m_aGameTime, m_PredictedTime, m_aPredTick, m_aInputs)
-    game_time: SmoothTime,
+    // timing and input (C++: m_PredictedTime, and the render fractions of the active
+    // connection)
     predicted_time: SmoothTime,
-    pred_tick: i32,
-    /// C++: `IntraGameTick`, `IntraGameTickSincePrev`, `PredIntraGameTick`: how far the
-    /// render time is between the previous and current (predicted) tick.
+    /// C++: `IntraGameTick`, `IntraGameTickSincePrev`, `PredIntraGameTick` of the active
+    /// connection: how far the render time is between the previous and current
+    /// (predicted) tick.
     pub intra_tick: f32,
     pub intra_tick_since_prev: f32,
     pub pred_intra_tick: f32,
     /// C++: `GameTickTime`: seconds since the previous snapshot's tick.
     pub game_tick_time: f32,
-    inputs: [SentInput; NUM_INPUTS],
-    current_input: usize,
     next_ping: i64,
-    /// The input to send (C++ `CControls::SnapInput`'s result). Starts as a player
-    /// playing with an absolute mouse.
+    /// The input to send for the active tee (C++ `CControls::SnapInput`'s result).
+    /// Starts as a player playing with an absolute mouse.
     pub input: ObjPlayerInput,
-    last_input: ObjPlayerInput,
+    /// C++ `CControls::m_aLastData` (as far as the send rules read it) and
+    /// `m_LastSendTime`.
+    last_input: [ObjPlayerInput; 2],
     last_input_send: i64,
 
+    // the dummy (C++: CClient m_DummyConnected ..., CGameClient m_DummyInput ...)
+    /// C++ `cl_dummy`: the dummy is the active tee.
+    dummy: bool,
+    /// C++ `m_LastDummy`: `cl_dummy` at the end of the last online update.
+    last_dummy: bool,
+    dummy_connected: bool,
+    dummy_connecting: bool,
+    dummy_send_conn_info: bool,
+    /// C++ `m_LastDummyConnectTime` (0: none since entering the game).
+    last_dummy_connect_time: i64,
+    /// C++ `CGameClient::m_LastDummyConnected`.
+    last_dummy_connected: bool,
+    /// C++ `m_DummyInput`: what the other tee sends; the controls keep it current
+    /// (copy moves, dummy control, swaps), `snap_dummy_input` fires its hammer.
+    pub dummy_input: ObjPlayerInput,
+    /// C++ `m_HammerInput`, `m_DummyFire`.
+    hammer_input: ObjPlayerInput,
+    dummy_fire: i32,
+    /// C++ `cl_dummy_hammer`, `cl_dummy_restore_weapon`, `cl_dummy_copy_moves`; the
+    /// caller keeps them current.
+    pub dummy_hammer: bool,
+    pub dummy_restore_weapon: bool,
+    pub dummy_copy_moves: bool,
+    /// C++ `m_LocalCharacterPos - m_aClients[m_aLocalIds[!cl_dummy]].m_Predicted.m_Pos`:
+    /// where the dummy's hammer aims; the caller keeps it current.
+    pub hammer_dir: (f32, f32),
+    /// Set when the dummy connection dropped while connecting (C++ echoes "Could not
+    /// connect dummy"); the caller takes it.
+    pub dummy_error: Option<String>,
+
     // game layer (C++: CGameClient)
-    local_id: Option<i32>,
-    ddrace_msg_sent: bool,
-    show_others: i32,
-    spectator_count: i32,
+    /// C++ `m_Snap.m_LocalClientId`.
+    snap_local_id: Option<i32>,
     /// The camera to report; the caller keeps it current. C++ `m_LastShowDistanceZoom`,
     /// `m_LastZoom`, `m_LastScreenAspect`, `m_LastDeadzone`, `m_LastFollowFactor`.
     pub camera: CameraState,
@@ -441,8 +523,13 @@ pub struct Client {
     last_screen_aspect: f32,
     last_deadzone: f32,
     last_follow_factor: f32,
-    /// Game messages received, oldest first; the caller drains it.
+    /// Game messages received on the active connection, oldest first; the caller
+    /// drains it.
     pub messages: Vec<GameMsg>,
+    /// `Sv_Chat` lines of the other connection while both tees are known (C++
+    /// `OnMessage` with `Dummy`); the caller drains them and keeps the team and
+    /// whisper lines only the other tee gets (gameclient.cpp:1115).
+    pub passive_chat: Vec<g::MsgSvChat>,
     /// The game messages that change the prediction world, in arrival order; the
     /// predictor drains it (`Predictor::update`).
     pub predict_msgs: Vec<PredictMsg>,
@@ -475,8 +562,13 @@ impl Client {
             static_sizes[spec.type_id as usize] = spec.fields.len() * 4;
         }
         Self {
-            conn: Connection::default(),
+            links: Default::default(),
             state: State::Offline,
+            // C++ DummyName() without dummy_name
+            dummy_player: PlayerInfo {
+                name: format!("[D] {}", player.name),
+                ..PlayerInfo::default()
+            },
             player,
             password: password.into(),
             connection_id: [0; 16],
@@ -485,30 +577,12 @@ impl Client {
             download: None,
             map: None,
             static_sizes,
-            storage: VecDeque::new(),
-            prev_tick: None,
-            cur_tick: None,
-            received_snapshots: 0,
-            ack_game_tick: -1,
-            current_recv_tick: 0,
-            snapshot_parts: 0,
-            incoming: vec![0; snapshot::MAX_SIZE],
-            incoming_size: 0,
             snap_crc_errors: 0,
-            game_time: SmoothTime::default(),
             predicted_time: SmoothTime::default(),
-            pred_tick: 0,
             intra_tick: 0.0,
             intra_tick_since_prev: 0.0,
             pred_intra_tick: 0.0,
             game_tick_time: 0.0,
-            inputs: [SentInput {
-                tick: -1,
-                data: ObjPlayerInput::default(),
-                predicted_time: 0,
-                time: 0,
-            }; NUM_INPUTS],
-            current_input: 0,
             next_ping: -1,
             input: ObjPlayerInput {
                 player_flags: g::PLAYERFLAG_PLAYING
@@ -516,12 +590,24 @@ impl Client {
                     | g::PLAYERFLAG_INPUT_MANUAL,
                 ..Default::default()
             },
-            last_input: ObjPlayerInput::default(),
+            last_input: Default::default(),
             last_input_send: 0,
-            local_id: None,
-            ddrace_msg_sent: false,
-            show_others: -1, // C++: SHOW_OTHERS_NOT_SET
-            spectator_count: -1,
+            dummy: false,
+            last_dummy: false,
+            dummy_connected: false,
+            dummy_connecting: false,
+            dummy_send_conn_info: false,
+            last_dummy_connect_time: 0,
+            last_dummy_connected: false,
+            dummy_input: ObjPlayerInput::default(),
+            hammer_input: ObjPlayerInput::default(),
+            dummy_fire: 0,
+            dummy_hammer: false,
+            dummy_restore_weapon: true,
+            dummy_copy_moves: false,
+            hammer_dir: (0.0, 0.0),
+            dummy_error: None,
+            snap_local_id: None,
             camera: CameraState::default(),
             last_show_distance_zoom: 0.0,
             last_zoom: 0.0,
@@ -529,6 +615,7 @@ impl Client {
             last_deadzone: 0.0,
             last_follow_factor: 0.0,
             messages: Vec::new(),
+            passive_chat: Vec::new(),
             predict_msgs: Vec::new(),
             snapshot_switches: Vec::new(),
             repredict: false,
@@ -551,40 +638,102 @@ impl Client {
         self.map.as_ref()
     }
 
-    pub fn local_id(&self) -> Option<i32> {
-        self.local_id
+    /// The active connection (C++ `g_Config.m_ClDummy`).
+    fn active(&self) -> &Link {
+        &self.links[self.dummy as usize]
     }
 
-    /// Server tick of the current snapshot. C++: `GameTick`.
+    /// The main connection's network state.
+    pub fn conn(&self) -> &Connection {
+        &self.links[0].net
+    }
+
+    /// Datagrams to send on connection `i` (0 main, 1 dummy).
+    pub fn outbox(&mut self, i: usize) -> &mut Vec<Vec<u8>> {
+        &mut self.links[i].net.outbox
+    }
+
+    /// C++ `m_Snap.m_LocalClientId`: the active tee's client id in the current
+    /// snapshot.
+    pub fn local_id(&self) -> Option<i32> {
+        self.snap_local_id
+    }
+
+    /// C++ `m_aLocalIds`: the main tee's and the dummy's client ids.
+    pub fn local_ids(&self) -> [Option<i32>; 2] {
+        [self.links[0].local_id, self.links[1].local_id]
+    }
+
+    /// C++ `cl_dummy`: the dummy is the active tee.
+    pub fn dummy(&self) -> bool {
+        self.dummy
+    }
+
+    /// C++: setting `cl_dummy` (`ConchainSpecialDummy`): only while the dummy is
+    /// connected.
+    pub fn set_dummy(&mut self, on: bool) {
+        self.dummy = on && self.dummy_connected;
+    }
+
+    /// C++: `m_LastDummy != cl_dummy` while online: the next `update` swaps the tees
+    /// (the caller runs `CGameClient::OnDummySwap` first).
+    pub fn swapping(&self) -> bool {
+        self.state == State::Online && self.last_dummy != self.dummy
+    }
+
+    /// C++: `DummyConnected`, `DummyConnecting`.
+    pub fn dummy_connected(&self) -> bool {
+        self.dummy_connected
+    }
+
+    pub fn dummy_connecting(&self) -> bool {
+        self.dummy_connecting
+    }
+
+    /// C++: `DummyAllowed`.
+    pub fn dummy_allowed(&self) -> bool {
+        self.caps.allow_dummy
+    }
+
+    /// Server tick of the active connection's current snapshot. C++: `GameTick`.
     pub fn game_tick(&self) -> Option<i32> {
-        self.cur_tick
+        self.active().cur_tick
     }
 
     /// Server tick of the previous snapshot. C++: `PrevGameTick`.
     pub fn prev_game_tick(&self) -> Option<i32> {
-        self.prev_tick
+        self.active().prev_tick
     }
 
     /// C++: `PredGameTick`.
     pub fn pred_tick(&self) -> i32 {
-        self.pred_tick
+        self.active().pred_tick
     }
 
-    /// Validated items of the current snapshot.
+    /// Validated items of the active connection's current snapshot.
     pub fn snapshot(&self) -> &[Item] {
-        self.cur_tick
+        self.active()
+            .cur_tick
             .and_then(|t| self.stored(t))
             .map_or(&[], |s| &s.items[..])
     }
 
-    /// Validated items of the stored snapshot of `tick`.
+    /// Validated items of the active connection's stored snapshot of `tick`.
     pub fn snapshot_at(&self, tick: i32) -> Option<&[Item]> {
         self.stored(tick).map(|s| &s.items[..])
     }
 
-    /// C++: `CClient::GetInput`: the latest sent input for a tick at or before `tick`.
+    /// C++: `CClient::GetInput(tick)`: the latest input sent for the active tee for a
+    /// tick at or before `tick`.
     pub fn input_at(&self, tick: i32) -> Option<ObjPlayerInput> {
-        self.inputs
+        self.input_of(tick, false)
+    }
+
+    /// C++: `CClient::GetInput(tick, is_dummy)` (client.cpp:415): `is_dummy` picks the
+    /// other tee.
+    pub fn input_of(&self, tick: i32, is_dummy: bool) -> Option<ObjPlayerInput> {
+        self.links[(is_dummy ^ self.dummy) as usize]
+            .inputs
             .iter()
             .filter(|i| i.tick != -1 && i.tick <= tick)
             .max_by_key(|i| i.tick)
@@ -593,7 +742,7 @@ impl Client {
 
     /// C++: `m_Snap.m_pLocalCharacter`: the local character of the current snapshot.
     pub fn local_character(&self) -> Option<g::ObjCharacter> {
-        let id = self.local_id?;
+        let id = self.local_id()?;
         let it = self
             .snapshot()
             .iter()
@@ -605,7 +754,7 @@ impl Client {
     }
 
     fn stored(&self, tick: i32) -> Option<&StoredSnapshot> {
-        self.storage.iter().rev().find(|s| s.tick == tick)
+        self.active().storage.iter().rev().find(|s| s.tick == tick)
     }
 
     /// C++: `CClient::Connect` network part.
@@ -613,32 +762,124 @@ impl Client {
         self.connection_id = random_uuid(self.random);
         self.server_info_request();
         self.state = State::Connecting;
-        self.conn.connect(now);
+        self.links[0].net.connect(now);
     }
 
     /// C++: `CClient::DisconnectWithReason` (client.cpp:735); `None` sends no reason.
     pub fn disconnect(&mut self, reason: Option<&str>, now: i64) {
         let reason = reason.filter(|r| !r.is_empty());
-        self.conn.disconnect(reason, now);
+        self.dummy_disconnect(reason, now);
+        let main = &mut self.links[0];
+        main.net.disconnect(reason, now);
         self.state = State::Offline;
         self.download = None;
+        (main.prev_tick, main.cur_tick, main.received_snapshots) = (None, None, 0);
+        self.last_dummy = false;
     }
 
-    /// One client frame: network timers, received datagrams, snapshot switching and
-    /// input. C++: `CClient::Update` -> `PumpNetwork`.
-    pub fn frame(&mut self, incoming: impl IntoIterator<Item = Vec<u8>>, now: i64) {
-        self.conn.update(now);
-        if self.state != State::Offline && self.conn.state() == ConnState::Offline {
-            self.state = State::Offline; // C++: "offline error"
-            return;
+    /// C++: `CClient::DummyConnect` (client.cpp:816). `Err` holds the C++ log line (empty
+    /// when C++ logs nothing). On `Ok` the caller turns `cl_dummy_copy_moves` and
+    /// `cl_dummy_hammer` off, as C++ does.
+    pub fn dummy_connect(&mut self, now: i64) -> Result<(), &'static str> {
+        if self.links[0].net.state() != ConnState::Online {
+            return Err("Not online.");
         }
-        if self.state == State::Connecting && self.conn.state() == ConnState::Online {
+        if !self.dummy_allowed() {
+            return Err("Dummy is not allowed on this server.");
+        }
+        if self.dummy_connecting {
+            return Err("Dummy is already connecting.");
+        }
+        if self.dummy_connected {
+            return Err("");
+        }
+        // C++ DummyConnectingDelayed
+        if self.last_dummy_connect_time > 0 && self.last_dummy_connect_time + 5 * FREQ > now {
+            return Err("Wait before connecting dummy again.");
+        }
+        self.last_dummy_connect_time = now;
+        self.dummy_send_conn_info = true;
+        self.dummy_connecting = true;
+        self.links[1].net.connect(now);
+        Ok(())
+    }
+
+    /// C++: `CClient::DummyDisconnect` (client.cpp:865) and
+    /// `CGameClient::OnDummyDisconnect`.
+    pub fn dummy_disconnect(&mut self, reason: Option<&str>, now: i64) {
+        let d = &mut self.links[1];
+        d.net.disconnect(reason, now);
+        self.dummy = false;
+        (d.prev_tick, d.cur_tick, d.received_snapshots) = (None, None, 0);
+        self.dummy_connected = false;
+        self.dummy_connecting = false;
+        d.local_id = None;
+        d.ddrace_msg_sent = false;
+        d.show_others = SHOW_OTHERS_NOT_SET;
+        d.spectator_count = -1;
+    }
+
+    /// One client frame without a game layer in between: `pump_network`, then
+    /// `update`.
+    pub fn frame(&mut self, incoming: [Vec<Vec<u8>>; 2], now: i64) {
+        self.pump_network(incoming, now);
+        self.update(now);
+    }
+
+    /// Network timers and the received datagrams of both connections. C++:
+    /// `CClient::PumpNetwork` (client.cpp:2671).
+    pub fn pump_network(&mut self, incoming: [Vec<Vec<u8>>; 2], now: i64) {
+        for link in &mut self.links {
+            link.net.update(now);
+        }
+        if self.state != State::Offline {
+            if self.links[0].net.state() == ConnState::Offline {
+                // C++: "offline error", Disconnect() also drops the dummy
+                self.dummy_disconnect(None, now);
+                self.state = State::Offline;
+                return;
+            }
+            if (self.dummy_connecting || self.dummy_connected)
+                && self.links[1].net.state() == ConnState::Offline
+            {
+                let was_connecting = self.dummy_connecting;
+                self.dummy_disconnect(None, now);
+                if was_connecting {
+                    self.dummy_error = Some(self.links[1].net.error().to_owned());
+                }
+            }
+        }
+        if self.state == State::Connecting && self.links[0].net.state() == ConnState::Online {
             self.state = State::Loading; // connected, sending info
-            self.send_info(now);
+            self.send_info(0, now);
         }
-        for datagram in incoming {
-            self.on_datagram(&datagram, now);
+        // progress on dummy connect when the connection is online
+        if self.dummy_send_conn_info && self.links[1].net.state() == ConnState::Online {
+            self.dummy_send_conn_info = false;
+            self.send_info(1, now);
+            self.links[1].net.update(now);
+            self.send_msg(1, NETMSG_READY, true, &Packer::default(), true, true, now);
+            self.send_dummy_info(now);
+            self.send_msg(
+                1,
+                NETMSG_ENTERGAME,
+                true,
+                &Packer::default(),
+                true,
+                true,
+                now,
+            );
         }
+        for (c, datagrams) in incoming.into_iter().enumerate() {
+            for datagram in datagrams {
+                self.on_datagram(c, &datagram, now);
+            }
+        }
+    }
+
+    /// The online part of `CClient::Update` (snapshot switching, prediction tick,
+    /// input) and the prediction margin at its end.
+    pub fn update(&mut self, now: i64) {
         if self.state == State::Online {
             self.update_online(now);
         }
@@ -646,8 +887,9 @@ impl Client {
         self.predicted_time.margin = self.prediction_margin_ms() * FREQ / 1000;
     }
 
-    /// C++: `CNetClient::Recv` + `ProcessServerPacket` for connection-oriented packets.
-    fn on_datagram(&mut self, datagram: &[u8], now: i64) {
+    /// C++: `CNetClient::Recv` + `ProcessServerPacket` for connection-oriented packets of
+    /// connection `c`.
+    fn on_datagram(&mut self, c: usize, datagram: &[u8], now: i64) {
         let Some(mut p) = packet::decode(datagram) else {
             return;
         };
@@ -655,10 +897,11 @@ impl Client {
             self.on_connless(&p.data);
             return;
         }
-        if !matches!(self.conn.state(), ConnState::Connect | ConnState::Online) {
+        let net = &mut self.links[c].net;
+        if !matches!(net.state(), ConnState::Connect | ConnState::Online) {
             return;
         }
-        if !self.conn.feed(&mut p, now)
+        if !net.feed(&mut p, now)
             || p.flags & PACKETFLAG_CONTROL != 0
             || p.data.is_empty()
             || p.num_chunks == 0
@@ -666,17 +909,16 @@ impl Client {
             return;
         }
         let mut chunks = ChunkUnpacker::new(p);
-        while let Some(chunk) = self.conn.next_chunk(&mut chunks) {
-            if self.conn.state() == ConnState::Offline {
+        while let Some(chunk) = self.links[c].net.next_chunk(&mut chunks) {
+            if self.links[c].net.state() == ConnState::Offline {
                 break;
             }
-            self.process_chunk(&chunk.data, chunk.flags & CHUNKFLAG_VITAL != 0, now);
+            self.process_chunk(c, &chunk.data, chunk.flags & CHUNKFLAG_VITAL != 0, now);
         }
     }
 
     /// C++: the send in `CChat::SendChat` (chat.cpp:1382): a chat line, `team` 1 for
-    /// the team chat. ponytail: only the message; the chat component (input, rate
-    /// limit, history) comes with chat support.
+    /// the team chat, on the active connection.
     pub fn say(&mut self, team: i32, line: &str, now: i64) {
         let mut p = Packer::default();
         g::MsgClSay {
@@ -684,31 +926,43 @@ impl Client {
             message: line.into(),
         }
         .pack(&mut p);
-        self.send_msg(g::MsgClSay::ID, false, &p, true, false, now);
+        self.send_active(g::MsgClSay::ID, &p, now);
     }
 
     /// C++: `CGameClient::SendSwitchTeam` (gameclient.cpp:3110).
     pub fn send_switch_team(&mut self, team: i32, now: i64) {
         let mut p = Packer::default();
         g::MsgClSetTeam { team }.pack(&mut p);
-        self.send_msg(g::MsgClSetTeam::ID, false, &p, true, false, now);
+        self.send_active(g::MsgClSetTeam::ID, &p, now);
     }
 
-    /// C++: `CGameClient::SendKill` (gameclient.cpp:3276) for the main tee; the copy for
-    /// the dummy (`cl_dummy_copy_moves`) comes with the dummy (13.6).
+    /// C++: `CGameClient::SendKill` (gameclient.cpp:3276): the active tee, and the
+    /// other one too with `cl_dummy_copy_moves`.
     pub fn send_kill(&mut self, now: i64) {
-        self.send_msg(
-            g::MsgClKill::ID,
-            false,
-            &Packer::default(),
-            true,
-            false,
-            now,
-        );
+        self.send_active(g::MsgClKill::ID, &Packer::default(), now);
+        if self.dummy_copy_moves {
+            let other = !self.dummy as usize;
+            self.send_msg(
+                other,
+                g::MsgClKill::ID,
+                false,
+                &Packer::default(),
+                true,
+                false,
+                now,
+            );
+        }
     }
 
+    /// C++: `SendPackMsgActive(.., MSGFLAG_VITAL)` for a game message.
+    fn send_active(&mut self, id: i32, body: &Packer, now: i64) {
+        self.send_msg(self.dummy as usize, id, false, body, true, false, now);
+    }
+
+    #[allow(clippy::too_many_arguments)]
     fn send_msg(
         &mut self,
+        c: usize,
         id: i32,
         system: bool,
         body: &Packer,
@@ -720,30 +974,40 @@ impl Client {
             return;
         }
         let data = pack_msg(id, system, body.data());
-        self.conn.send(&data, vital, flush, now);
+        self.links[c].net.send(&data, vital, flush, now);
     }
 
-    /// C++: `CClient::SendInfo`.
-    fn send_info(&mut self, now: i64) {
+    /// C++: `CClient::SendInfo(Conn)`.
+    fn send_info(&mut self, c: usize, now: i64) {
         let mut p = Packer::default();
         p.add_raw(&self.connection_id);
         p.add_int(DDNET_VERSION);
         p.add_string(VERSION_STRING.as_bytes(), 0, true);
-        self.send_msg(g::NETMSG_CLIENTVER, true, &p, true, false, now);
+        self.send_msg(c, g::NETMSG_CLIENTVER, true, &p, true, false, now);
 
         let mut p = Packer::default();
         p.add_string(GAME_NETVERSION.as_bytes(), 0, true);
         p.add_string(self.password.as_bytes(), 0, true);
-        self.send_msg(NETMSG_INFO, true, &p, true, true, now);
-        self.can_receive_caps = true;
+        self.send_msg(c, NETMSG_INFO, true, &p, true, true, now);
+        if c == 0 {
+            self.can_receive_caps = true;
+        }
     }
 
-    /// C++: `CClient::ProcessServerPacket` (client.cpp:1638), 0.6 main connection.
-    fn process_chunk(&mut self, data: &[u8], vital: bool, now: i64) {
+    /// C++: `CGameClient::SendDummyInfo(true)` (gameclient.cpp:3234).
+    fn send_dummy_info(&mut self, now: i64) {
+        let p = start_info(&self.dummy_player);
+        self.send_msg(1, g::MsgClStartInfo::ID, false, &p, true, false, now);
+    }
+
+    /// C++: `CClient::ProcessServerPacket` (client.cpp:1638), 0.6, for connection `c`.
+    fn process_chunk(&mut self, c: usize, data: &[u8], vital: bool, now: i64) {
         let mut u = Unpacker::new(data);
         let Some((id, system)) = unpack_msg_id(&mut u) else {
             return;
         };
+        // C++: `Dummy`, the connection that is not the active one
+        let passive = c != self.dummy as usize;
         if !system {
             // the client handles only vital game messages (and PREINPUT)
             if !(vital || id == g::NETMSGTYPE_SV_PREINPUT) {
@@ -752,31 +1016,41 @@ impl Client {
             // C++: CGameClient::OnMessage handles the tuning before unpacking
             if id == g::NETMSGTYPE_SV_TUNEPARAMS {
                 let ints = read_ints(&mut u, crate::physics::tuning::NUM_PARAMS);
-                self.predict_msgs.push(PredictMsg::TuneParams(ints));
+                self.predict_msgs.push(PredictMsg::TuneParams(c, ints));
                 return;
             }
-            if let Ok(msg) = g::unpack_game_msg(id, &mut u) {
-                match &msg {
-                    GameMsg::SvReadyToEnter(_) => self.enter_game(now),
-                    GameMsg::SvTeamsState(_) | GameMsg::SvTeamsStateLegacy(_) => {
-                        let ints = read_ints(&mut u, crate::physics::teams::MAX_CLIENTS);
-                        self.predict_msgs.push(PredictMsg::TeamsState(ints));
-                    }
-                    GameMsg::SvKillMsg(m) => self.predict_msgs.push(PredictMsg::KillMsg(m.clone())),
-                    GameMsg::SvKillMsgTeam(m) => {
-                        self.predict_msgs.push(PredictMsg::KillMsgTeam(m.clone()));
-                    }
-                    GameMsg::SvPreInput(m) => {
-                        self.predict_msgs.push(PredictMsg::PreInput(m.clone()))
+            let Ok(msg) = g::unpack_game_msg(id, &mut u) else {
+                return;
+            };
+            if passive {
+                // no need of all that stuff for the dummy (gameclient.cpp:1109)
+                match msg {
+                    GameMsg::SvReadyToEnter(_) => self.enter_game(c, now),
+                    GameMsg::SvChat(m) if self.local_ids().iter().all(Option::is_some) => {
+                        self.passive_chat.push(m);
                     }
                     _ => {}
                 }
-                self.messages.push(msg);
+                return;
             }
+            match &msg {
+                GameMsg::SvReadyToEnter(_) => self.enter_game(c, now),
+                GameMsg::SvTeamsState(_) | GameMsg::SvTeamsStateLegacy(_) => {
+                    let ints = read_ints(&mut u, crate::physics::teams::MAX_CLIENTS);
+                    self.predict_msgs.push(PredictMsg::TeamsState(ints));
+                }
+                GameMsg::SvKillMsg(m) => self.predict_msgs.push(PredictMsg::KillMsg(m.clone())),
+                GameMsg::SvKillMsgTeam(m) => {
+                    self.predict_msgs.push(PredictMsg::KillMsgTeam(m.clone()));
+                }
+                GameMsg::SvPreInput(m) => self.predict_msgs.push(PredictMsg::PreInput(m.clone())),
+                _ => {}
+            }
+            self.messages.push(msg);
             return;
         }
         match id {
-            g::NETMSG_CAPABILITIES if vital => {
+            g::NETMSG_CAPABILITIES if c == 0 && vital => {
                 if !self.can_receive_caps {
                     return;
                 }
@@ -787,16 +1061,26 @@ impl Client {
                 self.caps = Capabilities::new(version, flags);
                 self.can_receive_caps = false;
             }
-            NETMSG_MAP_CHANGE if vital => self.on_map_change(&mut u, now),
-            NETMSG_MAP_DATA => self.on_map_data(&mut u, now),
-            NETMSG_CON_READY if vital => {
+            NETMSG_MAP_CHANGE if c == 0 && vital => self.on_map_change(&mut u, now),
+            NETMSG_MAP_DATA if c == 0 => self.on_map_data(&mut u, now),
+            NETMSG_CON_READY if c == 0 && vital => {
                 if self.map.is_none() {
                     return;
                 }
                 self.on_connected(now);
             }
+            NETMSG_CON_READY if c == 1 => {
+                self.dummy_connected = true;
+                self.dummy_connecting = false;
+                self.dummy = true;
+                // C++ Rcon("crashmeplx"): on the active connection, now the dummy's
+                let mut p = Packer::default();
+                p.add_string(b"crashmeplx", 0, true);
+                self.send_msg(1, NETMSG_RCON_CMD, true, &p, true, false, now);
+            }
             NETMSG_PING => {
                 self.send_msg(
+                    c,
                     NETMSG_PING_REPLY,
                     true,
                     &Packer::default(),
@@ -809,7 +1093,7 @@ impl Client {
                 let Some(uuid) = u.get_raw(16) else { return };
                 let mut p = Packer::default();
                 p.add_raw(uuid);
-                self.send_msg(g::NETMSG_PONGEX, true, &p, vital, true, now);
+                self.send_msg(c, g::NETMSG_PONGEX, true, &p, vital, true, now);
             }
             NETMSG_INPUTTIMING => {
                 let (input_pred_tick, time_left) = (u.get_int(), u.get_int());
@@ -817,7 +1101,8 @@ impl Client {
                     return;
                 }
                 // adjust our prediction time
-                let Some(input) = self.inputs.iter().find(|i| i.tick == input_pred_tick) else {
+                let inputs = &self.links[c].inputs;
+                let Some(input) = inputs.iter().find(|i| i.tick == input_pred_tick) else {
                     return;
                 };
                 let target = input.predicted_time + (now - input.time)
@@ -827,7 +1112,9 @@ impl Client {
                         .update(target, time_left, ADJUST_UP, now);
                 }
             }
-            NETMSG_SNAP | NETMSG_SNAPEMPTY | NETMSG_SNAPSINGLE => self.on_snapshot(id, &mut u, now),
+            NETMSG_SNAP | NETMSG_SNAPEMPTY | NETMSG_SNAPSINGLE => {
+                self.on_snapshot(c, passive, id, &mut u, now)
+            }
             _ => {}
         }
     }
@@ -850,6 +1137,10 @@ impl Client {
         if !valid_filename(&name) {
             return self.disconnect(Some("map name is not a valid filename"), now);
         }
+        // ponytail: no map reload yet (C++ keeps the dummy over NETMSG_MAP_RELOAD)
+        if self.dummy_connected {
+            self.dummy_disconnect(None, now);
+        }
         self.map = None;
         self.download = Some(MapDownload {
             name,
@@ -867,7 +1158,7 @@ impl Client {
         };
         let mut p = Packer::default();
         p.add_int(chunk);
-        self.send_msg(NETMSG_REQUEST_MAP_DATA, true, &p, true, true, now);
+        self.send_msg(0, NETMSG_REQUEST_MAP_DATA, true, &p, true, true, now);
     }
 
     /// C++: the `NETMSG_MAP_DATA` branch (client.cpp:1804) + `FinishMapDownload`.
@@ -904,11 +1195,11 @@ impl Client {
             crc: got,
             data: download.data,
         });
-        self.send_msg(NETMSG_READY, true, &Packer::default(), true, true, now);
+        self.send_msg(0, NETMSG_READY, true, &Packer::default(), true, true, now);
     }
 
     /// C++: `CClient::RconAuth` as the `rcon_auth` console command calls it (empty name,
-    /// "send rcon commands" 1).
+    /// "send rcon commands" 1), on the active connection.
     pub fn rcon_auth(&mut self, password: &str, now: i64) {
         // ponytail: C++ skips this once authed (m_aRconAuthed); we do not track the
         // auth status yet, so a second rcon_auth is sent again
@@ -916,56 +1207,73 @@ impl Client {
         p.add_string(b"", 0, true);
         p.add_string(password.as_bytes(), 0, true);
         p.add_int(1);
-        self.send_msg(NETMSG_RCON_AUTH, true, &p, true, false, now);
+        self.send_msg(
+            self.dummy as usize,
+            NETMSG_RCON_AUTH,
+            true,
+            &p,
+            true,
+            false,
+            now,
+        );
     }
 
-    /// C++: `CClient::Rcon` (the `rcon` console command).
+    /// C++: `CClient::Rcon` (the `rcon` console command), on the active connection.
     pub fn rcon(&mut self, command: &str, now: i64) {
         let mut p = Packer::default();
         p.add_string(command.as_bytes(), 0, true);
-        self.send_msg(NETMSG_RCON_CMD, true, &p, true, false, now);
+        self.send_msg(
+            self.dummy as usize,
+            NETMSG_RCON_CMD,
+            true,
+            &p,
+            true,
+            false,
+            now,
+        );
     }
 
     /// C++: `CGameClient::OnConnected` network part: start info and the `crashmeplx`
     /// rcon line the C++ client always sends.
     fn on_connected(&mut self, now: i64) {
-        let msg = g::MsgClStartInfo {
-            name: self.player.name.clone(),
-            clan: self.player.clan.clone(),
-            country: self.player.country,
-            skin: self.player.skin.clone(),
-            use_custom_color: self.player.use_custom_color,
-            color_body: self.player.color_body,
-            color_feet: self.player.color_feet,
-        };
-        let mut p = Packer::default();
-        msg.pack(&mut p);
-        self.send_msg(g::MsgClStartInfo::ID, false, &p, true, true, now);
+        let p = start_info(&self.player);
+        self.send_msg(0, g::MsgClStartInfo::ID, false, &p, true, true, now);
 
         let mut p = Packer::default();
         p.add_string(b"crashmeplx", 0, true);
-        self.send_msg(NETMSG_RCON_CMD, true, &p, true, false, now);
+        self.send_msg(0, NETMSG_RCON_CMD, true, &p, true, false, now);
     }
 
-    /// C++: `CClient::EnterGame` + `OnEnterGame` (client.cpp:473, 514).
-    fn enter_game(&mut self, now: i64) {
-        self.send_msg(NETMSG_ENTERGAME, true, &Packer::default(), true, true, now);
-        for input in &mut self.inputs {
+    /// C++: `CClient::EnterGame` + `OnEnterGame` (client.cpp:473, 514) for connection `c`.
+    fn enter_game(&mut self, c: usize, now: i64) {
+        self.send_msg(
+            c,
+            NETMSG_ENTERGAME,
+            true,
+            &Packer::default(),
+            true,
+            true,
+            now,
+        );
+        let l = &mut self.links[c];
+        for input in &mut l.inputs {
             input.tick = -1;
         }
-        self.current_input = 0;
-        self.storage.clear();
-        self.prev_tick = None;
-        self.cur_tick = None;
-        self.received_snapshots = 0;
-        self.snapshot_parts = 0;
-        self.incoming_size = 0;
+        l.current_input = 0;
+        l.storage.clear();
+        (l.prev_tick, l.cur_tick) = (None, None);
+        l.received_snapshots = 0;
+        l.snapshot_parts = 0;
+        l.incoming_size = 0;
+        l.ack_game_tick = -1;
+        l.current_recv_tick = 0;
+        l.pred_tick = 0;
+        l.game_time.init(0, now);
         self.snap_crc_errors = 0;
-        self.ack_game_tick = -1;
-        self.current_recv_tick = 0;
-        self.pred_tick = 0;
-        self.game_time.init(0, now);
         self.predicted_time.init(0, now);
+        if c == 0 {
+            self.last_dummy_connect_time = 0;
+        }
         self.server_info_request(); // fresh one for timeout protection
         self.next_ping = now + FREQ / 2;
     }
@@ -988,7 +1296,7 @@ impl Client {
             return;
         };
         let Some(map) = &self.map else { return };
-        if self.conn.state() == ConnState::Online && info.type_ >= self.server_info.type_ {
+        if self.links[0].net.state() == ConnState::Online && info.type_ >= self.server_info.type_ {
             // C++ SetCurrentServerInfo: the map's own name
             info.map = map.name.clone();
             self.server_info = info;
@@ -996,8 +1304,9 @@ impl Client {
         }
     }
 
-    /// C++: the `NETMSG_SNAP*` branch of `ProcessServerPacket` (client.cpp:2109).
-    fn on_snapshot(&mut self, msg: i32, u: &mut Unpacker, now: i64) {
+    /// C++: the `NETMSG_SNAP*` branch of `ProcessServerPacket` (client.cpp:2109) for
+    /// connection `c`.
+    fn on_snapshot(&mut self, c: usize, passive: bool, msg: i32, u: &mut Unpacker, now: i64) {
         // we are not allowed to process snapshots yet
         if self.state == State::Connecting || self.map.is_none() {
             return;
@@ -1024,53 +1333,50 @@ impl Client {
         }
         let data = data.unwrap_or_default();
 
+        let l = &mut self.links[c];
         // check ack tick to see if we already got a snapshot for that tick
-        if game_tick < self.current_recv_tick || game_tick <= self.ack_game_tick {
+        if game_tick < l.current_recv_tick || game_tick <= l.ack_game_tick {
             return;
         }
-        if game_tick != self.current_recv_tick {
-            self.snapshot_parts = 0;
-            self.current_recv_tick = game_tick;
-            self.incoming_size = 0;
+        if game_tick != l.current_recv_tick {
+            l.snapshot_parts = 0;
+            l.current_recv_tick = game_tick;
+            l.incoming_size = 0;
         }
         let offset = part as usize * MAX_SNAPSHOT_PACKSIZE;
-        self.incoming[offset..offset + data.len()].copy_from_slice(data);
-        self.snapshot_parts |= 1 << part;
+        l.incoming[offset..offset + data.len()].copy_from_slice(data);
+        l.snapshot_parts |= 1 << part;
         if part == num_parts - 1 {
-            self.incoming_size =
-                (num_parts as usize - 1) * MAX_SNAPSHOT_PACKSIZE + part_size as usize;
+            l.incoming_size = (num_parts as usize - 1) * MAX_SNAPSHOT_PACKSIZE + part_size as usize;
         }
         let all = if num_parts == 64 {
             u64::MAX
         } else {
             (1 << num_parts) - 1
         };
-        if self.snapshot_parts != all {
+        if l.snapshot_parts != all {
             return;
         }
-        self.snapshot_parts = 0;
+        l.snapshot_parts = 0;
 
         // find snapshot that we should use as delta
         let empty = Snapshot::default();
         let delta_shot = if delta_tick >= 0 {
-            match self.stored(delta_tick) {
+            match l.storage.iter().rev().find(|s| s.tick == delta_tick) {
                 Some(s) => &s.snap,
                 None => {
                     // couldn't find the delta snapshot, force the server to resync
-                    self.ack_game_tick = -1;
+                    l.ack_game_tick = -1;
                     return self.send_input(now);
                 }
             }
         } else {
             &empty
         };
-        let delta = if self.incoming_size == 0 {
+        let delta = if l.incoming_size == 0 {
             vec![0, 0, 0] // C++: EmptyDelta()
         } else {
-            match varint::decompress(
-                &self.incoming[..self.incoming_size],
-                snapshot::MAX_DELTA_INTS,
-            ) {
+            match varint::decompress(&l.incoming[..l.incoming_size], snapshot::MAX_DELTA_INTS) {
                 Some(delta) => delta,
                 None => return,
             }
@@ -1083,7 +1389,7 @@ impl Client {
             self.snap_crc_errors += 1;
             if self.snap_crc_errors > 10 {
                 // too many errors, send reset
-                self.ack_game_tick = -1;
+                self.links[c].ack_game_tick = -1;
                 self.send_input(now);
                 self.snap_crc_errors = 0;
             }
@@ -1094,47 +1400,54 @@ impl Client {
         }
 
         // purge old snapshots
-        let purge_tick = [self.prev_tick, self.cur_tick]
+        let l = &mut self.links[c];
+        let purge_tick = [l.prev_tick, l.cur_tick]
             .into_iter()
             .flatten()
             .fold(delta_tick, i32::min);
-        self.storage.retain(|s| s.tick >= purge_tick);
+        l.storage.retain(|s| s.tick >= purge_tick);
 
         let items = snapshot::unpack_and_validate(&snap);
-        self.storage.push_back(StoredSnapshot {
+        l.storage.push_back(StoredSnapshot {
             tick: game_tick,
             snap,
             items,
         });
-        self.received_snapshots += 1;
+        l.received_snapshots += 1;
 
         // we got two snapshots until we see us self as connected
-        if self.received_snapshots == 2 {
-            // start at 200ms and work from there
-            self.predicted_time
-                .init(game_tick as i64 * FREQ / TICK_SPEED, now);
-            self.predicted_time.adjust_speed[ADJUST_UP] = 1000.0;
-            self.predicted_time.margin = self.prediction_margin_ms() * FREQ / 1000;
-            self.game_time
+        if l.received_snapshots == 2 {
+            if !passive {
+                // start at 200ms and work from there
+                self.predicted_time
+                    .init(game_tick as i64 * FREQ / TICK_SPEED, now);
+                self.predicted_time.adjust_speed[ADJUST_UP] = 1000.0;
+                self.predicted_time.margin = self.prediction_margin_ms() * FREQ / 1000;
+            }
+            let l = &mut self.links[c];
+            l.game_time
                 .init((game_tick as i64 - 1) * FREQ / TICK_SPEED, now);
-            self.prev_tick = self.storage.front().map(|s| s.tick);
-            self.cur_tick = self.storage.back().map(|s| s.tick);
-            self.on_new_snapshot(now);
+            l.prev_tick = l.storage.front().map(|s| s.tick);
+            l.cur_tick = l.storage.back().map(|s| s.tick);
+            if !passive {
+                self.on_new_snapshot(now);
+            }
             self.state = State::Online;
         }
-        if self.received_snapshots > 2 {
+        let l = &mut self.links[c];
+        if l.received_snapshots > 2 {
             // adjust game time
-            let game_now = self.game_time.get(now);
+            let game_now = l.game_time.get(now);
             let tick_start = game_tick as i64 * FREQ / TICK_SPEED;
             let time_left = (tick_start - game_now) * 1000 / FREQ;
-            self.game_time.update(
+            l.game_time.update(
                 (game_tick as i64 - 1) * FREQ / TICK_SPEED,
                 time_left as i32,
                 ADJUST_DOWN,
                 now,
             );
         }
-        self.ack_game_tick = game_tick;
+        l.ack_game_tick = game_tick;
     }
 
     /// C++: `CClient::PredictionMargin`.
@@ -1148,63 +1461,87 @@ impl Client {
 
     /// The timing values `OnPredict` and the rendering read at `now`.
     pub fn timing(&self, now: i64) -> Timing {
+        let a = self.active();
         Timing {
-            game_tick: self.cur_tick.unwrap_or(0),
-            prev_game_tick: self.prev_tick.unwrap_or(0),
-            pred_tick: self.pred_tick,
+            game_tick: a.cur_tick.unwrap_or(0),
+            prev_game_tick: a.prev_tick.unwrap_or(0),
+            pred_tick: a.pred_tick,
             intra_tick: self.intra_tick,
             pred_intra_tick: self.pred_intra_tick,
             now,
-            game_now: self.game_time.get(now),
+            game_now: a.game_time.get(now),
             pred_now: self.predicted_time.get(now),
         }
     }
 
-    /// C++: the `STATE_ONLINE` part of `CClient::Update` (client.cpp:2900).
+    /// C++: the `STATE_ONLINE` part of `CClient::Update` (client.cpp:2870).
     fn update_online(&mut self, now: i64) {
-        let Some(mut cur) = self.cur_tick else { return };
-        let game_now = self.game_time.get(now);
-        let pred_now = self.predicted_time.get(now);
-        // switch snapshot
-        while let Some(next) = self.storage.iter().map(|s| s.tick).find(|&t| t > cur) {
-            if cur as i64 * FREQ / TICK_SPEED >= game_now {
-                break;
-            }
-            self.prev_tick = Some(cur);
-            self.cur_tick = Some(next);
-            cur = next;
-            self.on_new_snapshot(now);
-        }
-        if let Some(prev) = self.prev_tick {
-            let t = intra_ticks(prev, cur, game_now, pred_now);
-            (self.intra_tick, self.intra_tick_since_prev) = (t.intra, t.since_prev);
-            (self.game_tick_time, self.pred_intra_tick) = (t.tick_time, t.pred_intra);
-            let new_pred_tick = t.prev_pred_tick + 1;
-            if (new_pred_tick - prev).abs() > self.max_latency_ticks() {
-                // prediction time reset
-                self.predicted_time
-                    .init(cur as i64 * FREQ / TICK_SPEED + 2 * FREQ / TICK_SPEED, now);
-            }
-            if new_pred_tick > self.pred_tick {
-                self.pred_tick = new_pred_tick;
-                self.repredict = true;
-                self.send_input(now);
+        let a = self.dummy as usize;
+        let swapped = self.last_dummy != self.dummy;
+        // switch dummy snapshot
+        let p = &mut self.links[a ^ 1];
+        if let Some(mut cur) = p.cur_tick {
+            let game_now = p.game_time.get(now);
+            while let Some(next) = p.storage.iter().map(|s| s.tick).find(|&t| t > cur) {
+                if cur as i64 * FREQ / TICK_SPEED >= game_now {
+                    break;
+                }
+                (p.prev_tick, p.cur_tick) = (Some(cur), Some(next));
+                cur = next;
             }
         }
-        // fetch server info if we don't have it
-        if self.info_request_time >= 0 && now > self.info_request_time {
-            self.conn.outbox.push(serverinfo::request(self.info_token));
-            self.info_request_time = now + FREQ * 2;
-        }
-        // periodically ping server
-        if self.next_ping >= 0 && now > self.next_ping {
-            if self.caps.ping_ex {
-                let mut p = Packer::default();
-                p.add_raw(&random_uuid(self.random));
-                self.send_msg(g::NETMSG_PINGEX, true, &p, false, true, now);
+        if let Some(mut cur) = self.links[a].cur_tick {
+            let game_now = self.links[a].game_time.get(now);
+            let pred_now = self.predicted_time.get(now);
+            if swapped && self.links[a].prev_tick.is_some() {
+                // load the snapshot of the tee we switched to
+                self.on_new_snapshot(now);
             }
-            self.next_ping = now + 600 * FREQ; // ping every 10 minutes
+            // switch snapshot
+            while let Some(next) = (self.links[a].storage.iter())
+                .map(|s| s.tick)
+                .find(|&t| t > cur)
+            {
+                if cur as i64 * FREQ / TICK_SPEED >= game_now {
+                    break;
+                }
+                let l = &mut self.links[a];
+                (l.prev_tick, l.cur_tick) = (Some(cur), Some(next));
+                cur = next;
+                self.on_new_snapshot(now);
+            }
+            if let Some(prev) = self.links[a].prev_tick {
+                let t = intra_ticks(prev, cur, game_now, pred_now);
+                (self.intra_tick, self.intra_tick_since_prev) = (t.intra, t.since_prev);
+                (self.game_tick_time, self.pred_intra_tick) = (t.tick_time, t.pred_intra);
+                let new_pred_tick = t.prev_pred_tick + 1;
+                if (new_pred_tick - prev).abs() > self.max_latency_ticks() {
+                    // prediction time reset
+                    self.predicted_time
+                        .init(cur as i64 * FREQ / TICK_SPEED + 2 * FREQ / TICK_SPEED, now);
+                }
+                if new_pred_tick > self.links[a].pred_tick {
+                    self.links[a].pred_tick = new_pred_tick;
+                    self.repredict = true;
+                    self.send_input(now);
+                }
+            }
+            // fetch server info if we don't have it
+            if self.info_request_time >= 0 && now > self.info_request_time {
+                (self.links[0].net.outbox).push(serverinfo::request(self.info_token));
+                self.info_request_time = now + FREQ * 2;
+            }
+            // periodically ping server
+            if self.next_ping >= 0 && now > self.next_ping {
+                if self.caps.ping_ex {
+                    let mut p = Packer::default();
+                    p.add_raw(&random_uuid(self.random));
+                    self.send_msg(0, g::NETMSG_PINGEX, true, &p, false, true, now);
+                }
+                self.next_ping = now + 600 * FREQ; // ping every 10 minutes
+            }
         }
+        self.last_dummy = self.dummy;
     }
 
     /// C++: `CClient::MaxLatencyTicks`.
@@ -1212,15 +1549,61 @@ impl Client {
         (TICK_SPEED + self.prediction_margin_ms() * TICK_SPEED / 1000) as i32
     }
 
-    /// C++: `CClient::SendInput` with the sending rules of `CControls::SnapInput`
-    /// (controls.cpp:241), playing or in a menu; `input` (incl. the player flags) is what
-    /// SnapInput produced.
+    /// C++: `CClient::SendInput` (client.cpp:350): the active tee's input, then the
+    /// other tee's while the dummy is connected, both stamped with the active
+    /// connection's prediction tick.
     fn send_input(&mut self, now: i64) {
-        if self.pred_tick <= 0 {
+        let a = self.dummy as usize;
+        let pred_tick = self.links[a].pred_tick;
+        if pred_tick <= 0 {
             return;
         }
+        let mut force = false;
+        for d in 0..2 {
+            if !self.dummy_connected && d != 0 {
+                break;
+            }
+            let i = a ^ d;
+            let input = if d == 0 {
+                self.snap_input(now)
+            } else {
+                self.snap_dummy_input(force)
+            };
+            let Some(input) = input else { continue };
+            let ints = input.to_ints();
+            let mut p = Packer::default();
+            p.add_int(self.links[i].ack_game_tick);
+            p.add_int(pred_tick);
+            p.add_int(ints.len() as i32 * 4);
+            for v in ints {
+                p.add_int(v);
+            }
+            let predicted_time = self.predicted_time.get(now);
+            let l = &mut self.links[i];
+            l.inputs[l.current_input] = SentInput {
+                tick: pred_tick,
+                data: input,
+                predicted_time,
+                time: now,
+            };
+            l.current_input = (l.current_input + 1) % NUM_INPUTS;
+            let odd = l.current_input % 2 == 1;
+            self.send_msg(i, NETMSG_INPUT, true, &p, false, true, now);
+            // ugly workaround for dummy. we need to send input with dummy to prevent
+            // prediction time resets. but if we do it too often, then it's impossible
+            // to use grenade with frozen dummy that gets hammered...
+            if self.dummy_copy_moves || odd {
+                force = true;
+            }
+        }
+    }
+
+    /// The sending rules of C++ `CControls::SnapInput` (controls.cpp:241) for the
+    /// active tee, playing or in a menu; `input` (incl. the player flags) is what
+    /// SnapInput produced. `None`: nothing to send.
+    fn snap_input(&mut self, now: i64) -> Option<ObjPlayerInput> {
         let mut input = self.input;
-        let last = self.last_input;
+        let last = self.last_input[self.dummy as usize];
         let mut send = last.player_flags != input.player_flags;
         if input.player_flags & g::PLAYERFLAG_PLAYING == 0 {
             // in a menu: send once a second just to be sure
@@ -1244,78 +1627,113 @@ impl Client {
                 || now > self.last_input_send + FREQ / 25 // send at least 25 Hz
                 || ninja;
         }
-        self.last_input = input;
+        self.last_input[self.dummy as usize] = input;
         if !send {
-            return;
+            return None;
         }
         self.last_input_send = now;
-
-        let ints = input.to_ints();
-        let mut p = Packer::default();
-        p.add_int(self.ack_game_tick);
-        p.add_int(self.pred_tick);
-        p.add_int(ints.len() as i32 * 4);
-        for v in ints {
-            p.add_int(v);
-        }
-        self.inputs[self.current_input] = SentInput {
-            tick: self.pred_tick,
-            data: input,
-            predicted_time: self.predicted_time.get(now),
-            time: now,
-        };
-        self.current_input = (self.current_input + 1) % NUM_INPUTS;
-        self.send_msg(NETMSG_INPUT, true, &p, false, true, now);
+        Some(input)
     }
 
-    /// C++: the messages `CGameClient::OnNewSnapshot` sends (gameclient.cpp:2255).
+    /// C++: `CGameClient::OnSnapInput` for the other tee (gameclient.cpp:527): its
+    /// `m_DummyInput`, or every 25th call a hammer hit at the active tee.
+    fn snap_dummy_input(&mut self, force: bool) -> Option<ObjPlayerInput> {
+        self.links[!self.dummy as usize].local_id?;
+        if !self.dummy_hammer {
+            if self.dummy_fire != 0 {
+                self.dummy_input.fire = (self.hammer_input.fire.wrapping_add(1)) & !1;
+                self.dummy_fire = 0;
+            }
+            let d = &self.dummy_input;
+            if !force && d.direction == 0 && d.jump == 0 && d.hook == 0 {
+                return None;
+            }
+            return Some(self.dummy_input);
+        }
+        if self.dummy_fire % 25 != 0 {
+            self.dummy_fire += 1;
+            return None;
+        }
+        self.dummy_fire += 1;
+        self.hammer_input.fire = self.hammer_input.fire.wrapping_add(1) | 1;
+        self.hammer_input.wanted_weapon = g::WEAPON_HAMMER + 1;
+        if !self.dummy_restore_weapon {
+            self.dummy_input.wanted_weapon = g::WEAPON_HAMMER + 1;
+        }
+        self.hammer_input.target_x = trunc_i32(self.hammer_dir.0);
+        self.hammer_input.target_y = trunc_i32(self.hammer_dir.1);
+        Some(self.hammer_input)
+    }
+
+    /// C++: the messages `CGameClient::OnNewSnapshot` sends (gameclient.cpp:2255), and
+    /// `m_aLocalIds[cl_dummy]`.
     fn on_new_snapshot(&mut self, now: i64) {
-        if let Some(cur) = self.cur_tick {
-            self.snapshot_switches.push((self.prev_tick, cur));
+        let a = self.dummy as usize;
+        if let Some(cur) = self.links[a].cur_tick {
+            self.snapshot_switches.push((self.links[a].prev_tick, cur));
             self.repredict = true;
         }
-        self.local_id = self.snapshot().iter().find_map(|it| {
+        let local_id = self.snapshot().iter().find_map(|it| {
             (it.type_id == g::NETOBJTYPE_PLAYERINFO)
                 .then(|| g::ObjPlayerInfo::from_ints(&it.data))
                 .filter(|p| p.local != 0)
                 .map(|p| p.client_id)
         });
-        if !self.ddrace_msg_sent && self.local_id.is_some() {
+        self.snap_local_id = local_id;
+        // C++ only writes m_aLocalIds when there is local info
+        if local_id.is_some() {
+            self.links[a].local_id = local_id;
+        }
+        for i in 0..2 {
+            if self.links[i].ddrace_msg_sent || local_id.is_none() {
+                continue;
+            }
+            if i == 1 && !self.dummy_connected {
+                continue;
+            }
             let mut p = Packer::default();
             p.add_int(DDNET_VERSION);
-            self.send_msg(g::NETMSGTYPE_CL_ISDDNETLEGACY, false, &p, true, false, now);
-            self.ddrace_msg_sent = true;
-        }
-        if self.show_others != SHOW_OTHERS_DEFAULT {
-            let mut p = Packer::default();
-            g::MsgClShowOthers {
-                show: SHOW_OTHERS_DEFAULT,
-            }
-            .pack(&mut p);
-            self.send_msg(g::MsgClShowOthers::ID, false, &p, true, false, now);
-            self.show_others = SHOW_OTHERS_DEFAULT;
-        }
-        if self.spectator_count != SHOW_SPECTATOR_COUNT_DEFAULT {
-            let mut p = Packer::default();
-            g::MsgClEnableSpectatorCount {
-                enable: SHOW_SPECTATOR_COUNT_DEFAULT,
-            }
-            .pack(&mut p);
             self.send_msg(
-                g::MsgClEnableSpectatorCount::ID,
+                i,
+                g::NETMSGTYPE_CL_ISDDNETLEGACY,
                 false,
                 &p,
                 true,
                 false,
                 now,
             );
-            self.spectator_count = SHOW_SPECTATOR_COUNT_DEFAULT;
+            self.links[i].ddrace_msg_sent = true;
+        }
+        if self.links[a].show_others != SHOW_OTHERS_DEFAULT {
+            let mut p = Packer::default();
+            g::MsgClShowOthers {
+                show: SHOW_OTHERS_DEFAULT,
+            }
+            .pack(&mut p);
+            self.send_active(g::MsgClShowOthers::ID, &p, now);
+            self.links[a].show_others = SHOW_OTHERS_DEFAULT;
+        }
+        for i in 0..2 {
+            if i == 1 && !self.dummy_connected {
+                continue;
+            }
+            if self.links[i].spectator_count != SHOW_SPECTATOR_COUNT_DEFAULT {
+                let mut p = Packer::default();
+                g::MsgClEnableSpectatorCount {
+                    enable: SHOW_SPECTATOR_COUNT_DEFAULT,
+                }
+                .pack(&mut p);
+                let id = g::MsgClEnableSpectatorCount::ID;
+                self.send_msg(i, id, false, &p, true, false, now);
+                self.links[i].spectator_count = SHOW_SPECTATOR_COUNT_DEFAULT;
+            }
         }
         self.send_camera(now);
     }
 
     /// C++: `Cl_ShowDistance` and `Cl_CameraInfo` in `CGameClient::OnNewSnapshot`
-    /// (gameclient.cpp:2313-2397), sent when they change.
+    /// (gameclient.cpp:2313-2397), sent when they change, and once to a newly
+    /// connected dummy.
     fn send_camera(&mut self, now: i64) {
         let cam = self.camera;
         let mut show_distance_zoom = cam.zoom;
@@ -1330,43 +1748,73 @@ impl Client {
         }
         let mut deadzone = cam.deadzone as f32;
         let mut follow_factor = cam.follow_factor as f32;
-        if spectating(self.snapshot(), self.local_id) {
+        if spectating(self.snapshot(), self.local_id()) {
             // don't send camera information when spectating
             zoom = self.last_zoom;
             deadzone = self.last_deadzone;
             follow_factor = self.last_follow_factor;
         }
+        let mut show_distance = Packer::default();
+        let (x, y) = calc_screen_params(cam.aspect, show_distance_zoom);
+        g::MsgClShowDistance {
+            x: trunc_i32(x),
+            y: trunc_i32(y),
+        }
+        .pack(&mut show_distance);
+        let mut camera_info = Packer::default();
+        g::MsgClCameraInfo {
+            zoom: trunc_i32(zoom * 1000.0), // C++ round_truncate
+            deadzone: trunc_i32(deadzone),
+            follow_factor: trunc_i32(follow_factor),
+        }
+        .pack(&mut camera_info);
+        let (show_id, camera_id) = (g::MsgClShowDistance::ID, g::MsgClCameraInfo::ID);
+        // initialize dummy vital when first connected
+        if self.dummy_connected && !self.last_dummy_connected {
+            self.send_msg(1, show_id, false, &show_distance, true, false, now);
+            self.send_msg(1, camera_id, false, &camera_info, true, false, now);
+        }
+        let to_dummy = self.dummy_connected && self.last_dummy_connected;
         if show_distance_zoom != self.last_show_distance_zoom
             || cam.aspect != self.last_screen_aspect
         {
-            let (x, y) = calc_screen_params(cam.aspect, show_distance_zoom);
-            let mut p = Packer::default();
-            g::MsgClShowDistance {
-                x: trunc_i32(x),
-                y: trunc_i32(y),
+            self.send_msg(0, show_id, false, &show_distance, true, false, now);
+            if to_dummy {
+                self.send_msg(1, show_id, false, &show_distance, true, false, now);
             }
-            .pack(&mut p);
-            self.send_msg(g::MsgClShowDistance::ID, false, &p, true, false, now);
         }
         if zoom != self.last_zoom
             || deadzone != self.last_deadzone
             || follow_factor != self.last_follow_factor
         {
-            let mut p = Packer::default();
-            g::MsgClCameraInfo {
-                zoom: trunc_i32(zoom * 1000.0), // C++ round_truncate
-                deadzone: trunc_i32(deadzone),
-                follow_factor: trunc_i32(follow_factor),
+            self.send_msg(0, camera_id, false, &camera_info, true, false, now);
+            if to_dummy {
+                self.send_msg(1, camera_id, false, &camera_info, true, false, now);
             }
-            .pack(&mut p);
-            self.send_msg(g::MsgClCameraInfo::ID, false, &p, true, false, now);
         }
         self.last_show_distance_zoom = show_distance_zoom;
         self.last_zoom = zoom;
         self.last_screen_aspect = cam.aspect;
         self.last_deadzone = deadzone;
         self.last_follow_factor = follow_factor;
+        self.last_dummy_connected = self.dummy_connected;
     }
+}
+
+/// `Cl_StartInfo` for a player (C++ `SendInfo(true)`, `SendDummyInfo(true)`).
+fn start_info(i: &PlayerInfo) -> Packer {
+    let mut p = Packer::default();
+    g::MsgClStartInfo {
+        name: i.name.clone(),
+        clan: i.clan.clone(),
+        country: i.country,
+        skin: i.skin.clone(),
+        use_custom_color: i.use_custom_color,
+        color_body: i.color_body,
+        color_feet: i.color_feet,
+    }
+    .pack(&mut p);
+    p
 }
 
 /// C++: `RepackMsg` (client.cpp:139), 0.6 path: `(id << 1) | sys` for plain ids,

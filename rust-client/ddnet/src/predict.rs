@@ -411,7 +411,9 @@ impl Predictor {
     pub fn on_message(&mut self, msg: PredictMsg) {
         match msg {
             // gameclient.cpp:1053
-            PredictMsg::TuneParams(ints) => {
+            // ponytail: the dummy's tuning (C++ m_aTuning[1]) comes with 13.6 piece c
+            PredictMsg::TuneParams(c, _) if c != 0 => {}
+            PredictMsg::TuneParams(_, ints) => {
                 self.received_tuning = true;
                 self.tuning = Tuning::from_net(&ints);
             }

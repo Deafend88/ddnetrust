@@ -882,7 +882,7 @@ impl App {
         net::pump(&s.socket, &mut s.client, net::now(start))
             .map_err(|e| format!("network: {e}"))?;
         if s.client.state() == State::Offline {
-            return Err(format!("disconnected: '{}'", s.client.conn.error()));
+            return Err(format!("disconnected: '{}'", s.client.conn().error()));
         }
         // C++: CSounds::OnStateChange(STATE_ONLINE) -> OnReset
         if s.client.state() == State::Online && !std::mem::replace(&mut s.online, true) {

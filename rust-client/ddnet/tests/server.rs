@@ -120,7 +120,7 @@ fn local_server_session() {
         client.state(),
         State::Online,
         "error: '{}'",
-        client.conn.error()
+        client.conn().error()
     );
     let map = client.map().expect("map downloaded");
     assert_eq!(map.name, "coverage");
@@ -875,4 +875,284 @@ fn esc_menu_messages_reach_server() {
         );
     }
     drop(server);
+}
+
+/// 13.6: the dummy joins as a second player on its own connection, becomes the active
+/// tee (C++ sets `cl_dummy 1` on its `CON_READY`), walks while the main tee stands, and
+/// after swapping back the main tee walks; with `cl_dummy_hammer` the other tee hammers.
+#[test]
+fn dummy_joins_walks_and_swaps() {
+    let Some(exe) = server_binary() else {
+        eprintln!("SKIPPED: no DDNet-Server (set DDNET_SERVER or build the game-server target)");
+        return;
+    };
+    // both tees in every snapshot, wherever they spawn
+    let (server, port) = start_server_with(&exe, "dm1", &[], &["sv_show_all_default 1"]);
+    let addr = format!("127.0.0.1:{port}").parse().unwrap();
+    let sockets = [
+        net::connect_socket(addr).unwrap(),
+        net::connect_socket(addr).unwrap(),
+    ];
+    let start = Instant::now();
+    let player = PlayerInfo {
+        name: "main".into(),
+        ..PlayerInfo::default()
+    };
+    let mut client = Client::new(player, "", net::random_bytes);
+    client.connect(net::now(start));
+    let run = |client: &mut Client, ms: u64, done: &dyn Fn(&Client) -> bool| {
+        let deadline = Instant::now() + Duration::from_millis(ms);
+        while Instant::now() < deadline && !done(client) {
+            net::pump_both(&[&sockets[0], &sockets[1]], client, net::now(start)).unwrap();
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    };
+    run(&mut client, 15_000, &|c| local_x(c).is_some());
+    assert_eq!(client.dummy_connect(net::now(start)), Ok(()));
+    assert_eq!(
+        client.dummy_connect(net::now(start)),
+        Err("Dummy is already connecting.")
+    );
+    run(&mut client, 10_000, &|c| {
+        c.dummy() && c.local_ids().iter().all(Option::is_some) && local_x(c).is_some()
+    });
+    assert!(
+        client.dummy_connected() && client.dummy(),
+        "{:?}",
+        client.dummy_error
+    );
+    let [main, dummy] = client.local_ids().map(Option::unwrap);
+    assert_ne!(main, dummy);
+    assert_eq!(client.local_id(), Some(dummy));
+    let log = fs::read_to_string(server.dir.join("server.log")).unwrap();
+    assert!(log.contains("'[D] main'"), "{log}");
+    let x = |c: &Client, id| character(c, id).map(|ch| ch.x);
+    // both tees are in the dummy's snapshot
+    run(&mut client, 1_000, &|_| false);
+    let (m0, d0) = (x(&client, main).unwrap(), x(&client, dummy).unwrap());
+    client.input.direction = 1;
+    run(&mut client, 1_000, &|_| false);
+    client.input.direction = 0;
+    // until both cores rest (a tee may have walked off a ledge; the server resends a
+    // dead-reckoned core within 3 s)
+    let still = |c: &Client| {
+        [main, dummy]
+            .iter()
+            .all(|&id| character(c, id).is_some_and(|ch| ch.vel_x.abs() < 128 && ch.vel_y == 0))
+    };
+    run(&mut client, 4_500, &still);
+    assert!(still(&client));
+    let (m1, d1) = (x(&client, main).unwrap(), x(&client, dummy).unwrap());
+    assert!(
+        d1 > d0 + 100 && m1 == m0,
+        "dummy {d0}->{d1}, main {m0}->{m1}"
+    );
+    // swap back: the main tee is active again
+    client.set_dummy(false);
+    run(&mut client, 300, &|c| c.local_id() == Some(main));
+    assert_eq!(client.local_id(), Some(main));
+    client.input.direction = -1;
+    run(&mut client, 1_000, &|_| false);
+    client.input.direction = 0;
+    run(&mut client, 4_500, &still);
+    assert!(still(&client));
+    let (m2, d2) = (x(&client, main).unwrap(), x(&client, dummy).unwrap());
+    assert!(
+        m2 < m1 - 100 && d2 == d1,
+        "main {m1}->{m2}, dummy {d1}->{d2}"
+    );
+    // the dummy hammers the main tee (C++ OnSnapInput with cl_dummy_hammer)
+    client.dummy_hammer = true;
+    run(&mut client, 2_000, &|_| false);
+    let hammer = |c: &Client| character(c, dummy).map(|ch| (ch.weapon, ch.attack_tick));
+    assert_eq!(hammer(&client).map(|h| h.0), Some(g::WEAPON_HAMMER));
+    let t0 = hammer(&client).unwrap().1;
+    run(&mut client, 1_000, &|c| {
+        hammer(c).is_some_and(|h| h.1 != t0)
+    });
+    assert_ne!(hammer(&client).unwrap().1, t0, "the dummy keeps hammering");
+    client.dummy_hammer = false;
+    // disconnecting the dummy leaves the main tee playing
+    client.dummy_disconnect(None, net::now(start));
+    run(&mut client, 1_000, &|_| false);
+    assert!(!client.dummy_connected() && !client.dummy());
+    assert_eq!(client.state(), State::Online);
+    assert!(character(&client, dummy).is_none(), "the dummy left");
+    drop(server);
+}
+
+/// The chunks a client sent in one datagram, one string per chunk ("V" for vital):
+/// the message name and its payload, the payload left out where it depends on the
+/// client version, the moment or random ids. `None` for connless datagrams.
+fn describe_sent(datagram: &[u8]) -> Option<Vec<String>> {
+    use ddnet::protocol::packer::Unpacker;
+    use ddnet::protocol::packet::{
+        self, CHUNKFLAG_VITAL, ChunkHeader, PACKETFLAG_CONNLESS, PACKETFLAG_CONTROL,
+    };
+    let p = packet::decode(datagram)?;
+    if p.flags & PACKETFLAG_CONNLESS != 0 {
+        return None;
+    }
+    if p.flags & PACKETFLAG_CONTROL != 0 {
+        return Some(vec![format!("ctrl {}", p.data[0])]);
+    }
+    const SYS: [&str; 30] = [
+        "?",
+        "INFO",
+        "MAP_CHANGE",
+        "MAP_DATA",
+        "CON_READY",
+        "SNAP",
+        "SNAPEMPTY",
+        "SNAPSINGLE",
+        "SNAPSMALL",
+        "INPUTTIMING",
+        "RCON_AUTH_STATUS",
+        "RCON_LINE",
+        "AUTH_CHALLENGE",
+        "AUTH_RESULT",
+        "READY",
+        "ENTERGAME",
+        "INPUT",
+        "RCON_CMD",
+        "RCON_AUTH",
+        "REQUEST_MAP_DATA",
+        "AUTH_START",
+        "AUTH_RESPONSE",
+        "PING",
+        "PING_REPLY",
+        "ERROR",
+        "RCON_CMD_ADD",
+        "RCON_CMD_REM",
+        "?",
+        "?",
+        "?",
+    ];
+    let mut out = Vec::new();
+    let mut data = &p.data[..];
+    for _ in 0..p.num_chunks {
+        let (h, len) = ChunkHeader::unpack(data)?;
+        let body = data.get(len..len + h.size)?;
+        data = &data[len + h.size..];
+        let mut u = Unpacker::new(body);
+        let msg = u.get_int();
+        let (id, sys) = (msg >> 1, msg & 1 != 0);
+        let name = if id == 0 {
+            let uuid: [u8; 16] = u.get_raw(16)?.try_into().ok()?;
+            (g::SYS_EX_MSGS.iter().find(|m| m.2 == uuid).map(|m| m.1))
+                .or_else(|| g::MSG_TYPES.iter().find(|m| m.2 == Some(uuid)).map(|m| m.1))
+                .unwrap_or("?ex")
+                .to_string()
+        } else if sys {
+            SYS.get(id as usize).unwrap_or(&"?").to_string()
+        } else {
+            (g::MSG_TYPES.iter().find(|m| m.0 == id && m.2.is_none()))
+                .map_or(format!("game{id}"), |m| m.1.to_string())
+        };
+        // the message id's length: the varint, plus the UUID of extended messages
+        let mut pk = ddnet::protocol::packer::Packer::default();
+        pk.add_int(msg);
+        let rest = body.get(pk.data().len() + if id == 0 { 16 } else { 0 }..)?;
+        let payload = match name.as_str() {
+            // version and random ids; ticks
+            "clientver@ddnet.tw" | "pong@ddnet.tw" | "ping@ddnet.tw" | "Cl_IsDDNetLegacy" => {
+                String::new()
+            }
+            // the input without its ack and prediction ticks
+            "INPUT" => {
+                let mut u = Unpacker::new(rest);
+                let (_, _, size) = (u.get_int(), u.get_int(), u.get_int());
+                let ints: Vec<String> = (0..size / 4).map(|_| u.get_int().to_string()).collect();
+                ints.join(",")
+            }
+            _ => rest.iter().map(|b| format!("{b:02x}")).collect(),
+        };
+        let vital = if h.flags & CHUNKFLAG_VITAL != 0 {
+            "V "
+        } else {
+            ""
+        };
+        out.push(format!("{vital}{name} {payload}").trim_end().to_string());
+    }
+    Some(out)
+}
+
+/// The dummy connection's datagrams in a `udp_tap` log (client 1, sent to the server),
+/// described.
+fn tap_dummy_sent(log: &str) -> Vec<Vec<String>> {
+    log.lines()
+        .filter_map(|l| {
+            let f: Vec<&str> = l.split(' ').collect();
+            (f[1] == "1" && f[2] == "c2s").then(|| {
+                (0..f[3].len() / 2)
+                    .map(|i| u8::from_str_radix(&f[3][2 * i..2 * i + 2], 16).unwrap())
+                    .collect::<Vec<u8>>()
+            })
+        })
+        .filter_map(|d| describe_sent(&d))
+        .collect()
+}
+
+/// 13.6: our dummy connection sends what the C++ client's sends, chunk for chunk and
+/// datagram for datagram, from the connect up to its first input (`dummy_cpp.tap`:
+/// the C++ client's dummy through `udp_tap`, `scripts/dummy_capture.ps1`).
+#[test]
+fn dummy_handshake_matches_cpp() {
+    let Some(exe) = server_binary() else {
+        eprintln!("SKIPPED: no DDNet-Server (set DDNET_SERVER or build the game-server target)");
+        return;
+    };
+    let golden = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/golden/dummy_cpp.tap");
+    let cpp = tap_dummy_sent(&fs::read_to_string(golden).unwrap());
+    let (server, port) = start_server(&exe, "dm1");
+    let addr = format!("127.0.0.1:{port}").parse().unwrap();
+    let sockets = [
+        net::connect_socket(addr).unwrap(),
+        net::connect_socket(addr).unwrap(),
+    ];
+    let socks = [&sockets[0], &sockets[1]];
+    let start = Instant::now();
+    let player = PlayerInfo {
+        name: "main".into(),
+        ..PlayerInfo::default()
+    };
+    let mut client = Client::new(player, "", net::random_bytes);
+    // the C++ client's window: 800x600, default zoom
+    client.camera.aspect = 800.0 / 600.0;
+    client.connect(net::now(start));
+    let mut sent = Vec::new();
+    let frame = |client: &mut Client, sent: &mut Vec<Vec<String>>| {
+        let incoming = net::recv_all(&socks).unwrap();
+        client.frame(incoming, net::now(start));
+        sent.extend(client.outbox(1).iter().filter_map(|d| describe_sent(d)));
+        net::send_all(&socks, client).unwrap();
+        std::thread::sleep(Duration::from_millis(1));
+    };
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while Instant::now() < deadline && local_x(&client).is_none() {
+        frame(&mut client, &mut sent);
+    }
+    client.dummy_connect(net::now(start)).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let has_input = |s: &[Vec<String>]| s.iter().any(|p| p.iter().any(|c| c.starts_with("INPUT")));
+    while Instant::now() < deadline && !has_input(&sent) {
+        frame(&mut client, &mut sent);
+    }
+    drop(server);
+    // one line per datagram
+    let upto = |s: &[Vec<String>]| {
+        let n = s
+            .iter()
+            .position(|p| p.iter().any(|c| c.starts_with("INPUT")));
+        let lines: Vec<String> = s[..n.map_or(s.len(), |n| n + 1)]
+            .iter()
+            .map(|p| p.join(" | "))
+            .collect();
+        lines.join(
+            "
+",
+        )
+    };
+    assert!(has_input(&cpp) && has_input(&sent));
+    assert_eq!(upto(&sent), upto(&cpp));
 }

@@ -32,26 +32,51 @@ pub fn connect_socket(server: SocketAddr) -> io::Result<UdpSocket> {
     Ok(socket)
 }
 
-/// Receives everything pending, runs one client frame, sends what it produced.
+/// Receives everything pending, runs one client frame, sends what it produced (main
+/// connection only).
 pub fn pump(socket: &UdpSocket, client: &mut Client, now: i64) -> io::Result<()> {
-    let mut incoming = Vec::new();
+    pump_both(&[socket], client, now)
+}
+
+/// `pump` for the main connection's socket and, if given, the dummy's.
+pub fn pump_both(sockets: &[&UdpSocket], client: &mut Client, now: i64) -> io::Result<()> {
+    let incoming = recv_all(sockets)?;
+    client.frame(incoming, now);
+    send_all(sockets, client)
+}
+
+/// Everything pending on each socket (index 0 main, 1 dummy).
+pub fn recv_all(sockets: &[&UdpSocket]) -> io::Result<[Vec<Vec<u8>>; 2]> {
+    let mut incoming: [Vec<Vec<u8>>; 2] = Default::default();
     let mut buf = [0u8; 2048];
-    loop {
-        match socket.recv(&mut buf) {
-            Ok(n) => incoming.push(buf[..n].to_vec()),
-            Err(e) if e.kind() == ErrorKind::WouldBlock => break,
-            // Windows reports ICMP port unreachable as a reset on the next recv; C++
-            // disables that (SIO_UDP_CONNRESET), so it is not an error here either.
-            Err(e) if e.kind() == ErrorKind::ConnectionReset => continue,
-            Err(e) => return Err(e),
+    for (socket, out) in sockets.iter().zip(&mut incoming) {
+        loop {
+            match socket.recv(&mut buf) {
+                Ok(n) => out.push(buf[..n].to_vec()),
+                Err(e) if e.kind() == ErrorKind::WouldBlock => break,
+                // Windows reports ICMP port unreachable as a reset on the next recv; C++
+                // disables that (SIO_UDP_CONNRESET), so it is not an error here either.
+                Err(e) if e.kind() == ErrorKind::ConnectionReset => continue,
+                Err(e) => return Err(e),
+            }
         }
     }
-    client.frame(incoming, now);
-    for datagram in client.conn.outbox.drain(..) {
-        if let Err(e) = socket.send(&datagram)
-            && e.kind() != ErrorKind::ConnectionReset
-        {
-            return Err(e);
+    Ok(incoming)
+}
+
+/// Sends each connection's outbox on its socket (without a socket it is dropped).
+pub fn send_all(sockets: &[&UdpSocket], client: &mut Client) -> io::Result<()> {
+    for i in 0..2 {
+        let outbox = std::mem::take(client.outbox(i));
+        let Some(socket) = sockets.get(i) else {
+            continue;
+        };
+        for datagram in outbox {
+            if let Err(e) = socket.send(&datagram)
+                && e.kind() != ErrorKind::ConnectionReset
+            {
+                return Err(e);
+            }
         }
     }
     Ok(())

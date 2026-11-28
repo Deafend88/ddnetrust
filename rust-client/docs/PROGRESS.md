@@ -1406,6 +1406,29 @@ Sound works, asset pack switching works in the running client.
   icon buttons right (room for Vote, Ghost, Browser later). Row 2, Game tab only: the
   action pills. Tabs and actions never share a row. Copy info no longer stretches.
 
+#### 13.6 (2026-11-28): dummy — in progress
+- Piece a, the second connection: `net/client.rs` holds C++'s per-connection state as
+  `links[2]` (net connection, snapshot storage, ticks, game time, inputs, local id,
+  DDRace/show-others/spectator-count flags) with one shared predicted time, like
+  `CClient`'s `[2]` arrays. `dummy_connect` (C++ checks and messages: not online, not
+  allowed (`SERVERCAPFLAG_ALLOWDUMMY`), connecting, 5 s delay), the dummy handshake of
+  `PumpNetwork` (info, ready, `SendDummyInfo`, enter game), `CON_READY` on the dummy sets
+  `cl_dummy 1` and sends `crashmeplx`; messages of the passive connection as C++'s
+  `Dummy` path (ready-to-enter; team/whisper chat for the caller); `SendInput` sends both
+  tees' inputs stamped with the active prediction tick, `OnSnapInput` for the other tee
+  (`m_DummyInput`, `cl_dummy_hammer` every 25th call, the `Force` rule); `OnNewSnapshot`
+  messages per connection (incl. the dummy's first show-distance/camera info);
+  swapping (`m_LastDummy`, `OnNewSnapshot(true)`), `DummyDisconnect`. Map reload/
+  reconnect/redirect keep-the-dummy paths are not ported (no map reload support yet).
+  `net::pump_both`/`recv_all`/`send_all` for two sockets.
+- Verified: `dummy_handshake_matches_cpp`: the real C++ client's dummy, captured
+  through the new `udp_tap` example (`scripts/dummy_capture.ps1`, golden
+  `tests/golden/dummy_cpp.tap`), and ours send the same datagrams with the same chunks
+  and payloads from the connect to the first input (clientver/version payloads aside).
+  Live `dummy_joins_walks_and_swaps`: the dummy joins as `[D] main`, walks while the
+  main tee stands, the swap back moves the main tee, `cl_dummy_hammer` hammers,
+  disconnect leaves the main tee playing.
+
 #### Exact next actions (next session starts here)
 State (2026-11-28): 13.5 two-row layout done and pushed; stopped for the user's review
 of `docs/review/13.5/`. Then 13.6 (dummy).
