@@ -76,6 +76,8 @@ pub struct PredictConfig {
     pub snd_game: bool,
     pub snd_gun: bool,
     pub snd_long_pain: bool,
+    /// C++: `cl_predict_dummy`.
+    pub predict_dummy: bool,
 }
 
 impl Default for PredictConfig {
@@ -97,6 +99,7 @@ impl Default for PredictConfig {
             snd_game: true,
             snd_gun: true,
             snd_long_pain: true,
+            predict_dummy: true,
         }
     }
 }
@@ -258,20 +261,30 @@ pub struct Predictor {
     /// The latest prediction of the local character for each tick.
     history: BTreeMap<i32, ObjCharacterCore>,
     pub stats: Stats,
-    /// C++: `m_aTuning[0]` (the last `Sv_TuneParams`), `m_aReceivedTuning`,
-    /// `m_aLocalTuneZone`, `m_aExpectingTuningForZone`, `m_aExpectingTuningSince`.
-    tuning: Tuning,
-    received_tuning: bool,
-    local_tune_zone: i32,
-    expecting_tuning_for_zone: i32,
-    expecting_tuning_since: i32,
+    /// C++: `m_aTuning` (the last `Sv_TuneParams` of each connection),
+    /// `m_aReceivedTuning`, `m_aLocalTuneZone`, `m_aExpectingTuningForZone`,
+    /// `m_aExpectingTuningSince`; index `cl_dummy` is the active tee's.
+    tuning: [Tuning; 2],
+    received_tuning: [bool; 2],
+    local_tune_zone: [i32; 2],
+    expecting_tuning_for_zone: [i32; 2],
+    expecting_tuning_since: [i32; 2],
+    /// C++ `cl_dummy`, `DummyConnected()`, `m_aLocalIds` and `m_IsDummySwapping` (set by
+    /// the caller's `OnDummySwap`, cleared by the next snapshot). `update` keeps the
+    /// first two current.
+    pub dummy: bool,
+    pub dummy_connected: bool,
+    pub local_ids: [i32; 2],
+    pub is_dummy_swapping: bool,
+    /// C++ `m_aClients[i].m_Paused` (from `DDNetPlayer`, kept while it is missing).
+    paused: Vec<bool>,
     /// C++: `m_aClients[i].m_aPreInputs`, indexed by intended tick % 200.
     pre_inputs: Vec<Vec<MsgSvPreInput>>,
     /// C++ `m_GameInfo.m_RaceSounds` and `m_PredictEvents`.
     race_sounds: bool,
     predict_events: bool,
-    /// C++: `m_aLastNewPredictedTick[Dummy]`.
-    last_new_predicted_tick: i32,
+    /// C++: `m_aLastNewPredictedTick`.
+    last_new_predicted_tick: [i32; 2],
     /// `IntraGameTick` of the previous frame, for the positions of `OnNewSnapshot`'s
     /// effects (C++ updates it after switching snapshots).
     pub intra_tick: f32,
@@ -359,15 +372,20 @@ impl Predictor {
             stats: Stats::default(),
             race_sounds: false,
             predict_events: false,
-            last_new_predicted_tick: -1,
+            last_new_predicted_tick: [-1; 2],
             intra_tick: 0.0,
             sound_events: Vec::new(),
             game_info: (-1, 0, 0),
-            tuning: Tuning::default(),
-            received_tuning: false,
-            local_tune_zone: -1,
-            expecting_tuning_for_zone: -1,
-            expecting_tuning_since: 0,
+            tuning: [Tuning::default(); 2],
+            received_tuning: [false; 2],
+            local_tune_zone: [-1; 2],
+            expecting_tuning_for_zone: [-1; 2],
+            expecting_tuning_since: [0; 2],
+            dummy: false,
+            dummy_connected: false,
+            local_ids: [-1; 2],
+            is_dummy_swapping: false,
+            paused: vec![false; MAX_CLIENTS],
             pre_inputs: vec![vec![no_pre_input; NUM_PRE_INPUTS]; MAX_CLIENTS],
         }
     }
@@ -385,8 +403,15 @@ impl Predictor {
         self.sound_events.clear();
         let switches = std::mem::take(&mut client.snapshot_switches);
         let repredict = std::mem::take(&mut client.repredict);
+        if self.dummy_connected && !client.dummy_connected() {
+            // C++ CGameClient::OnDummyDisconnect
+            self.local_ids[1] = -1;
+            self.last_new_predicted_tick[1] = -1;
+        }
+        self.dummy = client.dummy();
+        self.dummy_connected = client.dummy_connected();
         let client = &*client;
-        let input_at = |t| client.input_at(t);
+        let input_at = |t, is_dummy| client.input_of(t, is_dummy);
         for (prev, cur) in switches {
             let Some(items) = client.snapshot_at(cur) else {
                 continue;
@@ -411,11 +436,9 @@ impl Predictor {
     pub fn on_message(&mut self, msg: PredictMsg) {
         match msg {
             // gameclient.cpp:1053
-            // ponytail: the dummy's tuning (C++ m_aTuning[1]) comes with 13.6 piece c
-            PredictMsg::TuneParams(c, _) if c != 0 => {}
-            PredictMsg::TuneParams(_, ints) => {
-                self.received_tuning = true;
-                self.tuning = Tuning::from_net(&ints);
+            PredictMsg::TuneParams(c, ints) => {
+                self.received_tuning[c] = true;
+                self.tuning[c] = Tuning::from_net(&ints);
             }
             // gameclient.cpp:1168
             PredictMsg::TeamsState(ints) => {
@@ -501,19 +524,21 @@ impl Predictor {
         &self.world.tunings[zone.clamp(0, NUM_TUNE_ZONES as i32 - 1) as usize]
     }
 
-    /// C++: `m_aTuning[0]`: the last tuning the server sent (default before any).
+    /// C++: `m_aTuning[cl_dummy]`: the last tuning the server sent the active tee
+    /// (default before any).
     pub fn received_tuning(&self) -> &Tuning {
-        &self.tuning
+        &self.tuning[self.dummy as usize]
     }
 
-    /// C++: `m_aReceivedTuning[0]`, `m_aLocalTuneZone[0]`, `m_aExpectingTuningForZone[0]`
-    /// and `m_aExpectingTuningSince[0]` (for the parity tests).
+    /// C++: `m_aReceivedTuning`, `m_aLocalTuneZone`, `m_aExpectingTuningForZone` and
+    /// `m_aExpectingTuningSince` of `cl_dummy` (for the parity tests).
     pub fn tune_state(&self) -> (bool, i32, i32, i32) {
+        let d = self.dummy as usize;
         (
-            self.received_tuning,
-            self.local_tune_zone,
-            self.expecting_tuning_for_zone,
-            self.expecting_tuning_since,
+            self.received_tuning[d],
+            self.local_tune_zone[d],
+            self.expecting_tuning_for_zone[d],
+            self.expecting_tuning_since[d],
         )
     }
 
@@ -541,9 +566,10 @@ impl Predictor {
     /// local character (`m_pLocalCharacter`), else the spectator info position.
     pub fn update_local_tuning(&mut self, local_pos: Option<Vec2>, override_zone: Option<i32>) {
         let use_zones = self.world.config.use_tune_zones;
+        let d = self.dummy as usize;
         // always update default tune zone, even without character
         if !use_zones {
-            self.world.tunings[0] = self.tuning;
+            self.world.tunings[0] = self.tuning[d];
         }
         let Some(pos) = local_pos else {
             return;
@@ -555,29 +581,29 @@ impl Predictor {
             Some(z) if z != TUNE_ZONE_OVERRIDE_NONE => z,
             _ => self.col.is_tune(self.col.get_map_index(pos)),
         };
-        if zone != self.local_tune_zone {
+        if zone != self.local_tune_zone[d] {
             // our tunezone changed, expecting tuning message
-            self.local_tune_zone = zone;
-            self.expecting_tuning_for_zone = zone;
-            self.expecting_tuning_since = 0;
+            self.local_tune_zone[d] = zone;
+            self.expecting_tuning_for_zone[d] = zone;
+            self.expecting_tuning_since[d] = 0;
         }
-        if self.expecting_tuning_for_zone >= 0 {
-            if self.received_tuning {
-                self.world.tunings[self.expecting_tuning_for_zone as usize] = self.tuning;
-                self.received_tuning = false;
-                self.expecting_tuning_for_zone = -1;
-            } else if self.expecting_tuning_since >= 5 {
+        if self.expecting_tuning_for_zone[d] >= 0 {
+            if self.received_tuning[d] {
+                self.world.tunings[self.expecting_tuning_for_zone[d] as usize] = self.tuning[d];
+                self.received_tuning[d] = false;
+                self.expecting_tuning_for_zone[d] = -1;
+            } else if self.expecting_tuning_since[d] >= 5 {
                 // probably dropped, out of order or for another zone: fall back
-                self.expecting_tuning_for_zone = -1;
-                self.expecting_tuning_since = 0;
-                self.received_tuning = false;
+                self.expecting_tuning_for_zone[d] = -1;
+                self.expecting_tuning_since[d] = 0;
+                self.received_tuning[d] = false;
             } else {
-                self.expecting_tuning_since += 1;
+                self.expecting_tuning_since[d] += 1;
             }
         } else {
-            self.world.tunings[zone as usize] = self.tuning;
-            self.expecting_tuning_since = 0;
-            self.received_tuning = false;
+            self.world.tunings[zone as usize] = self.tuning[d];
+            self.expecting_tuning_since[d] = 0;
+            self.received_tuning[d] = false;
         }
     }
 
@@ -606,7 +632,7 @@ impl Predictor {
         prev_items: &[Item],
         prev: Option<i32>,
         tick: i32,
-        input_at: &dyn Fn(i32) -> Option<ObjPlayerInput>,
+        input_at: &dyn Fn(i32, bool) -> Option<ObjPlayerInput>,
     ) {
         self.local_id = items
             .iter()
@@ -614,6 +640,19 @@ impl Predictor {
             .map(|it| g::ObjPlayerInfo::from_ints(&ints(it, g::ObjPlayerInfo::NUM_INTS)))
             .find(|p| p.local != 0)
             .map_or(-1, |p| p.client_id);
+        if self.local_id >= 0 {
+            self.local_ids[self.dummy as usize] = self.local_id;
+        }
+        for it in items
+            .iter()
+            .filter(|it| it.type_id == g::NETOBJTYPE_DDNETPLAYER)
+        {
+            if let Ok(id) = usize::try_from(it.id)
+                && id < MAX_CLIENTS
+            {
+                self.paused[id] = ints(it, 1)[0] & g::EXPLAYERFLAG_PAUSED != 0;
+            }
+        }
 
         self.chars = vec![None; MAX_CLIENTS];
         // C++: every DDNetCharacter of the snapshot, active or not (gameclient.cpp:1887);
@@ -806,6 +845,7 @@ impl Predictor {
         self.detect_air_jumps();
         self.new_tick = true;
         self.compare_with_server(tick);
+        self.is_dummy_swapping = false;
         self.update_prediction(items, tick, input_at);
     }
 
@@ -880,10 +920,12 @@ impl Predictor {
         true
     }
 
-    /// C++: "detect air jump for other players" of `OnNewSnapshot` (gameclient.cpp:2405)
-    /// without a dummy: the local tee only when not predicting.
+    /// C++: "detect air jump for other players" of `OnNewSnapshot` (gameclient.cpp:2405):
+    /// the local tee and, with antiping players, the dummy only when not predicting.
     fn detect_air_jumps(&mut self) {
         let predict = self.predict_on();
+        let antiping_players = self.antiping_players() != 0;
+        let dummy_id = self.other_local_id();
         for i in 0..MAX_CLIENTS {
             let Some(ch) = &self.chars[i] else {
                 continue;
@@ -891,7 +933,8 @@ impl Predictor {
             if ch.cur.jumped & 2 == 0 || ch.prev.jumped & 2 != 0 {
                 continue;
             }
-            if predict && i as i32 == self.local_id {
+            let is_dummy = self.dummy_connected && i as i32 == dummy_id;
+            if predict && (i as i32 == self.local_id || (antiping_players && is_dummy)) {
                 continue;
             }
             let prev = vec2(ch.prev.x as f32, ch.prev.y as f32);
@@ -1004,7 +1047,7 @@ impl Predictor {
         &mut self,
         items: &[Item],
         tick: i32,
-        input_at: &dyn Fn(i32) -> Option<ObjPlayerInput>,
+        input_at: &dyn Fn(i32, bool) -> Option<ObjPlayerInput>,
     ) {
         self.world.config.predict_freeze = self.config.predict_freeze != 0;
         self.world.config.predict_weapons = self.antiping_weapons();
@@ -1021,9 +1064,12 @@ impl Predictor {
         if local_char.cur.ammo_count > 0 && local_char.cur.weapon != g::WEAPON_NINJA {
             self.world.config.infinite_ammo = false;
         }
-        let collision = self.tuning.0[Param::PlayerCollision as usize] != 0;
-        let hooking = self.tuning.0[Param::PlayerHooking as usize] != 0;
+        let tuning = &self.tuning[self.dummy as usize];
+        let collision = tuning.0[Param::PlayerCollision as usize] != 0;
+        let hooking = tuning.0[Param::PlayerHooking as usize] != 0;
         self.world.config.is_solo = local_char.ext.is_none() && !collision && !hooking;
+        let dummy = self.predicted_dummy_id();
+        let has_dummy = |w: &GameWorld| dummy.is_some_and(|d| w.character(d).is_some());
 
         // update strong and weak hook
         let has_local = self.world.character(local).is_some();
@@ -1051,28 +1097,44 @@ impl Predictor {
         // advance the server world to the snapshot tick
         let pre = PreInputs {
             enabled: self.config.antiping_preinput,
-            local: self.local_id,
+            own: self.own_ids(),
             ring: &self.pre_inputs,
         };
+        let has_dummy = has_dummy(&self.world);
         if has_local && (self.world.game_tick - tick).abs() < TICK_SPEED {
             for t in self.world.game_tick + 1..=tick {
-                let input = input_at(t);
+                let input = input_at(t, false);
+                let dummy_input = dummy
+                    .filter(|_| has_dummy)
+                    .and_then(|d| Some((d, input_at(t, true)?)));
                 if let Some(input) = &input {
                     self.world.on_direct_input(local, input);
+                }
+                if let Some((d, input)) = &dummy_input {
+                    self.world.on_direct_input(*d, input);
                 }
                 pre.apply(t, true, &mut self.world);
                 self.world.game_tick = t;
                 if let Some(input) = &input {
                     self.world.on_predicted_input(local, input);
                 }
+                if let Some((d, input)) = &dummy_input {
+                    self.world.on_predicted_input(*d, input);
+                }
                 pre.apply(t, false, &mut self.world);
                 self.world.tick();
                 store_pred_pos(&mut self.pred_pos, &mut self.pred_pos_tick, &self.world, t);
             }
         } else {
+            // skip to current gametick
             self.world.game_tick = tick;
-            if let Some(input) = input_at(tick) {
+            if has_local && let Some(input) = input_at(tick, false) {
                 self.world.set_input(local, &input);
+            }
+            if let (Some(d), true) = (dummy, has_dummy)
+                && let Some(input) = input_at(tick, true)
+            {
+                self.world.set_input(d, &input);
             }
         }
         store_pred_pos(
@@ -1110,8 +1172,8 @@ impl Predictor {
                 ..
             }) = c
             {
-                self.world
-                    .net_char_add(i, cur, ext, game_team(i), i == local);
+                let is_local = i == local || dummy == Some(i);
+                self.world.net_char_add(i, cur, ext, game_team(i), is_local);
             }
         }
         // C++: SnapCollectEntities: entities sorted by id with their EntityEx
@@ -1146,9 +1208,10 @@ impl Predictor {
                     prev_ext: c.prev_ext,
                 };
                 let ch = (self.predicted_world.as_ref()).and_then(|w| w.character(i));
-                // C++ dummy branch not ported
+                let is_dummy = self.predicted_dummy_id() == Some(i);
                 let antiping_player = antiping_players == 1
-                    || (antiping_players >= 2 && ch.is_some_and(|(ch, _)| ch.interfering));
+                    || (antiping_players >= 2
+                        && (is_dummy || ch.is_some_and(|(ch, _)| ch.interfering)));
                 let local = i as i32 == self.local_id;
                 let Some((ch, _)) = ch else {
                     return Some(r);
@@ -1162,7 +1225,7 @@ impl Predictor {
                 write_core(&mut r.prev, &self.prev_predicted[i]);
                 r.predicted = true;
                 r.pos = mix(pos(&r.prev), pos(&r.cur), t.pred_intra_tick);
-                if local {
+                if local || is_dummy {
                     r.predicted_local = true;
                     // C++ m_NinjaJetpack is only set by the vanilla Read path (not ported)
                     let predicted_weapon = self.predicted[i].active_weapon;
@@ -1256,6 +1319,32 @@ impl Predictor {
     /// C++: `CGameClient::Predict()`.
     pub fn predict_on(&self) -> bool {
         self.config.predict && self.predicting
+    }
+
+    /// C++ `m_aLocalIds[!cl_dummy]`: the other own tee's id (-1 if unknown).
+    fn other_local_id(&self) -> i32 {
+        self.local_ids[!self.dummy as usize]
+    }
+
+    /// C++: `CGameClient::PredictDummy()`: the other own tee's id when it is predicted.
+    pub fn predicted_dummy_id(&self) -> Option<usize> {
+        let id = usize::try_from(self.other_local_id()).ok()?;
+        (self.config.predict_dummy
+            && self.dummy_connected
+            && self.local_id >= 0
+            && !self.paused.get(id).copied().unwrap_or(false))
+        .then_some(id)
+    }
+
+    /// C++ `ApplyPreInputs`' own tees: `m_aLocalIds[0]` and, with the dummy connected,
+    /// `m_aLocalIds[1]`.
+    fn own_ids(&self) -> [i32; 2] {
+        let dummy = if self.dummy_connected {
+            self.local_ids[1]
+        } else {
+            -1
+        };
+        [self.local_ids[0], dummy]
     }
 
     /// C++: `CGameClient::AntiPingPlayers()`: the `cl_antiping_players` mode, 0 if off.
@@ -1471,7 +1560,7 @@ impl Predictor {
 
     /// C++: `CGameClient::OnPredict` (called for sane prediction ticks only, see
     /// `update`).
-    pub fn predict(&mut self, t: &Timing, input_at: &dyn Fn(i32) -> Option<ObjPlayerInput>) {
+    pub fn predict(&mut self, t: &Timing, input_at: &dyn Fn(i32, bool) -> Option<ObjPlayerInput>) {
         let (cur, pred) = (t.game_tick, t.pred_tick);
         if self.local_char().is_none() {
             return;
@@ -1481,6 +1570,9 @@ impl Predictor {
             return;
         }
         let local = self.local_id as usize;
+        // C++: the tee whose effects fire (the active one, or the old one mid-swap)
+        let di = (self.dummy ^ self.is_dummy_swapping) as usize;
+        let swapping = self.is_dummy_swapping;
         let before = self.predicted_char;
         let before_render: Vec<Vec2> = (0..MAX_CLIENTS).map(|i| self.smooth_pos(i, t)).collect();
 
@@ -1505,11 +1597,15 @@ impl Predictor {
             self.predicted_world = Some(w);
             return;
         }
+        let dummy = self
+            .predicted_dummy_id()
+            .filter(|&d| w.character(d).is_some());
+        let antiping_players = self.antiping_players() != 0;
         let c = self.config;
         let prediction_tick = self.prediction_tick(t);
         let pre = PreInputs {
-            enabled: c.antiping_preinput,
-            local: self.local_id,
+            enabled: self.config.antiping_preinput,
+            own: self.own_ids(),
             ring: &self.pre_inputs,
         };
         for tick in cur + 1..=pred {
@@ -1521,10 +1617,12 @@ impl Predictor {
                     }
                 }
             }
-            if tick == pred
-                && let Some((_, core)) = w.character(local)
-            {
-                self.prev_predicted[local] = core.clone();
+            if tick == pred {
+                for id in std::iter::once(local).chain(dummy) {
+                    if let Some((_, core)) = w.character(id) {
+                        self.prev_predicted[id] = core.clone();
+                    }
+                }
             }
             // optionally allow some movement in freeze by not predicting freeze the last
             // one to two ticks
@@ -1535,14 +1633,25 @@ impl Predictor {
                 ch.can_move_in_freeze = true;
             }
             // apply inputs and tick
-            let input = input_at(tick);
+            let input = input_at(tick, swapping);
+            let dummy_input = dummy.and_then(|d| Some((d, input_at(tick, !swapping)?)));
+            let dummy_first = input.is_some() && dummy_input.is_some_and(|(d, _)| d < local);
+            if let (true, Some((d, i))) = (dummy_first, &dummy_input) {
+                w.on_direct_input(*d, i);
+            }
             if let Some(input) = &input {
                 w.on_direct_input(local, input);
+            }
+            if let (false, Some((d, i))) = (dummy_first, &dummy_input) {
+                w.on_direct_input(*d, i);
             }
             pre.apply(tick, true, &mut w);
             w.game_tick = tick;
             if let Some(input) = &input {
                 w.on_predicted_input(local, input);
+            }
+            if let Some((d, i)) = &dummy_input {
+                w.on_predicted_input(*d, i);
             }
             pre.apply(tick, false, &mut w);
             w.tick();
@@ -1564,11 +1673,16 @@ impl Predictor {
                     self.predicted[local] = core.clone();
                 }
             }
+            if tick == pred
+                && let Some((_, core)) = dummy.and_then(|d| w.character(d))
+            {
+                self.predicted[dummy.unwrap()] = core.clone();
+            }
             store_pred_pos(&mut self.pred_pos, &mut self.pred_pos_tick, &w, tick);
 
             // check if we want to trigger effects
-            if tick > self.last_new_predicted_tick {
-                self.last_new_predicted_tick = tick;
+            if tick > self.last_new_predicted_tick[di] {
+                self.last_new_predicted_tick[di] = tick;
                 if let Some((_, core)) = w.character(local) {
                     let (pos, events) = (core.pos, core.triggered_events);
                     let snd = c.snd_game;
@@ -1598,6 +1712,19 @@ impl Predictor {
                             );
                         }
                     }
+                }
+            }
+            // check if we want to trigger predicted airjump for dummy
+            if antiping_players && dummy.is_some() && tick > self.last_new_predicted_tick[di ^ 1] {
+                self.last_new_predicted_tick[di ^ 1] = tick;
+                if let Some((_, core)) = dummy.and_then(|d| w.character(d))
+                    && c.predict
+                    && c.snd_game
+                    && core.triggered_events & COREEVENT_AIR_JUMP != 0
+                {
+                    let pos = core.pos;
+                    self.sound_events
+                        .push(SoundEvent::World(SOUND_PLAYER_AIRJUMP, pos));
                 }
             }
             let out = &mut self.sound_events;
@@ -1653,7 +1780,8 @@ fn std_min(a: f32, b: f32) -> f32 {
 struct PreInputs<'a> {
     /// C++: `cl_antiping_preinput`.
     enabled: bool,
-    local: i32,
+    /// C++ `m_aLocalIds[0]` and, with the dummy connected, `m_aLocalIds[1]`.
+    own: [i32; 2],
     ring: &'a [Vec<MsgSvPreInput>],
 }
 
@@ -1663,8 +1791,7 @@ impl PreInputs<'_> {
             return;
         }
         for id in 0..MAX_CLIENTS {
-            // C++ dummy branch not ported (it skips the dummy's id too)
-            if world.character(id).is_none() || id as i32 == self.local {
+            if world.character(id).is_none() || self.own.contains(&(id as i32)) {
                 continue;
             }
             let Some(p) = pre_input(self.ring, id, tick) else {

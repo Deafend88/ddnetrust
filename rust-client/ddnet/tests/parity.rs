@@ -2070,10 +2070,12 @@ fn check_antiping(name: &str, map: &Map, col: Rc<Collision>, text: &str) {
     use ddnet::protocol::snapshot::Item;
     let empty = GameWorld::new(Rc::clone(&col), WorldConfig::default());
     let mut p: Option<Predictor> = None;
-    let mut inputs: BTreeMap<i32, ObjPlayerInput> = BTreeMap::new();
+    // the inputs sent on each connection (C++ m_aInputs), and cl_dummy
+    let mut inputs: [BTreeMap<i32, ObjPlayerInput>; 2] = Default::default();
+    let mut dummy = false;
     let (mut items, mut prev_items): (Vec<Item>, Vec<Item>) = (Vec::new(), Vec::new());
     let (mut tick, mut prev_tick) = (0, None);
-    let (mut frames, mut predicted, mut smoothed) = (0, 0, 0);
+    let (mut frames, mut predicted, mut smoothed, mut with_dummy) = (0, 0, 0, 0);
     let mut seen = [false; ddnet::physics::teams::MAX_CLIENTS];
     for (n, line) in text.lines().enumerate() {
         let (input, want) = line.split_once(" = ").unwrap_or((line, ""));
@@ -2098,10 +2100,19 @@ fn check_antiping(name: &str, map: &Map, col: Rc<Collision>, text: &str) {
                     snd_gun: v[12] != 0,
                     snd_long_pain: v[13] != 0,
                     predict_events: v[14] != 0,
+                    predict_dummy: v[17] != 0,
                     ..Default::default()
                 };
+                // C++ m_aLocalIds: the active tee's (also learned from the snapshots) and
+                // the dummy's
+                dummy = v[16] != 0;
+                (pr.dummy, pr.dummy_connected) = (dummy, v[15] != 0);
+                pr.local_ids[dummy as usize] = v[18];
+                if pr.dummy_connected {
+                    pr.local_ids[!dummy as usize] = v[19];
+                }
                 p = Some(pr);
-                inputs.clear();
+                inputs = Default::default();
                 items.clear();
                 seen = [false; ddnet::physics::teams::MAX_CLIENTS];
                 prev_tick = None;
@@ -2145,14 +2156,19 @@ fn check_antiping(name: &str, map: &Map, col: Rc<Collision>, text: &str) {
                 });
                 continue;
             }
-            "input" => {
-                inputs.insert(v[0], ObjPlayerInput::from_ints(&v[1..]));
+            "input" | "dinput" => {
+                let conn = dummy ^ (w[0] == "dinput");
+                inputs[conn as usize].insert(v[0], ObjPlayerInput::from_ints(&v[1..]));
                 continue;
             }
             _ => {}
         }
         let pr = p.as_mut().unwrap();
-        let input_at = |t: i32| inputs.range(..=t).next_back().map(|(_, i)| *i);
+        // C++ CClient::GetInput(tick, is_dummy)
+        let input_at = |t: i32, is_dummy: bool| {
+            let conn = (is_dummy ^ dummy) as usize;
+            inputs[conn].range(..=t).next_back().map(|(_, i)| *i)
+        };
         let mut frame = None;
         match w[0] {
             "update" => {
@@ -2173,12 +2189,14 @@ fn check_antiping(name: &str, map: &Map, col: Rc<Collision>, text: &str) {
                     pred_intra_tick: float(8),
                 };
                 pr.new_tick = w[9] == "1";
+                pr.is_dummy_swapping = w[10] == "1";
                 pr.intra_tick = t.intra_tick;
                 // CClient::Update: only sane predictions (MaxLatencyTicks 50)
                 if t.pred_tick > t.game_tick && t.pred_tick < t.game_tick + 50 {
                     let windows = pr.smooth_start.clone();
                     pr.predict(&t, &input_at);
                     predicted += 1;
+                    with_dummy += pr.predicted_dummy_id().is_some() as u32;
                     smoothed += (pr.smooth_start != windows) as u32;
                 }
                 frames += 1;
@@ -2209,8 +2227,8 @@ fn check_antiping(name: &str, map: &Map, col: Rc<Collision>, text: &str) {
         assert_eq!(got, want, "{name}:{}: {input}", n + 1);
     }
     assert!(
-        frames > 1000 && predicted * 10 > frames * 9 && smoothed > 20,
-        "{frames} {predicted} {smoothed}"
+        frames > 1000 && predicted * 10 > frames * 9 && smoothed > 20 && with_dummy > 200,
+        "{frames} {predicted} {smoothed} {with_dummy}"
     );
 }
 

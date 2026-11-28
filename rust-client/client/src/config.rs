@@ -89,6 +89,7 @@ pub struct Config {
     pub cl_antiping_preinput: i32,
     pub cl_prediction_margin: i32,
     pub cl_predict_freeze: i32,
+    pub cl_predict_dummy: i32,
     /// C++ chat (config_variables.h:90-93, 357, 409-414, 628-653, 743-747).
     pub cl_showchat: i32,
     /// C++ `cl_confirm_disconnect_time` (config_variables.h:753): minutes of race time
@@ -224,6 +225,7 @@ impl Default for Config {
             cl_antiping_preinput: 1,
             cl_prediction_margin: 10,
             cl_predict_freeze: 1,
+            cl_predict_dummy: 1,
             cl_showchat: 1,
             cl_confirm_disconnect_time: 20,
             cl_show_chat_friends: 0,
@@ -330,6 +332,7 @@ impl Config {
             snd_game: self.snd_game != 0,
             snd_gun: self.snd_gun != 0,
             snd_long_pain: self.snd_long_pain != 0,
+            predict_dummy: self.cl_predict_dummy != 0,
         }
     }
 
@@ -398,6 +401,7 @@ impl Config {
             "cl_antiping_preinput" => Int(&mut self.cl_antiping_preinput, 0, 1),
             "cl_prediction_margin" => Int(&mut self.cl_prediction_margin, 1, 300),
             "cl_predict_freeze" => Int(&mut self.cl_predict_freeze, 0, 2),
+            "cl_predict_dummy" => Int(&mut self.cl_predict_dummy, 0, 1),
             "cl_showchat" => Int(&mut self.cl_showchat, 0, 2),
             "cl_confirm_disconnect_time" => Int(&mut self.cl_confirm_disconnect_time, -1, 1440),
             "cl_show_chat_friends" => Int(&mut self.cl_show_chat_friends, 0, 1),
@@ -535,7 +539,7 @@ impl Config {
 }
 
 /// Every variable name `Config::var` knows.
-pub const VAR_NAMES: [&str; 119] = [
+pub const VAR_NAMES: [&str; 120] = [
     "player_name",
     "player_skin",
     "player_use_custom_color",
@@ -582,6 +586,7 @@ pub const VAR_NAMES: [&str; 119] = [
     "cl_antiping_preinput",
     "cl_prediction_margin",
     "cl_predict_freeze",
+    "cl_predict_dummy",
     "cl_showchat",
     "cl_confirm_disconnect_time",
     "cl_show_chat_friends",

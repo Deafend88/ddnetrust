@@ -106,8 +106,9 @@ public:
 	int m_PredGameTick = 0;
 	float m_IntraGameTick = 0.0f;
 	float m_PredIntraGameTick = 0.0f;
-	// the inputs sent, by tick
-	mutable std::map<int, CNetObj_PlayerInput> m_Inputs;
+	// the inputs sent on each connection, by tick
+	mutable std::map<int, CNetObj_PlayerInput> m_aInputs[2];
+	bool m_DummyConnected = false;
 
 	int GameTickSpeed() const { return SERVER_TICK_SPEED; }
 	int GameTick(int Conn) const { return m_GameTick; }
@@ -115,17 +116,19 @@ public:
 	int PredGameTick(int Conn) const { return m_PredGameTick; }
 	float IntraGameTick(int Conn) const { return m_IntraGameTick; }
 	float PredIntraGameTick(int Conn) const { return m_PredIntraGameTick; }
-	bool DummyConnected() const { return false; }
+	bool DummyConnected() const { return m_DummyConnected; }
 	int State() const { return IClient::STATE_ONLINE; }
 	// the current snapshot's items for ProcessEvents
 	std::vector<IClient::CSnapItem> m_vSnapItems;
 	int SnapNumItems(int SnapId) const { return (int)m_vSnapItems.size(); }
 	IClient::CSnapItem SnapGetItem(int SnapId, int Index) const { return m_vSnapItems[Index]; }
-	// C++ CClient::GetInput: the latest input sent for a tick at or before `Tick`
+	// C++ CClient::GetInput: the latest input sent for a tick at or before `Tick`, on the
+	// active connection or (IsDummy) the other one
 	int *GetInput(int Tick, int IsDummy = 0) const
 	{
-		auto It = m_Inputs.upper_bound(Tick);
-		if(It == m_Inputs.begin())
+		const std::map<int, CNetObj_PlayerInput> &Inputs = m_aInputs[IsDummy ^ g_Config.m_ClDummy];
+		auto It = Inputs.upper_bound(Tick);
+		if(It == Inputs.begin())
 			return nullptr;
 		return (int *)&std::prev(It)->second;
 	}
@@ -1254,6 +1257,7 @@ static int RsType(int Type)
 	switch(Type)
 	{
 	case NETOBJTYPE_DDNETCHARACTER: return 0x10001;
+	case NETOBJTYPE_DDNETPLAYER: return 0x10002;
 	case NETOBJTYPE_GAMEINFOEX: return 0x10003;
 	case NETOBJTYPE_DDNETLASER: return 0x10005;
 	case NETEVENTTYPE_MAPSOUNDWORLD: return 0x10011;
@@ -1670,6 +1674,11 @@ static int LoopMode(CCollision *pCollision, FILE *f)
 		g_Config.m_SndGun = Run % 5 != 1;
 		g_Config.m_SndLongPain = Run % 7 != 2;
 		g_Config.m_ClPredictEvents = Run % 8 != 7;
+		// a dummy in a third of the runs, half of those with the dummy as the active tee
+		const bool HasDummy = Run % 3 == 0;
+		g_Config.m_ClDummy = HasDummy && Run % 6 == 3;
+		g_Config.m_ClPredictDummy = Run % 9 != 6;
+		const int DummyId = aIds[1];
 		const bool Vanilla = Run % 4 == 3;
 		const bool TeamSplit = Run % 5 == 2 || Run % 5 == 4;
 		const int SoloId = Run % 5 == 3 ? aIds[1] : -1;
@@ -1679,10 +1688,11 @@ static int LoopMode(CCollision *pCollision, FILE *f)
 					   GAMEINFOFLAG_GAMETYPE_DDNET | GAMEINFOFLAG_PREDICT_DDRACE | GAMEINFOFLAG_PREDICT_DDRACE_TILES;
 		InfoEx.m_Flags2 = (Run % 7 == 3 ? GAMEINFOFLAG2_OLD_LASER : 0) | (Run % 7 == 5 ? GAMEINFOFLAG2_NO_WEAK_HOOK : 0) |
 				  (Run % 6 != 4 ? GAMEINFOFLAG2_PREDICT_EVENTS : 0);
-		fprintf(f, "run %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d\n", Run, Index, g_Config.m_ClAntiPing, g_Config.m_ClAntiPingPlayers,
+		fprintf(f, "run %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d\n", Run, Index, g_Config.m_ClAntiPing, g_Config.m_ClAntiPingPlayers,
 			g_Config.m_ClAntiPingWeapons, g_Config.m_ClAntiPingPreInput, g_Config.m_ClAntiPingSmooth, g_Config.m_ClAntiPingLimit,
 			g_Config.m_ClAntiPingPercent, g_Config.m_ClPredictFreeze, g_Config.m_ClAntiPingGrenade, g_Config.m_ClAntiPingGunfire,
-			g_Config.m_SndGun, g_Config.m_SndLongPain, g_Config.m_ClPredictEvents);
+			g_Config.m_SndGun, g_Config.m_SndLongPain, g_Config.m_ClPredictEvents, HasDummy, g_Config.m_ClDummy,
+			g_Config.m_ClPredictDummy, Local, DummyId);
 
 		// the server
 		CGameWorld Server;
@@ -1747,7 +1757,10 @@ static int LoopMode(CCollision *pCollision, FILE *f)
 		Gc.m_Teams.m_NumDDRaceTeams = Info.m_NumDDRaceTeams;
 		Gc.m_GameWorld.m_WorldConfig.m_UseTuneZones = Info.m_PredictDDRaceTiles;
 		Gc.m_Snap.m_LocalClientId = Local;
-		Gc.m_aLocalIds[0] = Local;
+		Gc.m_aLocalIds[g_Config.m_ClDummy] = Local;
+		if(HasDummy)
+			Gc.m_aLocalIds[!g_Config.m_ClDummy] = DummyId;
+		Gc.m_Client.m_DummyConnected = HasDummy;
 		if(TeamSplit)
 		{
 			// Sv_TeamsState
@@ -1788,6 +1801,11 @@ static int LoopMode(CCollision *pCollision, FILE *f)
 					if(Id == Local)
 					{
 						if(const int *pIn = Gc.Client()->GetInput(Tick))
+							mem_copy(&aIn[Id], pIn, sizeof(aIn[Id]));
+					}
+					else if(HasDummy && Id == DummyId)
+					{
+						if(const int *pIn = Gc.Client()->GetInput(Tick, 1))
 							mem_copy(&aIn[Id], pIn, sizeof(aIn[Id]));
 					}
 					else
@@ -1845,6 +1863,14 @@ static int LoopMode(CCollision *pCollision, FILE *f)
 			PlayerInfo.m_Local = 1;
 			PlayerInfo.m_ClientId = Local;
 			vItems.push_back({NETOBJTYPE_PLAYERINFO, Local, std::vector<int>((const int *)&PlayerInfo, (const int *)(&PlayerInfo + 1))});
+			if(HasDummy)
+			{
+				// the dummy pauses for a while in some runs (PredictDummy checks it)
+				CNetObj_DDNetPlayer Player = {};
+				Player.m_Flags = (Run % 2 == 0 && Snap >= 20 && Snap < 26) ? EXPLAYERFLAG_PAUSED : 0;
+				vItems.push_back({NETOBJTYPE_DDNETPLAYER, DummyId, std::vector<int>((const int *)&Player, (const int *)(&Player + 1))});
+				Gc.m_aClients[DummyId].m_Paused = Player.m_Flags & EXPLAYERFLAG_PAUSED;
+			}
 			// frozen tees for a while (the local one too: cl_predict_freeze 2)
 			for(int Id : aSorted)
 			{
@@ -1973,6 +1999,7 @@ static int LoopMode(CCollision *pCollision, FILE *f)
 			Gc.m_Client.m_GameTick = SnapTick;
 			Gc.m_NewTick = true;
 			Gc.DetectOtherAirJumps();
+			Gc.m_IsDummySwapping = 0; // OnNewSnapshot, before UpdatePrediction
 			Gc.UpdatePrediction();
 			fprintf(f, "update");
 			PrintState(f, Gc, aSeen, false);
@@ -2003,10 +2030,18 @@ static int LoopMode(CCollision *pCollision, FILE *f)
 				for(int Tick = SentUpTo + 1; Tick <= PredTick; Tick++)
 				{
 					const CNetObj_PlayerInput &In = aInputs[Local].At(Tick);
-					Gc.m_Client.m_Inputs[Tick] = In;
+					Gc.m_Client.m_aInputs[g_Config.m_ClDummy][Tick] = In;
 					fprintf(f, "input %d", Tick);
 					PrintInts(f, &In, sizeof(In) / sizeof(int));
 					fprintf(f, "\n");
+					if(HasDummy)
+					{
+						const CNetObj_PlayerInput &Dummy = aInputs[DummyId].At(Tick);
+						Gc.m_Client.m_aInputs[!g_Config.m_ClDummy][Tick] = Dummy;
+						fprintf(f, "dinput %d", Tick);
+						PrintInts(f, &Dummy, sizeof(Dummy) / sizeof(int));
+						fprintf(f, "\n");
+					}
 				}
 				SentUpTo = std::max(SentUpTo, PredTick);
 				// some frames come fast (high frame rates: smoothing windows last ~1 ms)
@@ -2014,13 +2049,15 @@ static int LoopMode(CCollision *pCollision, FILE *f)
 				s_Now = RunTime;
 				CClient &Client = Gc.m_Client;
 				Client.m_PredGameTick = PredTick;
-				Client.m_aGameTime[0].m_Value = (SnapTick - 1) * TickTime + Rand64() % TickTime;
+				Client.m_aGameTime[g_Config.m_ClDummy].m_Value = (SnapTick - 1) * TickTime + Rand64() % TickTime;
 				Client.m_PredictedTime.m_Value = (PredTick - 1) * TickTime + Rand64() % TickTime;
 				Client.m_IntraGameTick = (Rand() % 1001) / 1000.0f;
 				Client.m_PredIntraGameTick = (Rand() % 1001) / 1000.0f;
-				fprintf(f, "frame %d %d %d %lld %lld %lld %08x %08x %d", Client.m_GameTick, Client.m_PrevGameTick, Client.m_PredGameTick,
-					(long long)Client.m_aGameTime[0].m_Value, (long long)Client.m_PredictedTime.m_Value, (long long)s_Now,
-					Bits(Client.m_IntraGameTick), Bits(Client.m_PredIntraGameTick), Gc.m_NewTick);
+				// sometimes right after a swap (OnDummySwap; the next snapshot clears it)
+				Gc.m_IsDummySwapping = HasDummy && Rand() % 12 == 0;
+				fprintf(f, "frame %d %d %d %lld %lld %lld %08x %08x %d %d", Client.m_GameTick, Client.m_PrevGameTick, Client.m_PredGameTick,
+					(long long)Client.m_aGameTime[g_Config.m_ClDummy].m_Value, (long long)Client.m_PredictedTime.m_Value, (long long)s_Now,
+					Bits(Client.m_IntraGameTick), Bits(Client.m_PredIntraGameTick), Gc.m_NewTick, Gc.m_IsDummySwapping);
 				// CClient::Update: only sane predictions
 				const int MaxLatencyTicks = SERVER_TICK_SPEED + (10 * SERVER_TICK_SPEED) / 1000;
 				if(PredTick > SnapTick && PredTick < SnapTick + MaxLatencyTicks)
