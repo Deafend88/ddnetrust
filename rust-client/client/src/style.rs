@@ -82,6 +82,10 @@ pub mod size {
     pub const COVER_PLAYER: f32 = 56.0;
     /// The player's play/pause control.
     pub const CONTROL: f32 = 32.0;
+    /// Buttons of the Esc menu, larger: the game is paused behind it.
+    pub const CONTROL_LARGE: f32 = 48.0;
+    /// A tee in the Esc menu's player list.
+    pub const TEE_LARGE: f32 = 40.0;
 }
 
 /// Animation timing in seconds.

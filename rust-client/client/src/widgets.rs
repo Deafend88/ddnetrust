@@ -343,27 +343,40 @@ pub fn slider<N: egui::emath::Numeric>(
 
 /// A segmented control: one of `labels` selected.
 pub fn segmented(ui: &mut Ui, selected: &mut usize, labels: &[&str]) -> Response {
+    segmented_sized(ui, selected, labels, size::BODY, 0.0)
+}
+
+/// A segmented control with `text` sized labels, `height` tall at least.
+pub fn segmented_sized(
+    ui: &mut Ui,
+    selected: &mut usize,
+    labels: &[&str],
+    text: f32,
+    height: f32,
+) -> Response {
+    let pad = space::XS;
     Frame::new()
         .fill(color::SURFACE_RAISED)
         .corner_radius(CornerRadius::same(radius::PILL))
-        .inner_margin(Margin::same(space::XS as i8))
+        .inner_margin(Margin::same(pad as i8))
         .show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = space::XS;
+                ui.spacing_mut().item_spacing.x = pad;
                 let mut changed: Option<Response> = None;
                 let weak = ui.visuals().weak_text_color();
                 for (i, l) in labels.iter().enumerate() {
                     let on = *selected == i;
                     let b = egui::Button::new(
                         RichText::new(*l)
-                            .font(font(size::BODY, Weight::Medium))
+                            .font(font(text, Weight::Medium))
                             .color(if on { Color32::WHITE } else { weak }),
                     )
                     .fill(if on {
                         color::ACCENT
                     } else {
                         Color32::TRANSPARENT
-                    });
+                    })
+                    .min_size(egui::vec2(0.0, height - 2.0 * pad));
                     let r = ui.add(b);
                     if r.clicked() {
                         *selected = i;

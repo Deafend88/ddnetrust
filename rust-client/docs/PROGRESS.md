@@ -1395,10 +1395,17 @@ Sound works, asset pack switching works in the running client.
   tests (accept/reject rules, garbage).
 - Review: `docs/review/13.5/esc_0.png` (Game), `esc_1.png` (Players), `esc_2.png` (Info),
   made by `scripts/esc_menu_check.ps1` (local server, two bots, `--esc-tab N`).
+- Review rework (user, 2026-11-28): no "Esc to close" hint; larger controls (48 pt,
+  `size::CONTROL_LARGE`, 19 pt text, 21 pt icons); one full-width bar: tabs left, Game
+  actions centred on the bar (own row if they do not fit), icon buttons right; Players
+  and Info as a centred 960 pt panel under the bar (scrolls when taller than the
+  screen). Players: tee (40 pt), name and clan columns, toggles aligned. Info: Server
+  and Game as two equal columns of label/value rows, MOTD below. Insets 24 pt on all
+  sides, 12 pt between controls and rows. Captures in `docs/review/13.5/` redone.
 
 #### Exact next actions (next session starts here)
-State (2026-11-28): 13.5 done and pushed; stopped for the user's review of
-`docs/review/13.5/`. Then 13.6 (dummy).
+State (2026-11-28): 13.5 layout rework done and pushed; stopped for the user's review
+of `docs/review/13.5/`. Then 13.6 (dummy).
 Queued for the HUD polish (user, 2026-11-28; not now): an option to draw the race
 status's weapons in the pack's own colours instead of white silhouettes (thin custom-pack
 sprites become unreadable bars).

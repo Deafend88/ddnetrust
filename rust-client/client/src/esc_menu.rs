@@ -4,7 +4,7 @@
 //! tabs open a panel under the bar. Parts whose feature comes later stay hidden (Ghost
 //! 13.8, Vote 13.7, Record demo 13.8, Dummy 13.6, Browser M11; no editor).
 
-use egui::{Align, Align2, CornerRadius, Frame, Layout, Margin, RichText, Stroke, Ui};
+use egui::{Align, Align2, CornerRadius, Layout, Rect, RichText, Sense, Ui, UiBuilder};
 
 use ddnet::clients::Clients;
 use ddnet::net::serverinfo::{FLAG_PASSWORD, ServerInfo};
@@ -145,6 +145,8 @@ pub struct EscMenu {
     pub tab: usize,
     /// Disconnect asks first (C++ `PopupConfirm`).
     confirming: bool,
+    /// The Game tab's actions' width last frame, to centre them.
+    actions_width: f32,
 }
 
 /// What the bar shows.
@@ -165,9 +167,12 @@ pub struct View<'a> {
     pub confirm_disconnect: bool,
 }
 
-/// A rounded rectangle of glass (the bar and the tab panels).
+/// The tab panels' width at most.
+const PANEL_WIDTH: f32 = 960.0;
+
+/// A rounded rectangle of glass with the menu's inset on every side.
 fn card<R>(ui: &mut Ui, glass: Glass, add: impl FnOnce(&mut Ui) -> R) -> R {
-    w::card(ui, glass, space::M, add).inner
+    w::card(ui, glass, space::XL, add).inner
 }
 
 /// A pill button with an icon (`danger`: Disconnect's muted red).
@@ -178,23 +183,25 @@ fn pill_button(ui: &mut Ui, glyph: &str, label: &str, danger: bool) -> egui::Res
         (color::TEXT, color::SURFACE_RAISED)
     };
     let b = egui::Button::new((
-        RichText::new(glyph).font(icon_font(size::ICON)).color(text),
+        RichText::new(glyph)
+            .font(icon_font(size::ICON_LARGE))
+            .color(text),
         RichText::new(label)
-            .font(font(size::BODY, Weight::Medium))
+            .font(font(size::TITLE, Weight::Medium))
             .color(text),
     ))
     .fill(fill)
     .corner_radius(CornerRadius::same(radius::PILL))
-    .min_size(egui::vec2(0.0, size::CONTROL));
+    .min_size(egui::vec2(0.0, size::CONTROL_LARGE));
     ui.add(b)
 }
 
 /// A round icon button with a tooltip.
 fn round_button(ui: &mut Ui, glyph: &str, tooltip: &str) -> egui::Response {
-    let b = egui::Button::new(RichText::new(glyph).font(icon_font(size::ICON)))
+    let b = egui::Button::new(RichText::new(glyph).font(icon_font(size::ICON_LARGE)))
         .fill(color::SURFACE_RAISED)
         .corner_radius(CornerRadius::same(radius::PILL))
-        .min_size(egui::vec2(size::CONTROL, size::CONTROL));
+        .min_size(egui::vec2(size::CONTROL_LARGE, size::CONTROL_LARGE));
     ui.add(b).on_hover_text(tooltip)
 }
 
@@ -206,141 +213,172 @@ fn icon_toggle(ui: &mut Ui, glyph: &str, on: bool, enabled: bool, tooltip: &str)
     } else {
         color::TEXT_SECONDARY
     };
-    let b = egui::Button::new(RichText::new(glyph).font(icon_font(size::ICON)).color(c))
-        .frame(false)
-        .min_size(egui::vec2(size::CONTROL, size::CONTROL));
+    let b = egui::Button::new(
+        RichText::new(glyph)
+            .font(icon_font(size::ICON_LARGE))
+            .color(c),
+    )
+    .frame(false)
+    .min_size(egui::vec2(size::CONTROL_LARGE, size::CONTROL_LARGE));
     ui.add_enabled(enabled, b)
         .on_hover_text(tooltip)
         .on_disabled_hover_text(tooltip)
         .clicked()
 }
 
+/// A child of `ui` with `layout` inside `rect`; returns what it used.
+fn row_in<R>(ui: &mut Ui, rect: Rect, layout: Layout, add: impl FnOnce(&mut Ui) -> R) -> (R, Rect) {
+    let r = ui.scope_builder(UiBuilder::new().max_rect(rect).layout(layout), add);
+    (r.inner, r.response.rect)
+}
+
 impl EscMenu {
     /// Draws the bar (and the open tab's panel) and returns what was chosen.
     pub fn show(&mut self, ctx: &egui::Context, v: &mut View) -> Option<Action> {
         let mut action = None;
-        let width = ctx.content_rect().width() - 2.0 * space::L;
-        let bottom = egui::Area::new(egui::Id::unique("esc_menu"))
-            .anchor(Align2::CENTER_TOP, [0.0, space::L])
+        let screen = ctx.content_rect();
+        let width = screen.width() - 2.0 * space::XL;
+        let bar_bottom = egui::Area::new(egui::Id::unique("esc_menu"))
+            .anchor(Align2::CENTER_TOP, [0.0, space::XL])
             .show(ctx, |ui| {
                 ui.set_width(width);
-                ui.spacing_mut().item_spacing = egui::vec2(space::S, space::S);
                 card(ui, v.glass, |ui| {
-                    ui.set_width(width - 2.0 * space::M);
-                    ui.horizontal(|ui| {
-                        w::segmented(ui, &mut self.tab, &TABS);
-                        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                            if round_button(ui, icons::POWER, "Quit").clicked() {
-                                action = Some(Action::Quit);
-                            }
-                            if round_button(ui, icons::GEAR, "Settings").clicked() {
-                                action = Some(Action::Settings);
-                            }
-                            if round_button(ui, icons::MOVE, "Edit HUD").clicked() {
-                                action = Some(Action::EditHud);
-                            }
-                        });
-                    });
-                    if self.tab == 0 {
-                        ui.add_space(space::XS);
-                        action = action.or(self.game_row(ui, v));
-                    }
+                    ui.set_width(width - 2.0 * space::XL);
+                    action = self.bar(ui, v);
                 });
-                match self.tab {
-                    TAB_PLAYERS => card(ui, v.glass, |ui| {
-                        action = action.or(players(ui, v));
-                    }),
-                    TAB_INFO => card(ui, v.glass, |ui| info(ui, v)),
-                    _ => {}
-                }
             })
             .response
             .rect
             .bottom();
-        // the hint is centred under everything, as wide as its words
-        egui::Area::new(egui::Id::unique("esc_hint"))
-            .anchor(Align2::CENTER_TOP, [0.0, bottom + space::S])
-            .interactable(false)
-            .show(ctx, |ui| esc_hint(ui, v.glass));
+        if self.tab == 0 {
+            return action;
+        }
+        let panel_width = PANEL_WIDTH.min(width);
+        let top = bar_bottom - screen.top() + space::L;
+        // the panel ends an inset above the screen's bottom; longer content scrolls
+        let max_height = screen.height() - top - space::XL - 2.0 * space::XL;
+        egui::Area::new(egui::Id::unique("esc_panel"))
+            .anchor(Align2::CENTER_TOP, [0.0, top])
+            .show(ctx, |ui| {
+                // an Area offers last frame's size; the panel may grow up to its limit
+                let room = egui::vec2(panel_width, max_height + 2.0 * space::XL);
+                let rect = Rect::from_min_size(ui.max_rect().min, room);
+                ui.scope_builder(UiBuilder::new().max_rect(rect), |ui| {
+                    card(ui, v.glass, |ui| {
+                        ui.set_width(panel_width - 2.0 * space::XL);
+                        ui.spacing_mut().item_spacing = egui::vec2(space::M, space::M);
+                        egui::ScrollArea::vertical().max_height(max_height).show(
+                            ui,
+                            |ui| match self.tab {
+                                TAB_PLAYERS => action = action.or(players(ui, v)),
+                                TAB_INFO => info(ui, v),
+                                _ => {}
+                            },
+                        );
+                    });
+                });
+            });
         action
     }
-}
 
-impl EscMenu {
     /// Called when the menu opens: no question left open from before.
     pub fn reset(&mut self) {
         self.confirming = false;
     }
 
-    /// The Game tab's row: the C++ buttons as pills, a divider, Disconnect (with the
+    /// The bar: tabs on the left, icon buttons on the right, the Game tab's actions
+    /// centred on the bar between them (on a row of their own when they do not fit).
+    fn bar(&mut self, ui: &mut Ui, v: &View) -> Option<Action> {
+        let mut action = None;
+        ui.spacing_mut().item_spacing = egui::vec2(space::M, space::M);
+        ui.spacing_mut().button_padding = egui::vec2(space::L, space::S);
+        ui.spacing_mut().icon_spacing = space::S;
+        let h = size::CONTROL_LARGE;
+        let full = egui::vec2(ui.available_width(), h);
+        let (row, _) = ui.allocate_exact_size(full, Sense::hover());
+        let ltr = Layout::left_to_right(Align::Center);
+        // top-aligned: a Frame in a centred row lands its margin too low, and the
+        // control is as tall as the row anyway
+        let (_, tabs) = row_in(ui, row, Layout::left_to_right(Align::Min), |ui| {
+            w::segmented_sized(ui, &mut self.tab, &TABS, size::TITLE, h);
+        });
+        let (_, buttons) = row_in(ui, row, Layout::right_to_left(Align::Center), |ui| {
+            if round_button(ui, icons::POWER, "Quit").clicked() {
+                action = Some(Action::Quit);
+            }
+            if round_button(ui, icons::GEAR, "Settings").clicked() {
+                action = Some(Action::Settings);
+            }
+            if round_button(ui, icons::MOVE, "Edit HUD").clicked() {
+                action = Some(Action::EditHud);
+            }
+        });
+        if self.tab != 0 {
+            return action;
+        }
+        // centred by last frame's width; a changed width draws the frame again
+        let aw = self.actions_width;
+        let mut at = row;
+        at.min.x = row.center().x - aw / 2.0;
+        if at.min.x < tabs.right() + space::XL || at.min.x + aw > buttons.left() - space::XL {
+            (at, _) = ui.allocate_exact_size(full, Sense::hover());
+            at.min.x = (at.center().x - aw / 2.0).max(at.left());
+        }
+        let (a, used) = row_in(ui, at, ltr, |ui| self.game_row(ui, v));
+        if (used.width() - aw).abs() > 0.5 {
+            self.actions_width = used.width();
+            ui.ctx().request_discard("esc menu actions re-centred");
+        }
+        action.or(a)
+    }
+
+    /// The Game tab's actions: the C++ buttons as pills, a divider, Disconnect (with the
     /// C++ confirmation as Yes/No pills in its place).
     fn game_row(&mut self, ui: &mut Ui, v: &View) -> Option<Action> {
         let mut action = None;
-        ui.horizontal(|ui| {
-            for b in game_buttons(&v.game) {
-                let (glyph, label, a) = match b {
-                    GameButton::Spectate => (
-                        icons::BINOCULARS,
-                        "Spectate",
-                        Action::SetTeam(g::TEAM_SPECTATORS),
-                    ),
-                    GameButton::JoinRed => (icons::USERS, "Join red", Action::SetTeam(g::TEAM_RED)),
-                    GameButton::JoinBlue => {
-                        (icons::USERS, "Join blue", Action::SetTeam(g::TEAM_BLUE))
-                    }
-                    GameButton::JoinGame => {
-                        (icons::JOIN, "Join game", Action::SetTeam(g::TEAM_RED))
-                    }
-                    GameButton::Kill => (icons::RESPAWN, "Respawn", Action::Kill),
-                    GameButton::Pause => (icons::PAUSE_GAME, "Pause", Action::Pause),
-                    GameButton::Unpause => (icons::JOIN, "Join game", Action::Pause),
-                    // hidden until spectating lands (13.7)
-                    GameButton::AutoCamera => continue,
-                };
-                if pill_button(ui, glyph, label, false).clicked() {
-                    action = Some(a);
-                }
+        for b in game_buttons(&v.game) {
+            let (glyph, label, a) = match b {
+                GameButton::Spectate => (
+                    icons::BINOCULARS,
+                    "Spectate",
+                    Action::SetTeam(g::TEAM_SPECTATORS),
+                ),
+                GameButton::JoinRed => (icons::USERS, "Join red", Action::SetTeam(g::TEAM_RED)),
+                GameButton::JoinBlue => (icons::USERS, "Join blue", Action::SetTeam(g::TEAM_BLUE)),
+                GameButton::JoinGame => (icons::JOIN, "Join game", Action::SetTeam(g::TEAM_RED)),
+                GameButton::Kill => (icons::RESPAWN, "Respawn", Action::Kill),
+                GameButton::Pause => (icons::PAUSE_GAME, "Pause", Action::Pause),
+                GameButton::Unpause => (icons::JOIN, "Join game", Action::Pause),
+                // hidden until spectating lands (13.7)
+                GameButton::AutoCamera => continue,
+            };
+            if pill_button(ui, glyph, label, false).clicked() {
+                action = Some(a);
             }
-            ui.add(egui::Separator::default().vertical().spacing(space::M));
-            if self.confirming {
-                let weak = v.glass.text_secondary();
-                w::text(ui, "Disconnect?", size::BODY, Weight::Medium, weak);
-                if pill_button(ui, icons::DISCONNECT, "Yes", true).clicked() {
-                    action = Some(Action::Disconnect);
-                }
-                if pill_button(ui, icons::GAME, "No", false).clicked() {
-                    self.confirming = false;
-                }
-            } else if pill_button(ui, icons::DISCONNECT, "Disconnect", true).clicked() {
-                if v.confirm_disconnect {
-                    self.confirming = true;
-                } else {
-                    action = Some(Action::Disconnect);
-                }
+        }
+        ui.add(egui::Separator::default().vertical().spacing(space::M));
+        if self.confirming {
+            let weak = v.glass.text_secondary();
+            w::text(ui, "Disconnect?", size::TITLE, Weight::Medium, weak);
+            if pill_button(ui, icons::DISCONNECT, "Yes", true).clicked() {
+                action = Some(Action::Disconnect);
             }
-        });
+            if pill_button(ui, icons::GAME, "No", false).clicked() {
+                self.confirming = false;
+            }
+        } else if pill_button(ui, icons::DISCONNECT, "Disconnect", true).clicked() {
+            if v.confirm_disconnect {
+                self.confirming = true;
+            } else {
+                action = Some(Action::Disconnect);
+            }
+        }
         action
     }
 }
 
-/// The "Esc to close" hint under the bar: a key cap and the words.
-fn esc_hint(ui: &mut Ui, glass: Glass) {
-    w::glass_pill(ui, glass, false, |ui| {
-        ui.spacing_mut().item_spacing.x = space::S;
-        let weak = glass.text_secondary();
-        Frame::new()
-            .stroke(Stroke::new(1.0, weak))
-            .corner_radius(CornerRadius::same(radius::COVER))
-            .inner_margin(Margin::symmetric(space::XS as i8, 0))
-            .show(ui, |ui| {
-                w::text(ui, "Esc", size::CAPTION, Weight::Medium, weak)
-            });
-        w::text(ui, "to close", size::BODY, Weight::Regular, weak);
-    });
-}
-
-/// C++ `RenderPlayers` (menus_ingame.cpp:492): every other player by name with chat
-/// ignore and friend toggles.
+/// C++ `RenderPlayers` (menus_ingame.cpp:492): every other player with chat ignore and
+/// friend toggles, one row each: tee, name, clan and the toggles in fixed columns.
 fn players(ui: &mut Ui, v: &mut View) -> Option<Action> {
     let mut action = None;
     let local = v.clients.local_id;
@@ -348,143 +386,141 @@ fn players(ui: &mut Ui, v: &mut View) -> Option<Action> {
         .copied()
         .filter(|&id| id != local)
         .collect();
+    let weak = v.glass.text_secondary();
     if ids.is_empty() {
-        let weak = v.glass.text_secondary();
-        w::text(
-            ui,
-            "You are the only player here.",
-            size::BODY,
-            Weight::Regular,
-            weak,
-        );
+        let s = "You are the only player here.";
+        w::text(ui, s, size::TITLE, Weight::Regular, weak);
         return None;
     }
-    egui::ScrollArea::vertical()
-        .max_height(ui.ctx().content_rect().height() / 2.0)
-        .show(ui, |ui| {
-            egui::Grid::new("esc_players")
-                .num_columns(4)
-                .spacing([space::L, space::XS])
-                .show(ui, |ui| {
-                    for id in ids {
-                        let c = &v.clients.clients[id as usize];
-                        let look = TeeLook {
-                            skin: c.skin.clone(),
-                            custom_color: c.use_custom_color != 0,
-                            color_body: c.color_body,
-                            color_feet: c.color_feet,
-                        };
-                        let ctx = ui.ctx().clone();
-                        match v.heads.get(&ctx, &look) {
-                            Some(t) => {
-                                let img =
-                                    egui::Image::new((t.id(), egui::vec2(size::TEE, size::TEE)));
-                                ui.add(img).on_hover_text(&c.skin);
-                            }
-                            None => {
-                                ui.label("");
-                            }
-                        }
-                        ui.horizontal(|ui| {
-                            w::text(ui, &c.name, size::BODY, Weight::Medium, color::TEXT);
-                            if !c.clan.is_empty() {
-                                let weak = v.glass.text_secondary();
-                                w::text(ui, &c.clan, size::BODY, Weight::Regular, weak);
-                            }
-                        });
-                        // C++: with cl_show_chat_friends only friends' chat shows anyway
-                        if v.show_chat_friends && !c.friend {
-                            icon_toggle(ui, icons::CHAT_OFF, true, false, "Ignore chat");
-                        } else if icon_toggle(
-                            ui,
-                            icons::CHAT_OFF,
-                            c.chat_ignore,
-                            true,
-                            "Ignore chat",
-                        ) {
-                            action = Some(Action::ToggleChatIgnore(id));
-                        }
-                        if icon_toggle(ui, icons::FRIEND, c.friend, true, "Friend") {
-                            action = Some(Action::ToggleFriend(id));
-                        }
-                        ui.end_row();
-                    }
+    let h = size::CONTROL_LARGE;
+    // tee, name, clan, two toggles, with the row's gap between them
+    let text_w = ui.available_width() - size::TEE_LARGE - 2.0 * h - 4.0 * space::M;
+    let ltr = Layout::left_to_right(Align::Center);
+    for (i, id) in ids.into_iter().enumerate() {
+        if i > 0 {
+            ui.separator();
+        }
+        let c = &v.clients.clients[id as usize];
+        ui.horizontal(|ui| {
+            let look = TeeLook {
+                skin: c.skin.clone(),
+                custom_color: c.use_custom_color != 0,
+                color_body: c.color_body,
+                color_feet: c.color_feet,
+            };
+            let ctx = ui.ctx().clone();
+            let tee = egui::vec2(size::TEE_LARGE, size::TEE_LARGE);
+            match v.heads.get(&ctx, &look) {
+                Some(t) => {
+                    ui.add(egui::Image::new((t.id(), tee)))
+                        .on_hover_text(&c.skin);
+                }
+                None => {
+                    ui.allocate_exact_size(tee, Sense::hover());
+                }
+            }
+            // name and clan: 60/40 of the text width, long ones cut short
+            for (s, width, weight, col) in [
+                (&c.name, text_w * 0.6, Weight::Medium, color::TEXT),
+                (&c.clan, text_w * 0.4, Weight::Regular, weak),
+            ] {
+                ui.allocate_ui_with_layout(egui::vec2(width, h), ltr, |ui| {
+                    ui.set_min_width(width);
+                    let t = RichText::new(s).font(font(size::TITLE, weight)).color(col);
+                    ui.add(egui::Label::new(t).truncate());
                 });
+            }
+            // C++: with cl_show_chat_friends only friends' chat shows anyway
+            if v.show_chat_friends && !c.friend {
+                icon_toggle(ui, icons::CHAT_OFF, true, false, "Ignore chat");
+            } else if icon_toggle(ui, icons::CHAT_OFF, c.chat_ignore, true, "Ignore chat") {
+                action = Some(Action::ToggleChatIgnore(id));
+            }
+            if icon_toggle(ui, icons::FRIEND, c.friend, true, "Friend") {
+                action = Some(Action::ToggleFriend(id));
+            }
         });
+    }
     action
 }
 
-/// C++ `RenderServerInfo` (menus_ingame.cpp:622): server, game, MOTD.
+/// C++ `RenderServerInfo` (menus_ingame.cpp:622): Server and Game side by side, the MOTD
+/// below.
 fn info(ui: &mut Ui, v: &View) {
     let weak = v.glass.text_secondary();
-    // label rows as tall as their text, like the plain lines
-    ui.spacing_mut().interact_size.y = 0.0;
-    let line = |ui: &mut Ui, label: &str, value: &str| {
-        ui.horizontal(|ui| {
-            w::text(ui, label, size::BODY, Weight::Regular, weak);
-            w::text(ui, value, size::BODY, Weight::Medium, color::TEXT);
-        });
-    };
     let empty = ServerInfo::default();
     let s = v.server.unwrap_or(&empty);
-    ui.horizontal_top(|ui| {
-        ui.vertical(|ui| {
-            w::text(ui, "Server", size::TITLE, Weight::SemiBold, color::TEXT);
-            w::text(ui, &s.name, size::BODY, Weight::Medium, color::TEXT);
-            line(ui, "Address", v.address);
-            if let Some(ping) = local_latency(v.clients) {
-                line(ui, "Ping", &ping.to_string());
-            }
-            line(ui, "Version", &s.version);
-            let password = if s.flags & FLAG_PASSWORD != 0 {
-                "Yes"
-            } else {
-                "No"
-            };
-            line(ui, "Password", password);
-            ui.add_space(space::S);
-            // C++ "Copy info"
-            if w::button(ui, Some(icons::COPY), "Copy info").clicked() {
-                ui.ctx().copy_text(format!(
-                    "{}\nAddress: ddnet://{}\nMy IGN: {}\n",
-                    s.name, v.address, v.player_name
-                ));
-            }
-        });
-        ui.add_space(space::XXL);
-        ui.vertical(|ui| {
-            w::text(ui, "Game", size::TITLE, Weight::SemiBold, color::TEXT);
-            line(ui, "Game type", &s.game_type);
-            line(ui, "Map", if s.map.is_empty() { v.map } else { &s.map });
-            if let Some(gi) = v.game_info {
-                if gi.score_limit != 0 {
-                    line(ui, "Score limit", &gi.score_limit.to_string());
+    let heading = |ui: &mut Ui, t: &str| w::text(ui, t, size::LARGE, Weight::SemiBold, color::TEXT);
+    // label and value columns, every row the same gap apart
+    let table = |ui: &mut Ui, id: &str, rows: &[(&str, String)]| {
+        egui::Grid::new(id)
+            .num_columns(2)
+            .spacing([space::L, space::M])
+            .show(ui, |ui| {
+                for (label, value) in rows {
+                    w::text(ui, label, size::TITLE, Weight::Regular, weak);
+                    w::text(ui, value, size::TITLE, Weight::Medium, color::TEXT);
+                    ui.end_row();
                 }
-                if gi.time_limit != 0 {
-                    line(ui, "Time limit", &format!("{} min", gi.time_limit));
-                }
-                if gi.round_current != 0 && gi.round_num != 0 {
-                    line(
-                        ui,
-                        "Round",
-                        &format!("{}/{}", gi.round_current, gi.round_num),
-                    );
-                }
+            });
+    };
+    ui.columns(2, |cols| {
+        let ui = &mut cols[0];
+        ui.spacing_mut().item_spacing = egui::vec2(space::M, space::M);
+        heading(ui, "Server");
+        let mut rows = vec![("Name", s.name.clone()), ("Address", v.address.to_owned())];
+        if let Some(ping) = local_latency(v.clients) {
+            rows.push(("Ping", ping.to_string()));
+        }
+        rows.push(("Version", s.version.clone()));
+        let password = if s.flags & FLAG_PASSWORD != 0 {
+            "Yes"
+        } else {
+            "No"
+        };
+        rows.push(("Password", password.to_owned()));
+        table(ui, "esc_info_server", &rows);
+        // C++ "Copy info"
+        ui.spacing_mut().button_padding = egui::vec2(space::L, space::S);
+        ui.spacing_mut().icon_spacing = space::S;
+        let copy = egui::Button::new((
+            RichText::new(icons::COPY).font(icon_font(size::ICON_LARGE)),
+            RichText::new("Copy info").font(font(size::TITLE, Weight::Medium)),
+        ))
+        .fill(color::SURFACE_RAISED)
+        .corner_radius(CornerRadius::same(radius::PILL))
+        .min_size(egui::vec2(0.0, size::CONTROL_LARGE));
+        if ui.add(copy).clicked() {
+            ui.ctx().copy_text(format!(
+                "{}\nAddress: ddnet://{}\nMy IGN: {}\n",
+                s.name, v.address, v.player_name
+            ));
+        }
+
+        let ui = &mut cols[1];
+        ui.spacing_mut().item_spacing = egui::vec2(space::M, space::M);
+        heading(ui, "Game");
+        let map = if s.map.is_empty() { v.map } else { &s.map };
+        let mut rows = vec![("Game type", s.game_type.clone()), ("Map", map.to_owned())];
+        if let Some(gi) = v.game_info {
+            if gi.score_limit != 0 {
+                rows.push(("Score limit", gi.score_limit.to_string()));
             }
-        });
+            if gi.time_limit != 0 {
+                rows.push(("Time limit", format!("{} min", gi.time_limit)));
+            }
+            if gi.round_current != 0 && gi.round_num != 0 {
+                rows.push(("Round", format!("{}/{}", gi.round_current, gi.round_num)));
+            }
+        }
+        table(ui, "esc_info_game", &rows);
     });
     if !v.motd.is_empty() {
-        ui.add_space(space::M);
-        w::text(
-            ui,
-            "Message of the day",
-            size::TITLE,
-            Weight::SemiBold,
-            color::TEXT,
-        );
+        ui.separator();
+        heading(ui, "Message of the day");
         ui.label(
             RichText::new(v.motd)
-                .font(font(size::BODY, Weight::Regular))
+                .font(font(size::TITLE, Weight::Regular))
                 .color(color::TEXT),
         );
     }
