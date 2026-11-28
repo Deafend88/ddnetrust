@@ -1482,9 +1482,20 @@ Sound works, asset pack switching works in the running client.
 
 13.6 done.
 
+#### 13.7 (2026-11-28): votes, spectate, kill, pause, emotes — in progress
+- Piece a, votes: `client/src/vote.rs` ports `CVoting` (`OnMessage`, the option list
+  with C++'s 63-byte cut and first-match removal, `SecondsLeft`); `Client::call_vote`
+  and `vote`; the `vote`, `callvote` and `kill` commands (F3/F4 and K now work).
+  Verified: `rs_parity votes` (new `src/tools/rs_parity_votes.cpp`, 5 copies; 68 checked
+  now): 6,000 random vote messages (spaces, multi-byte, over-long strings), the whole
+  state after each identical (`client/tests/vote.rs`); 5 of 5 mutations caught. Live
+  `votes_reach_server`: the option list arrives, a call is seen by the other player,
+  whose yes passes it. Not yet: the vote notice and the Vote tab (UI), the
+  rcon-authed notification (with rcon, 13.9).
+
 #### Exact next actions (next session starts here)
-State (2026-11-28): 13.6 done and pushed; 13.7 (votes, spectate, kill, pause, emotes) next,
-then stop for the user's review.
+State (2026-11-28): 13.6 done; 13.7 piece a (votes logic) pushed. Next: the vote notice
+and Vote tab (UI), spectating, emotes; then stop for the user's review.
 Queued for the HUD polish (user, 2026-11-28; not now): an option to draw the race
 status's weapons in the pack's own colours instead of white silhouettes (thin custom-pack
 sprites become unreadable bars).
@@ -1587,6 +1598,7 @@ Build the `rs_parity` target like `rs_golden`, then per map (repo root):
     build-rs/rs_parity.exe movement rust-client/tests/golden/movement.txt
     build-rs/rs_parity.exe chat rust-client/tests/golden/chat.txt
     build-rs/rs_parity.exe dummy rust-client/tests/golden/dummy.txt
+    build-rs/rs_parity.exe votes rust-client/tests/golden/votes.txt
     build-rs/rs_parity.exe menus rust-client/tests/golden/menus.txt
     build-rs/rs_parity.exe wv rust-client/tests/golden/wv.txt data/audio
     build-rs/rs_parity.exe mixer rust-client/tests/golden/mixer.txt data/audio

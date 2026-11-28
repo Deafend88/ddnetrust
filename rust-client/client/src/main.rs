@@ -134,6 +134,8 @@ struct Session {
     motd: String,
     /// C++ `m_LastRaceTick` (for `cl_confirm_disconnect_time`).
     last_race_tick: i32,
+    /// C++ `CVoting`.
+    voting: ddnet_rs::vote::Voting,
 }
 
 impl Session {
@@ -163,6 +165,7 @@ impl Session {
             online: false,
             motd: String::new(),
             last_race_tick: -1,
+            voting: Default::default(),
         })
     }
 
@@ -856,6 +859,19 @@ impl App {
                     // C++: CClient::Con_DummyConnect, Con_DummyDisconnect, Con_DummyResetInput
                     "dummy_connect" => dummy_connect(s, &mut self.settings.config, now),
                     "dummy_disconnect" => s.client.dummy_disconnect(None, now),
+                    // C++: CGameClient::ConKill, CVoting::ConVote, ConCallvote
+                    "kill" => s.client.send_kill(now),
+                    "vote" if ddnet_rs::config::parse_args(&args, "r", &mut a) => {
+                        if a[0].eq_ignore_ascii_case("yes") {
+                            s.client.vote(1, now);
+                        } else if a[0].eq_ignore_ascii_case("no") {
+                            s.client.vote(-1, now);
+                        }
+                    }
+                    "callvote" if ddnet_rs::config::parse_args(&args, "s s ?r", &mut a) => {
+                        let reason = a.get(2).map_or("", String::as_str);
+                        s.client.call_vote(&a[0], &a[1], reason, now);
+                    }
                     "dummy_reset" => {
                         if s.client.dummy_connected() {
                             s.controls.dummy_reset(&mut s.client.dummy_snap.input);
@@ -1134,6 +1150,7 @@ impl App {
                 }
             }
             for msg in &events {
+                s.voting.on_message(msg, now);
                 // C++: Sv_Record / Sv_RecordLegacy carry the map's best time
                 let cfg = &self.settings.config;
                 match msg {

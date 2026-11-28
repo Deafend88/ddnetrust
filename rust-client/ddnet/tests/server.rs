@@ -1233,3 +1233,98 @@ fn prediction_matches_server_with_dummy() {
     }
     drop(server);
 }
+
+/// 13.7: votes like C++ `CVoting`: the server's option list arrives, one player calls an
+/// option vote (`Cl_CallVote`), the other sees it (`Sv_VoteSet`) and votes yes
+/// (`Cl_Vote`): the vote passes.
+#[test]
+fn votes_reach_server() {
+    let Some(exe) = server_binary() else {
+        eprintln!("SKIPPED: no DDNet-Server (set DDNET_SERVER or build the game-server target)");
+        return;
+    };
+    let args = ["add_vote \"Say hi\" \"say hi\"", "sv_vote_spectate 0"];
+    let (server, port) = start_server_with(&exe, "dm1", &[], &args);
+    let addr = format!("127.0.0.1:{port}").parse().unwrap();
+    let sockets = [
+        net::connect_socket(addr).unwrap(),
+        net::connect_socket(addr).unwrap(),
+    ];
+    let start = Instant::now();
+    let mut clients = [0, 1].map(|i| {
+        let name = format!("voter{i}");
+        let mut c = Client::new(
+            PlayerInfo {
+                name,
+                ..PlayerInfo::default()
+            },
+            "",
+            net::random_bytes,
+        );
+        c.connect(net::now(start));
+        c
+    });
+    let mut log: [Vec<g::GameMsg>; 2] = Default::default();
+    let run = |clients: &mut [Client; 2], log: &mut [Vec<g::GameMsg>; 2], ms: u64| {
+        let deadline = Instant::now() + Duration::from_millis(ms);
+        while Instant::now() < deadline {
+            for i in 0..2 {
+                net::pump(&sockets[i], &mut clients[i], net::now(start)).unwrap();
+                log[i].append(&mut clients[i].messages);
+            }
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    };
+    // the server's data autoexec adds the map votes first; ours comes last
+    let has_option = |log: &[g::GameMsg]| {
+        log.iter().any(|m| match m {
+            g::GameMsg::SvVoteOptionListAdd(l) => {
+                let all = [
+                    &l.description0,
+                    &l.description1,
+                    &l.description2,
+                    &l.description3,
+                    &l.description4,
+                    &l.description5,
+                    &l.description6,
+                    &l.description7,
+                    &l.description8,
+                    &l.description9,
+                    &l.description10,
+                    &l.description11,
+                    &l.description12,
+                    &l.description13,
+                    &l.description14,
+                ];
+                all[..l.num_options as usize].iter().any(|d| *d == "Say hi")
+            }
+            g::GameMsg::SvVoteOptionAdd(o) => o.description == "Say hi",
+            _ => false,
+        })
+    };
+    for _ in 0..30 {
+        run(&mut clients, &mut log, 500);
+        if has_option(&log[0]) {
+            break;
+        }
+    }
+    assert!(clients.iter().all(|c| local_x(c).is_some()), "both joined");
+    assert!(has_option(&log[0]), "the option list arrived");
+    clients[0].call_vote("option", "Say hi", "", net::now(start));
+    run(&mut clients, &mut log, 1000);
+    let set = log[1].iter().any(
+        |m| matches!(m, g::GameMsg::SvVoteSet(s) if s.timeout > 0 && s.description == "Say hi"),
+    );
+    assert!(set, "the other player sees the vote");
+    clients[1].vote(1, net::now(start));
+    run(&mut clients, &mut log, 1500);
+    let passed = log[1]
+        .iter()
+        .any(|m| matches!(m, g::GameMsg::SvChat(c) if c.message == "Vote passed"));
+    assert!(
+        passed,
+        "{}",
+        fs::read_to_string(server.dir.join("server.log")).unwrap()
+    );
+    drop(server);
+}

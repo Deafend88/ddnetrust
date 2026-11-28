@@ -38,6 +38,7 @@ pub mod style;
 pub mod teehead;
 pub mod timefmt;
 pub mod ui;
+pub mod vote;
 pub mod watermark;
 pub mod wavpack;
 pub mod widgets;

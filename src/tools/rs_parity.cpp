@@ -116,6 +116,7 @@ int ChatMode(const char *pOutFile); // rs_parity_chat.cpp
 int ScoreboardMode(const char *pOutFile); // rs_parity_scoreboard.cpp
 int MenusMode(const char *pOutFile); // rs_parity_menus.cpp
 int DummyMode(const char *pOutFile); // rs_parity_dummy.cpp
+int VotesMode(const char *pOutFile); // rs_parity_votes.cpp
 int WvMode(const char *pOutFile, int NumDirs, const char *const *ppDirs); // rs_parity_sound.cpp
 int OpusMode(const char *pOutDir, const char *pDir); // rs_parity_sound.cpp
 int MixerMode(const char *pOutFile, const char *pAudioDir); // rs_parity_sound.cpp
@@ -3106,6 +3107,8 @@ int main(int argc, const char **argv)
 		return MenusMode(argv[2]);
 	if(argc == 3 && str_comp(argv[1], "dummy") == 0)
 		return DummyMode(argv[2]);
+	if(argc == 3 && str_comp(argv[1], "votes") == 0)
+		return VotesMode(argv[2]);
 	if(argc >= 4 && str_comp(argv[1], "wv") == 0)
 		return WvMode(argv[2], argc - 3, argv + 3);
 	if(argc == 4 && str_comp(argv[1], "opus") == 0)
@@ -3149,6 +3152,6 @@ int main(int argc, const char **argv)
 			return CoreMode(argv[2], argv[3], HookTele, Verbose);
 		return CollisionMode(argv[2], argv[3], HookTele, Verbose);
 	}
-	log_error(TOOL_NAME, "Usage: %s map <map file> <output file> <scratch dir> | collision|core|world|weapons <map file> <output file> [hooktele] [verbose] | doors|netents|mapimages|envelopes|items|msgs|antiping <map file> <output file> | envelopes-synthetic|screen|anims|colors|interp|camera|movement|antiping-timing|chat|scoreboard|menus|dummy <output file> | wv <output file> <dir>... | opus <output dir> <dir> | mixer <output file> <audio dir> | assets|entities <output file> <root>... | png <output file> <dir>... | skins <output file> <dir>", argc > 0 ? argv[0] : TOOL_NAME);
+	log_error(TOOL_NAME, "Usage: %s map <map file> <output file> <scratch dir> | collision|core|world|weapons <map file> <output file> [hooktele] [verbose] | doors|netents|mapimages|envelopes|items|msgs|antiping <map file> <output file> | envelopes-synthetic|screen|anims|colors|interp|camera|movement|antiping-timing|chat|scoreboard|menus|dummy|votes <output file> | wv <output file> <dir>... | opus <output dir> <dir> | mixer <output file> <audio dir> | assets|entities <output file> <root>... | png <output file> <dir>... | skins <output file> <dir>", argc > 0 ? argv[0] : TOOL_NAME);
 	return -1;
 }

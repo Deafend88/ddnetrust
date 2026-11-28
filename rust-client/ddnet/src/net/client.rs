@@ -959,6 +959,25 @@ impl Client {
         }
     }
 
+    /// C++: `CVoting::Callvote` (voting.cpp:33): `kind` "option", "kick" or "spectate".
+    pub fn call_vote(&mut self, kind: &str, value: &str, reason: &str, now: i64) {
+        let mut p = Packer::default();
+        g::MsgClCallVote {
+            type_: kind.into(),
+            value: value.into(),
+            reason: reason.into(),
+        }
+        .pack(&mut p);
+        self.send_active(g::MsgClCallVote::ID, &p, now);
+    }
+
+    /// C++: `CVoting::Vote`: 1 yes, -1 no.
+    pub fn vote(&mut self, vote: i32, now: i64) {
+        let mut p = Packer::default();
+        g::MsgClVote { vote }.pack(&mut p);
+        self.send_active(g::MsgClVote::ID, &p, now);
+    }
+
     /// C++: `SendPackMsgActive(.., MSGFLAG_VITAL)` for a game message.
     fn send_active(&mut self, id: i32, body: &Packer, now: i64) {
         self.send_msg(self.dummy as usize, id, false, body, true, false, now);
