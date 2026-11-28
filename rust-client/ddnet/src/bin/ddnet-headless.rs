@@ -28,7 +28,7 @@ fn main() {
     let mut args = std::env::args().skip(1);
     let Some(server) = args.next().and_then(|a| a.parse::<SocketAddr>().ok()) else {
         eprintln!(
-            "usage: ddnet-headless <server ip:port> [--name NAME] [--seconds N] [--walk SECONDS] [--script] [--fire WEAPON] [--aim X,Y] [--say TEXT]"
+            "usage: ddnet-headless <server ip:port> [--name NAME] [--seconds N] [--walk SECONDS] [--script] [--fire WEAPON] [--aim X,Y] [--say TEXT] [--from LOOPBACK_IP]"
         );
         std::process::exit(2);
     };
@@ -40,6 +40,7 @@ fn main() {
     let (mut seconds, mut walk, mut script, mut fire) = (10i64, 0i64, false, None::<i32>);
     let mut aim = None::<(i32, i32)>;
     let mut say = None::<String>;
+    let mut from = None::<std::net::IpAddr>;
     while let Some(flag) = args.next() {
         let mut value = || args.next().unwrap_or_default();
         match flag.as_str() {
@@ -49,6 +50,12 @@ fn main() {
             "--script" => script = true,
             "--fire" => fire = Some(value().parse().expect("--fire WEAPON")),
             "--say" => say = Some(value()),
+            // another loopback source address: the server counts one vote per IP
+            "--from" => {
+                let ip: std::net::IpAddr = value().parse().expect("--from IP");
+                assert!(ip.is_loopback(), "--from takes a loopback address");
+                from = Some(ip);
+            }
             "--aim" => {
                 let v = value();
                 let (x, y) = v.split_once(',').expect("--aim X,Y");
@@ -59,7 +66,15 @@ fn main() {
     }
 
     println!("{VERSION_STRING} connecting to {server}");
-    let socket = net::connect_socket(server).expect("socket");
+    let socket = match from {
+        Some(ip) => {
+            let s = std::net::UdpSocket::bind((ip, 0)).expect("socket");
+            s.connect(server).expect("socket");
+            s.set_nonblocking(true).expect("socket");
+            s
+        }
+        None => net::connect_socket(server).expect("socket"),
+    };
     let start = Instant::now();
     let mut client = Client::new(player, "", net::random_bytes);
     client.connect(net::now(start));

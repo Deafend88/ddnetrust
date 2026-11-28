@@ -11,6 +11,7 @@
 #include <base/time.h>
 
 #include <engine/client.h>
+#include <engine/shared/config.h>
 #include <engine/shared/protocol.h>
 
 #include <game/voting.h>
@@ -51,9 +52,16 @@ struct CSounds
 	void Play(int, int, float) {}
 };
 
+struct CScoreboardStub
+{
+	bool m_Active = false;
+	bool IsActive() const { return m_Active; }
+};
+
 struct CGameClientStub
 {
 	CSounds m_Sounds;
+	CScoreboardStub m_Scoreboard;
 };
 
 class CVoting
@@ -83,7 +91,40 @@ public:
 	void ClearOptions();
 	void OnReset();
 	void OnMessage(int MsgType, void *pRawMsg);
+	int SecondsLeft() const;
+// C++ copy: game/client/components/voting.h:60-61
+	bool IsVoting() const { return m_Closetime != 0; }
+	int TakenChoice() const { return m_Voted; }
+// end of copy
+	// the first lines of Render: true when it got past them
+	bool RenderHead();
 };
+
+// C++ copy: game/client/components/voting.cpp:150-153
+int CVoting::SecondsLeft() const
+{
+	return (m_Closetime - time()) / time_freq();
+}
+// end of copy
+
+bool CVoting::RenderHead()
+{
+	bool Shown = false;
+	[&]() {
+// C++ copy: game/client/components/voting.cpp:340-347
+	if((!g_Config.m_ClShowVotesAfterVoting && !GameClient()->m_Scoreboard.IsActive() && TakenChoice()) || !IsVoting())
+		return;
+	const int Seconds = SecondsLeft();
+	if(Seconds < 0)
+	{
+		OnReset();
+		return;
+	}
+// end of copy
+		Shown = true;
+	}();
+	return Shown;
+}
 
 // C++ copy: game/client/components/voting.cpp:161-189
 void CVoting::AddOption(const char *pDescription)
@@ -413,6 +454,16 @@ int VotesMode(const char *pOutFile)
 				v.OnMessage(NETMSGTYPE_SV_VOTEOPTIONGROUPEND, &Msg);
 			}
 		}
+		}
+		// CVoting::Render's show rule now and then, sometimes after the close time
+		if(Rand() % 3 == 0)
+		{
+			if(Rand() % 4 == 0 && v.m_Closetime)
+				s_Now = v.m_Closetime + (int64_t)(Rand() % 3) * 700000000 - 700000000;
+			g_Config.m_ClShowVotesAfterVoting = Rand() % 2;
+			v.m_GameClient.m_Scoreboard.m_Active = Rand() % 2;
+			const bool Shown = v.RenderHead();
+			fprintf(f, " render %lld %d %d %d", (long long)s_Now, g_Config.m_ClShowVotesAfterVoting, v.m_GameClient.m_Scoreboard.m_Active, Shown);
 		}
 		fprintf(f, " = %lld %lld %d %d %d %d %d %d %d", (long long)v.m_Opentime, (long long)v.m_Closetime, v.m_Voted, v.m_Yes, v.m_No,
 			v.m_Pass, v.m_Total, v.m_ReceivingOptions, v.m_NumVoteOptions);

@@ -278,3 +278,28 @@ pub fn parse_args(mut s: &str, format: &str, args: &mut Vec<String>) -> bool {
 pub fn arg_float(args: &[String], i: usize) -> f32 {
     args.get(i).and_then(|a| str_tofloat(a)).unwrap_or(0.0)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::parse_args;
+
+    #[test]
+    fn callvote_and_toggle_formats() {
+        // C++ voting.cpp:246 and config.cpp:349 formats
+        let mut a = Vec::new();
+        let f = "s['kick'|'spectate'|'option'] s[id|option text] ?r[reason]";
+        assert!(parse_args(
+            r#"option "Change map to dm1" just fun"#,
+            f,
+            &mut a
+        ));
+        assert_eq!(a, ["option", "Change map to dm1", "just fun"]);
+        a.clear();
+        assert!(parse_args("kick 3", f, &mut a));
+        assert_eq!(a, ["kick", "3"]);
+        a.clear();
+        let f = "s[config] s[value 1] s[value 2]";
+        assert!(parse_args("cl_dummy 0 1", f, &mut a));
+        assert_eq!(a, ["cl_dummy", "0", "1"]);
+    }
+}

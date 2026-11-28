@@ -27,7 +27,7 @@ use ddnet_rs::assets;
 use ddnet_rs::camera::{self, Camera, Frame};
 use ddnet_rs::chat::{self, Chat};
 use ddnet_rs::config::{
-    KEY_ESCAPE, KEY_LAST, KEY_LSHIFT, KEY_MOUSE_WHEEL_DOWN, KEY_MOUSE_WHEEL_LEFT,
+    Binds, KEY_ESCAPE, KEY_LAST, KEY_LSHIFT, KEY_MOUSE_WHEEL_DOWN, KEY_MOUSE_WHEEL_LEFT,
     KEY_MOUSE_WHEEL_RIGHT, KEY_MOUSE_WHEEL_UP, KEY_RSHIFT, Settings, split_line,
 };
 use ddnet_rs::controls::{self, Controls, DummyControl, GameState, PlayerState};
@@ -86,6 +86,11 @@ struct Options {
     esc_tab: Option<usize>,
     /// Connect the dummy once in the game (scripted checks).
     dummy: bool,
+    /// `--exec SECONDS:LINE`: console lines run this long after the map shows, as if
+    /// a bind ran them (scripted checks), in time order.
+    exec: Vec<(f64, String)>,
+    /// The Vote tab's page with `--esc-tab 3` (screenshots).
+    esc_vote_page: usize,
 }
 
 /// The window and what draws into it.
@@ -654,6 +659,17 @@ impl App {
                 }
                 self.menu.open = false;
             }
+            A::CallVote {
+                kind,
+                value,
+                reason,
+                close,
+            } => {
+                if let Some(s) = &mut self.session {
+                    s.client.call_vote(kind, &value, &reason, now);
+                }
+                self.menu.open &= !close;
+            }
             A::Settings => self.menu.open_settings_page(),
             A::EditHud => self.open_editor(),
             A::ToggleChatIgnore(id) => {
@@ -803,10 +819,18 @@ impl App {
             self.pressed[key] = false;
         }
         let menus_active = self.ui_active();
-        let Some(s) = &mut self.session else { return };
+        if self.session.is_none() {
+            return;
+        }
         let pressed = &self.pressed;
         let lines =
             (self.settings.binds).on_input(key, press, release, menus_active, |k| pressed[k]);
+        self.run_lines(lines);
+    }
+
+    /// C++: the console lines of binds (`CBinds::OnInput`), each with its stroke.
+    fn run_lines(&mut self, lines: Vec<(bool, String)>) {
+        let Some(s) = &mut self.session else { return };
         let frame = s.camera_frame(self.start, 0.0);
         let game = GameState {
             frozen_input: (s.predictor.as_ref())
@@ -868,7 +892,13 @@ impl App {
                             s.client.vote(-1, now);
                         }
                     }
-                    "callvote" if ddnet_rs::config::parse_args(&args, "s s ?r", &mut a) => {
+                    "callvote"
+                        if ddnet_rs::config::parse_args(
+                            &args,
+                            "s['kick'|'spectate'|'option'] s[id|option text] ?r[reason]",
+                            &mut a,
+                        ) =>
+                    {
                         let reason = a.get(2).map_or("", String::as_str);
                         s.client.call_vote(&a[0], &a[1], reason, now);
                     }
@@ -878,7 +908,13 @@ impl App {
                         }
                     }
                     // C++: CConfigManager::Con_Toggle, then the variable commands
-                    "toggle" if ddnet_rs::config::parse_args(&args, "s s s", &mut a) => {
+                    "toggle"
+                        if ddnet_rs::config::parse_args(
+                            &args,
+                            "s[config] s[value 1] s[value 2]",
+                            &mut a,
+                        ) =>
+                    {
                         let config = &mut self.settings.config;
                         config.cl_dummy = s.client.dummy() as i32;
                         config.toggle(&a[0], &a[1], &a[2]);
@@ -1038,6 +1074,7 @@ impl App {
             if let Some(tab) = self.options.esc_tab {
                 self.menu.open = true;
                 self.esc.tab = tab;
+                self.esc.vote_page = self.options.esc_vote_page;
             }
             if self.options.dummy {
                 dummy_connect(s, &mut self.settings.config, net::now(self.start));
@@ -1072,6 +1109,15 @@ impl App {
         if let Err(e) = self.update_session() {
             self.end_session();
             self.menu.error = Some(e);
+        }
+        // --exec: the due lines
+        let shown = (self.session.as_ref()).and_then(|s| s.map_shown_at);
+        while let (Some(shown), Some((t, _))) = (shown, self.options.exec.first())
+            && shown.elapsed().as_secs_f64() >= *t
+        {
+            let (_, line) = self.options.exec.remove(0);
+            println!("exec: {line}");
+            self.run_lines(vec![(true, line)]);
         }
         // the media thread runs while `rs_media` is on (started on the first frame, with
         // the saved source); dropping it ends the thread
@@ -1416,6 +1462,18 @@ impl App {
         let follow = self.options.follow;
         let hud_on = !self.hud.is_empty();
         let player_name = player_info(&self.settings).name;
+        // C++ CVoting::Render's show rule (it resets a vote whose time is up)
+        let vote_shown = self.session.as_mut().is_some_and(|s| {
+            let on_death = self.settings.config.cl_scoreboard_on_death != 0;
+            let board = scoreboard::is_active(&s.scoreboard_state(self.scoreboard_held, on_death));
+            let after = self.settings.config.cl_show_votes_after_voting != 0;
+            s.voting.shown(net::now(self.start), after, board)
+        });
+        let binds = &self.settings.binds;
+        let vote_key = |command: &str| {
+            (binds.slot_of(command)).map_or(String::new(), |(k, m)| Binds::key_bind_name(k, m))
+        };
+        let vote_keys = [vote_key("vote yes"), vote_key("vote no")];
         let data = (self.session.as_ref())
             .filter(|s| hud_on && s.map.is_some())
             .map(|s| {
@@ -1432,6 +1490,11 @@ impl App {
                     predictor: s.predictor.as_ref(),
                     tee: rendered.iter().find(|t| Some(t.id) == id),
                     events: &events,
+                    vote: vote_shown.then(|| ddnet_rs::vote::Notice {
+                        voting: &s.voting,
+                        seconds: s.voting.seconds_left(net::now(self.start)),
+                        keys: vote_keys.clone(),
+                    }),
                 }
             });
         let mut editor_done = false;
@@ -1529,6 +1592,9 @@ impl App {
                             limit >= 0 && s.current_race_time() / 60 >= limit
                         },
                         dummy: s.dummy_state(now),
+                        voting: &s.voting,
+                        close_after_setting: settings.config.ui_close_window_after_changing_setting
+                            != 0,
                     };
                     esc_action = esc.show(ctx, &mut view);
                 }
@@ -1566,8 +1632,9 @@ impl App {
             None => {}
         }
         if let Some(a) = esc_action {
+            let quit = a == esc_menu::Action::Quit;
             self.on_esc_action(a);
-            if a == esc_menu::Action::Quit {
+            if quit {
                 event_loop.exit();
             }
         }
@@ -1780,6 +1847,8 @@ fn parse_args() -> Result<Options, String> {
         no_grab: false,
         fire: None,
         esc_tab: None,
+        exec: Vec::new(),
+        esc_vote_page: 0,
         dummy: false,
     };
     let mut args = std::env::args().skip(1).peekable();
@@ -1818,6 +1887,16 @@ fn parse_args() -> Result<Options, String> {
             }
             "--fire" => o.fire = Some(value()?.parse().map_err(|_| "--fire WEAPON")?),
             "--esc-tab" => o.esc_tab = Some(value()?.parse().map_err(|_| "--esc-tab TAB")?),
+            "--esc-vote-page" => {
+                o.esc_vote_page = value()?.parse().map_err(|_| "--esc-vote-page PAGE")?
+            }
+            "--exec" => {
+                let v = value()?;
+                let (t, line) = v.split_once(':').ok_or("--exec SECONDS:LINE")?;
+                let t = t.parse().map_err(|_| "--exec SECONDS:LINE")?;
+                o.exec.push((t, line.to_string()));
+                o.exec.sort_by(|a, b| a.0.total_cmp(&b.0));
+            }
             "--screenshot-after" => {
                 o.screenshot_after =
                     Some(value()?.parse().map_err(|_| "--screenshot-after SECONDS")?)
@@ -1936,6 +2015,7 @@ fn main() {
         Box::new(Killfeed::new(&storage, &settings.config.cl_asset_game)),
         Box::new(Island::default()),
         Box::new(NowPlayingCard::default()),
+        Box::new(ddnet_rs::vote::VoteNotice),
     ];
     // the C++ HUD switches are the first values of our HUD items
     let mut settings = settings;

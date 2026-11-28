@@ -100,6 +100,7 @@ fn place(placement: Placement, ppp: f32, screen: egui::Vec2) -> Rect {
         media: None,
         player_open: false,
         events: &[],
+        vote: None,
     };
     let rect = Rc::new(Cell::new(Rect::NOTHING));
     let mut widgets: Vec<Box<dyn Widget>> = vec![Box::new(Probe {
@@ -271,6 +272,7 @@ fn hud_numbers_do_not_jitter() {
         media: None,
         player_open: false,
         events: &[],
+        vote: None,
     };
     let mut widgets: Vec<Box<dyn Widget>> = vec![Box::new(watermark::Watermark::default())];
     let config = HudConfig::default();
@@ -312,6 +314,7 @@ fn watermark_fps_rounds_like_cpp() {
         media: None,
         player_open: false,
         events: &[],
+        vote: None,
     };
     let fps = |avg| watermark::stat("fps", &data(avg)).map(|s| s.1);
     // C++ round_to_int(1.0f / m_FrameTimeAverage); the start value 0.0001 is 10000 fps
@@ -406,6 +409,7 @@ fn editor_drags_a_widget_into_the_config() {
         media: None,
         player_open: false,
         events: &[],
+        vote: None,
     };
     let rect = Rc::new(Cell::new(Rect::NOTHING));
     let start = Placement {
@@ -532,6 +536,7 @@ fn watermark_layout_measurements() {
         media: None,
         player_open: false,
         events: &[],
+        vote: None,
     };
     let mut widgets: Vec<Box<dyn Widget>> = vec![Box::new(watermark::Watermark::default())];
     // the name is off by default; on here to measure the gaps between two stats

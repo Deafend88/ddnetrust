@@ -2,7 +2,7 @@
 //! bar across the top over the running game. Tabs as a segmented control, the Game tab's
 //! actions as pills, Disconnect apart in muted red, icon buttons on the right; the other
 //! tabs open a panel under the bar. Parts whose feature comes later stay hidden (Ghost
-//! 13.8, Vote 13.7, Record demo 13.8, Browser M11; no editor).
+//! 13.8, Record demo 13.8, Browser M11; no editor).
 
 use egui::{Align, Align2, CornerRadius, Layout, Rect, RichText, Sense, Ui, UiBuilder};
 
@@ -117,7 +117,7 @@ pub fn game_buttons(s: &GameState) -> Vec<GameButton> {
 }
 
 /// What the player chose in the bar this frame.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Action {
     /// C++ `SendSwitchTeam`.
     SetTeam(i32),
@@ -136,6 +136,13 @@ pub enum Action {
     /// C++ `DummyConnect`, `DummyDisconnect` (the latter closes the menu).
     DummyConnect,
     DummyDisconnect,
+    /// C++ `CVoting::Callvote` (type, value, reason); `close`: the menu closes after it.
+    CallVote {
+        kind: &'static str,
+        value: String,
+        reason: String,
+        close: bool,
+    },
 }
 
 /// The dummy button's state, in C++ `RenderGame`'s order of checks.
@@ -158,9 +165,13 @@ enum Confirm {
     DummyDisconnect,
 }
 
-const TABS: [&str; 3] = ["Game", "Players", "Info"];
+const TABS: [&str; 4] = ["Game", "Players", "Info", "Vote"];
 const TAB_PLAYERS: usize = 1;
 const TAB_INFO: usize = 2;
+const TAB_VOTE: usize = 3;
+/// The Vote tab's pages (C++ "Change settings", "Kick player", "Move player to
+/// spectators").
+const VOTE_PAGES: [&str; 3] = ["Settings", "Kick", "Spectate"];
 
 /// The menu's own state.
 #[derive(Default)]
@@ -168,6 +179,13 @@ pub struct EscMenu {
     pub tab: usize,
     /// Disconnect or Disconnect dummy asks first (C++ `PopupConfirm`).
     confirming: Option<Confirm>,
+    /// The Vote tab: page, C++ `m_FilterInput`, `m_CallvoteSelectedOption`,
+    /// `m_CallvoteSelectedPlayer`, `m_CallvoteReasonInput`.
+    pub vote_page: usize,
+    filter: String,
+    selected_option: i32,
+    selected_player: i32,
+    reason: String,
 }
 
 /// What the bar shows.
@@ -187,6 +205,9 @@ pub struct View<'a> {
     /// Disconnect needs a confirmation (C++: race time over `cl_confirm_disconnect_time`).
     pub confirm_disconnect: bool,
     pub dummy: DummyState,
+    pub voting: &'a crate::vote::Voting,
+    /// C++ `ui_close_window_after_changing_setting`.
+    pub close_after_setting: bool,
 }
 
 /// The tab panels' width at most.
@@ -292,8 +313,9 @@ impl EscMenu {
                         egui::ScrollArea::vertical().max_height(max_height).show(
                             ui,
                             |ui| match self.tab {
-                                TAB_PLAYERS => action = action.or(players(ui, v)),
+                                TAB_PLAYERS => action = action.take().or(players(ui, v)),
                                 TAB_INFO => info(ui, v),
+                                TAB_VOTE => action = action.take().or(self.vote(ui, v)),
                                 _ => {}
                             },
                         );
@@ -417,6 +439,219 @@ impl EscMenu {
             }
         }
         action
+    }
+}
+
+/// C++ `RenderServerControlServer`'s filter: the indices of the options whose
+/// description contains `filter` (no case; an empty filter shows all).
+pub fn vote_option_rows(options: &[String], filter: &str) -> Vec<usize> {
+    (options.iter().enumerate())
+        .filter(|(_, o)| {
+            filter.is_empty()
+                || ddnet::text::utf8_find_nocase(o.as_bytes(), filter.as_bytes()).is_some()
+        })
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// C++ `RenderServerControlKick`'s list: the other players by name whose name contains
+/// `filter`; on the spectate page without the spectators.
+pub fn vote_player_rows(clients: &Clients, filter: &str, no_spectators: bool) -> Vec<i32> {
+    (clients.by_name.iter().copied())
+        .filter(|&id| {
+            let info = clients.infos.get(id as usize).and_then(Option::as_ref);
+            let spec = info.is_some_and(|i| i.team == g::TEAM_SPECTATORS);
+            let name = clients.clients[id as usize].name.as_bytes();
+            id != clients.local_id
+                && !(no_spectators && spec)
+                && ddnet::text::utf8_find_nocase(name, filter.as_bytes()).is_some()
+        })
+        .collect()
+}
+
+/// A full-width list row; the selected row is tinted with the accent.
+fn list_row(ui: &mut Ui, selected: bool, add: impl FnOnce(&mut Ui)) -> egui::Response {
+    let fill = if selected {
+        color::ACCENT.gamma_multiply(0.22)
+    } else {
+        egui::Color32::TRANSPARENT
+    };
+    let bg = ui.painter().add(egui::Shape::Noop);
+    let r = egui::Frame::new()
+        .corner_radius(CornerRadius::same(radius::SMALL))
+        .inner_margin(egui::Margin::symmetric(space::M as i8, space::S as i8))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal(add);
+        });
+    let r = ui.interact(r.response.rect, r.response.id.with("row"), Sense::click());
+    let fill = if r.hovered() && !selected {
+        color::SURFACE_HOVER.gamma_multiply(0.5)
+    } else {
+        fill
+    };
+    let shape = egui::Shape::rect_filled(r.rect, CornerRadius::same(radius::SMALL), fill);
+    ui.painter().set(bg, shape);
+    r
+}
+
+/// A text field as tall as the menu's other controls, its hint in the same type.
+fn field<'t>(text: &'t mut String, hint: &str, width: f32) -> egui::TextEdit<'t> {
+    let f = font(size::TITLE, Weight::Regular);
+    egui::TextEdit::singleline(text)
+        .hint_text(RichText::new(hint).font(f.clone()))
+        .font(f)
+        .margin(egui::Margin::symmetric(space::L as i8, space::M as i8))
+        .min_size(egui::vec2(0.0, size::CONTROL_LARGE))
+        .desired_width(width)
+}
+
+/// A tee head the size of a list row's icon (an empty space while it loads).
+fn head(ui: &mut Ui, heads: &mut TeeHeads, c: &ddnet::clients::ClientData) {
+    let look = TeeLook {
+        skin: c.skin.clone(),
+        custom_color: c.use_custom_color != 0,
+        color_body: c.color_body,
+        color_feet: c.color_feet,
+    };
+    let ctx = ui.ctx().clone();
+    let tee = egui::vec2(size::TEE_LARGE, size::TEE_LARGE);
+    match heads.get(&ctx, &look) {
+        Some(t) => {
+            ui.add(egui::Image::new((t.id(), tee)));
+        }
+        None => {
+            ui.allocate_exact_size(tee, Sense::hover());
+        }
+    }
+}
+
+impl EscMenu {
+    /// C++ `RenderServerControl` (menus_ingame.cpp:946): the vote options, or the players
+    /// to kick or move to the spectators, a search, the reason and Call vote. Force vote
+    /// and adding or removing options need rcon (13.9).
+    fn vote(&mut self, ui: &mut Ui, v: &mut View) -> Option<Action> {
+        let weak = v.glass.text_secondary();
+        let h = size::CONTROL_LARGE;
+        ui.horizontal(|ui| {
+            w::segmented_sized(ui, &mut self.vote_page, &VOTE_PAGES, size::TITLE, h);
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.add(field(&mut self.filter, "Search", 240.0));
+            });
+        });
+        let mut call = false;
+        egui::ScrollArea::vertical()
+            .id_salt("esc_vote_list")
+            .max_height(420.0)
+            .auto_shrink([false, true])
+            .show(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = space::XS;
+                if self.vote_page == 0 {
+                    let rows = vote_option_rows(&v.voting.options, &self.filter);
+                    // C++: a selection the filter hides is dropped
+                    if !rows.iter().any(|&i| i as i32 == self.selected_option) {
+                        self.selected_option = -1;
+                    }
+                    if rows.is_empty() && !v.voting.receiving_options {
+                        let t = if v.voting.options.is_empty() {
+                            "This server has no vote options."
+                        } else {
+                            "No option matches the search."
+                        };
+                        w::text(ui, t, size::TITLE, Weight::Regular, weak);
+                    }
+                    for i in rows {
+                        let selected = self.selected_option == i as i32;
+                        let r = list_row(ui, selected, |ui| {
+                            let t = RichText::new(&v.voting.options[i])
+                                .font(font(size::TITLE, Weight::Medium))
+                                .color(color::TEXT);
+                            ui.add(egui::Label::new(t).truncate().selectable(false));
+                        });
+                        if r.clicked() {
+                            self.selected_option = i as i32;
+                        }
+                        call |= r.double_clicked();
+                    }
+                } else {
+                    let rows = vote_player_rows(v.clients, &self.filter, self.vote_page == 2);
+                    if !rows.contains(&self.selected_player) {
+                        self.selected_player = -1;
+                    }
+                    if rows.is_empty() {
+                        w::text(ui, "No other players.", size::TITLE, Weight::Regular, weak);
+                    }
+                    for id in rows {
+                        let c = &v.clients.clients[id as usize];
+                        let heads = &mut *v.heads;
+                        let r = list_row(ui, self.selected_player == id, |ui| {
+                            head(ui, heads, c);
+                            let t = RichText::new(&c.name)
+                                .font(font(size::TITLE, Weight::Medium))
+                                .color(color::TEXT);
+                            ui.add(egui::Label::new(t).truncate().selectable(false));
+                        });
+                        if r.clicked() {
+                            self.selected_player = id;
+                        }
+                        call |= r.double_clicked();
+                    }
+                }
+            });
+        ui.separator();
+        ui.horizontal(|ui| {
+            ui.add(field(&mut self.reason, "Reason", 280.0));
+            // C++ m_CallvoteReasonInput holds VOTE_REASON_LENGTH (16) bytes
+            if self.reason.len() > 15 {
+                let cut = ddnet::text::truncate(self.reason.as_bytes(), 15);
+                self.reason = String::from_utf8_lossy(&cut).into_owned();
+            }
+            if self.vote_page == 0 && v.voting.receiving_options {
+                ui.add(egui::Spinner::new().size(size::ICON).color(weak));
+                w::text(ui, "Loading…", size::TITLE, Weight::Regular, weak);
+            }
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                ui.spacing_mut().button_padding = egui::vec2(space::L, space::S);
+                let b = egui::Button::new(
+                    RichText::new("Call vote")
+                        .font(font(size::TITLE, Weight::SemiBold))
+                        .color(egui::Color32::WHITE),
+                )
+                .fill(color::ACCENT)
+                .corner_radius(CornerRadius::same(radius::PILL))
+                .min_size(egui::vec2(0.0, h));
+                call |= ui.add(b).clicked();
+            });
+        });
+        if !call {
+            return None;
+        }
+        // C++ clears the reason whether or not a vote was called
+        let reason = std::mem::take(&mut self.reason);
+        let has_info = |id: i32| {
+            usize::try_from(id)
+                .ok()
+                .and_then(|i| v.clients.infos.get(i))
+                .is_some_and(Option::is_some)
+        };
+        match self.vote_page {
+            0 => {
+                let i = usize::try_from(self.selected_option).ok()?;
+                Some(Action::CallVote {
+                    kind: "option",
+                    value: v.voting.options.get(i)?.clone(),
+                    reason,
+                    close: v.close_after_setting,
+                })
+            }
+            page if has_info(self.selected_player) => Some(Action::CallVote {
+                kind: if page == 1 { "kick" } else { "spectate" },
+                value: self.selected_player.to_string(),
+                reason,
+                close: true,
+            }),
+            _ => None,
+        }
     }
 }
 
@@ -586,6 +821,31 @@ pub fn motd_text(message: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn vote_rows_filter_like_cpp() {
+        let opts = ["Map: dm1", "Restart round", "map: ctf1"].map(String::from);
+        assert_eq!(vote_option_rows(&opts, ""), [0, 1, 2]);
+        assert_eq!(vote_option_rows(&opts, "MAP"), [0, 2]);
+        let mut c = Clients::default();
+        for (id, name, team) in [
+            (0, "Bob", 0),
+            (1, "Alice", 0),
+            (2, "Carol", g::TEAM_SPECTATORS),
+        ] {
+            c.clients[id].name = name.into();
+            c.infos[id] = Some(ddnet::clients::PlayerInfo {
+                team,
+                ..Default::default()
+            });
+        }
+        c.by_name = vec![1, 0, 2];
+        c.local_id = 1;
+        // not the local player; the spectate page leaves out the spectators
+        assert_eq!(vote_player_rows(&c, "", false), [0, 2]);
+        assert_eq!(vote_player_rows(&c, "", true), [0]);
+        assert_eq!(vote_player_rows(&c, "car", false), [2]);
+    }
 
     #[test]
     fn motd_line_breaks() {

@@ -28,6 +28,7 @@ fn votes_match_cpp() {
     let text = std::fs::read_to_string(path).unwrap();
     let mut v = Voting::default();
     let mut kinds = std::collections::BTreeSet::new();
+    let mut renders = [0; 2];
     for (n, line) in text.lines().enumerate() {
         let (input, want) = line.split_once(" = ").unwrap();
         let f: Vec<&str> = input.split(' ').collect();
@@ -84,6 +85,13 @@ fn votes_match_cpp() {
         if let Some(msg) = msg {
             v.on_message(&msg, now);
         }
+        // CVoting::Render's show rule (it may reset the vote)
+        if let Some(r) = f.iter().position(|&w| w == "render") {
+            let at: i64 = f[r + 1].parse().unwrap();
+            let (after, board, shown) = (int(r + 2) != 0, int(r + 3) != 0, int(r + 4) != 0);
+            assert_eq!(v.shown(at, after, board), shown, "line {}: {input}", n + 1);
+            renders[shown as usize] += 1;
+        }
         let mut got = format!(
             "{} {} {} {} {} {} {} {} {} {} {}",
             v.open_time,
@@ -104,4 +112,5 @@ fn votes_match_cpp() {
         assert_eq!(got, want, "line {}: {input}", n + 1);
     }
     assert_eq!(kinds.len(), 10, "{kinds:?}");
+    assert!(renders[0] > 100 && renders[1] > 100, "{renders:?}");
 }

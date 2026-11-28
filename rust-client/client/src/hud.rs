@@ -258,6 +258,8 @@ pub struct HudData<'a> {
     /// Game messages received since the last frame (broadcasts, kill and finish
     /// messages, records), oldest first.
     pub events: &'a [GameMsg],
+    /// The running vote while C++ would show its notice.
+    pub vote: Option<crate::vote::Notice<'a>>,
 }
 
 /// A HUD widget.
