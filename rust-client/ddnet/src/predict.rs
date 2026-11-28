@@ -410,6 +410,8 @@ impl Predictor {
         }
         self.dummy = client.dummy();
         self.dummy_connected = client.dummy_connected();
+        // C++ m_aLocalIds lives in CGameClient; the client keeps it by the same rule
+        self.local_ids = client.local_ids().map(|id| id.unwrap_or(-1));
         let client = &*client;
         let input_at = |t, is_dummy| client.input_of(t, is_dummy);
         for (prev, cur) in switches {
@@ -634,6 +636,7 @@ impl Predictor {
         tick: i32,
         input_at: &dyn Fn(i32, bool) -> Option<ObjPlayerInput>,
     ) {
+        let prev_local_id = self.local_id;
         self.local_id = items
             .iter()
             .filter(|it| it.type_id == g::NETOBJTYPE_PLAYERINFO)
@@ -642,6 +645,11 @@ impl Predictor {
             .map_or(-1, |p| p.client_id);
         if self.local_id >= 0 {
             self.local_ids[self.dummy as usize] = self.local_id;
+        }
+        if self.local_id != prev_local_id {
+            // another tee (a dummy swap): our stats compare per tee
+            self.history.clear();
+            self.predicted_char = None;
         }
         for it in items
             .iter()
@@ -1740,7 +1748,8 @@ impl Predictor {
         }
         if self.predicted_tick == pred {
             self.stats.repredictions += 1;
-            if before != self.predicted_char {
+            // (none before: the tee changed, see on_new_snapshot)
+            if before.is_some() && before != self.predicted_char {
                 self.stats.prediction_errors += 1;
             }
         }

@@ -685,6 +685,14 @@ impl Client {
         self.dummy_connecting
     }
 
+    /// C++: `DummyConnectingDelayed`: within 5 s of the last connect.
+    pub fn dummy_connecting_delayed(&self, now: i64) -> bool {
+        !self.dummy_connected
+            && !self.dummy_connecting
+            && self.last_dummy_connect_time > 0
+            && self.last_dummy_connect_time + 5 * FREQ > now
+    }
+
     /// C++: `DummyAllowed`.
     pub fn dummy_allowed(&self) -> bool {
         self.caps.allow_dummy
@@ -725,14 +733,17 @@ impl Client {
     }
 
     /// C++: `CClient::GetInput(tick, is_dummy)` (client.cpp:415): `is_dummy` picks the
-    /// other tee.
+    /// other tee. Of several inputs for the same tick (sent again right after a dummy
+    /// swap) the one at the lowest ring index wins, like C++ and the server.
     pub fn input_of(&self, tick: i32, is_dummy: bool) -> Option<ObjPlayerInput> {
-        self.links[(is_dummy ^ self.dummy) as usize]
-            .inputs
-            .iter()
-            .filter(|i| i.tick != -1 && i.tick <= tick)
-            .max_by_key(|i| i.tick)
-            .map(|i| i.data)
+        let inputs = &self.links[(is_dummy ^ self.dummy) as usize].inputs;
+        let mut best: Option<&SentInput> = None;
+        for i in inputs.iter().filter(|i| i.tick != -1 && i.tick <= tick) {
+            if best.is_none_or(|b| b.tick < i.tick) {
+                best = Some(i);
+            }
+        }
+        best.map(|i| i.data)
     }
 
     /// C++: `m_Snap.m_pLocalCharacter`: the local character of the current snapshot.
@@ -788,8 +799,7 @@ impl Client {
         if self.dummy_connected {
             return Err("");
         }
-        // C++ DummyConnectingDelayed
-        if self.last_dummy_connect_time > 0 && self.last_dummy_connect_time + 5 * FREQ > now {
+        if self.dummy_connecting_delayed(now) {
             return Err("Wait before connecting dummy again.");
         }
         self.last_dummy_connect_time = now;

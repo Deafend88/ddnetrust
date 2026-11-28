@@ -1156,3 +1156,80 @@ fn dummy_handshake_matches_cpp() {
     assert!(has_input(&cpp) && has_input(&sent));
     assert_eq!(upto(&sent), upto(&cpp));
 }
+
+/// 13.6: prediction with the dummy: both tees walk the scripted path (the other tee's
+/// input mirrored), 5 s with the dummy active, then swapped back to the main tee for
+/// 5 s. Every snapshot of the active tee must match its prediction.
+#[test]
+fn prediction_matches_server_with_dummy() {
+    let Some(exe) = server_binary() else {
+        eprintln!("SKIPPED: no DDNet-Server (set DDNET_SERVER or build the game-server target)");
+        return;
+    };
+    let (server, port) = start_server_with(&exe, "dm1", &[], &["sv_show_all_default 1"]);
+    let addr = format!("127.0.0.1:{port}").parse().unwrap();
+    let sockets = [
+        net::connect_socket(addr).unwrap(),
+        net::connect_socket(addr).unwrap(),
+    ];
+    let socks = [&sockets[0], &sockets[1]];
+    let start = Instant::now();
+    let mut client = Client::new(PlayerInfo::default(), "", net::random_bytes);
+    client.connect(net::now(start));
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while Instant::now() < deadline && local_x(&client).is_none() {
+        net::pump_both(&socks, &mut client, net::now(start)).unwrap();
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    client.dummy_connect(net::now(start)).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline
+        && !(client.dummy()
+            && client.local_ids().iter().all(Option::is_some)
+            && local_x(&client).is_some())
+    {
+        net::pump_both(&socks, &mut client, net::now(start)).unwrap();
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert!(client.dummy(), "dummy did not connect");
+    let map = Map::load(client.map().unwrap().data.clone()).unwrap();
+    let mut pred = Predictor::new(Rc::new(Collision::new(&map)), &map);
+    let entered = net::now(start);
+    let mut halves = Vec::new();
+    for active_dummy in [true, false] {
+        client.set_dummy(active_dummy);
+        let before = pred.stats.clone();
+        let from = net::now(start);
+        while net::now(start) - from < 5 * FREQ {
+            let elapsed = net::now(start) - entered;
+            net::scripted_input(&mut client.input, elapsed);
+            // the other tee walks the other way
+            net::scripted_input(&mut client.dummy_snap.input, elapsed + 2 * FREQ);
+            let incoming = net::recv_all(&socks).unwrap();
+            client.pump_network(incoming, net::now(start));
+            if client.swapping() {
+                pred.is_dummy_swapping = true;
+            }
+            client.update(net::now(start));
+            net::send_all(&socks, &mut client).unwrap();
+            pred.update(&mut client, net::now(start));
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let s = &pred.stats;
+        halves.push((
+            s.compared - before.compared,
+            s.mismatched - before.mismatched,
+            s.prediction_errors - before.prediction_errors,
+        ));
+        assert!(
+            pred.predicted_dummy_id().is_some(),
+            "the other tee is predicted"
+        );
+    }
+    eprintln!("dummy active / main active: (compared, mismatched, errors) {halves:?}");
+    for &(compared, mismatched, errors) in &halves {
+        assert!(compared > 100, "{halves:?}");
+        assert_eq!((mismatched, errors), (0, 0), "{halves:?}");
+    }
+    drop(server);
+}

@@ -4,7 +4,7 @@
 //! the menu go to our own `%APPDATA%\DDNet-rs\settings.cfg`. F12 saves a screenshot.
 //!
 //! Usage: ddnet-rs [server ip:port] [--data-dir PATH] [--vsync] [--size WxH] [--view X,Y]
-//!        [--follow CLIENT_ID] [--screenshot-after SECONDS] [--no-grab] [--fire WEAPON] [--esc-tab TAB]
+//!        [--follow CLIENT_ID] [--screenshot-after SECONDS] [--no-grab] [--fire WEAPON] [--esc-tab TAB] [--dummy]
 //!
 //! `--fire` (scripted captures): 2 s after the map shows, says `/weapons` (a practice
 //! command on a local test server) and then keeps shooting that weapon (0 hammer, 1 gun,
@@ -84,6 +84,8 @@ struct Options {
     fire: Option<i32>,
     /// Open the Esc menu on this tab once in the game (screenshots).
     esc_tab: Option<usize>,
+    /// Connect the dummy once in the game (scripted checks).
+    dummy: bool,
 }
 
 /// The window and what draws into it.
@@ -104,7 +106,8 @@ struct Running {
 /// One connection to a server and its game state (C++: what `CClient::Disconnect` and
 /// `CGameClient::OnReset` clear).
 struct Session {
-    socket: UdpSocket,
+    /// The main connection's socket and the dummy's (C++ opens both up front).
+    sockets: [UdpSocket; 2],
     /// The server address (the watermark shows it).
     server: String,
     client: Client,
@@ -135,14 +138,15 @@ struct Session {
 
 impl Session {
     fn connect(addr: SocketAddr, settings: &Settings, start: Instant) -> Result<Self, String> {
-        let socket = net::connect_socket(addr).map_err(|e| format!("socket: {e}"))?;
+        let socket = || net::connect_socket(addr).map_err(|e| format!("socket: {e}"));
+        let sockets = [socket()?, socket()?];
         let mut client = Client::new(player_info(settings), "", net::random_bytes);
         client.connect(net::now(start));
         // C++: CGameClient::OnReset -> CCamera::OnReset
         let mut camera = Camera::default();
         camera.on_reset(&settings.config);
         Ok(Self {
-            socket,
+            sockets,
             server: addr.to_string(),
             client,
             map: None,
@@ -164,7 +168,23 @@ impl Session {
 
     fn disconnect(&mut self, start: Instant) {
         self.client.disconnect(None, net::now(start));
-        let _ = net::pump(&self.socket, &mut self.client, net::now(start));
+        let [a, b] = &self.sockets;
+        let _ = net::pump_both(&[a, b], &mut self.client, net::now(start));
+    }
+
+    /// C++ `m_aLocalIds` (-1 unknown).
+    fn local_ids(&self) -> [i32; 2] {
+        self.client.local_ids().map(|id| id.unwrap_or(-1))
+    }
+
+    /// C++ `m_Controls.m_aInputData[i]` of both tees (index `cl_dummy` is the active one).
+    fn tee_inputs(&self) -> [g::ObjPlayerInput; 2] {
+        let (active, other) = (self.controls.input, self.controls.other.input);
+        if self.client.dummy() {
+            [other, active]
+        } else {
+            [active, other]
+        }
     }
 
     /// What `CCamera`'s zoom commands and `UpdateCamera` read this frame.
@@ -190,7 +210,7 @@ impl Session {
     ) -> chat::Ctx<'a> {
         chat::Ctx {
             clients: &self.clients,
-            local_ids: [self.clients.local_id, -1],
+            local_ids: self.local_ids(),
             team,
             is_other_team: other,
             team_play: self.team_play(),
@@ -273,7 +293,7 @@ impl Session {
         }
         let (team, other) = (|id| self.team(id), |id| self.is_other_team(id));
         let c = config;
-        let input = self.client.input;
+        let inputs = self.tee_inputs().map(|i| (i.direction, i.jump));
         let ctx = nameplates::Ctx {
             screen,
             clients: &self.clients,
@@ -281,9 +301,9 @@ impl Session {
             team: &team,
             team_play: self.team_play(),
             target_pos: self.target_pos(),
-            local_ids: [self.clients.local_id, -1],
-            dummy: 0,
-            inputs: [(input.direction, input.jump), (0, 0)],
+            local_ids: self.local_ids(),
+            dummy: self.client.dummy() as usize,
+            inputs,
             chars: &chars,
             spec: self.spec_info(),
             config: nameplates::PlateConfig {
@@ -406,7 +426,24 @@ impl Session {
             team_play: self.team_play(),
             received_ddnet_player: c.received_ddnet_player,
             show_ddrace_buttons: true,
-            dummy_connecting: false,
+            dummy_connecting: self.client.dummy_connecting(),
+        }
+    }
+
+    /// C++ `RenderGame`'s dummy button state.
+    fn dummy_state(&self, now: i64) -> esc_menu::DummyState {
+        use esc_menu::DummyState as D;
+        let c = &self.client;
+        if !c.dummy_allowed() {
+            D::NotAllowed
+        } else if c.dummy_connecting_delayed(now) {
+            D::Delayed
+        } else if c.dummy_connecting() {
+            D::Connecting
+        } else if c.dummy_connected() {
+            D::Connected
+        } else {
+            D::Offline
         }
     }
 
@@ -603,6 +640,17 @@ impl App {
                 self.menu.open = false;
             }
             A::Disconnect | A::Quit => self.disconnect(),
+            A::DummyConnect => {
+                if let Some(s) = &mut self.session {
+                    dummy_connect(s, &mut self.settings.config, now);
+                }
+            }
+            A::DummyDisconnect => {
+                if let Some(s) = &mut self.session {
+                    s.client.dummy_disconnect(None, now);
+                }
+                self.menu.open = false;
+            }
             A::Settings => self.menu.open_settings_page(),
             A::EditHud => self.open_editor(),
             A::ToggleChatIgnore(id) => {
@@ -768,6 +816,7 @@ impl App {
             s.controls
                 .execute(stroke, &line, game, &mut s.camera, &frame, config);
             for (command, args) in split_line(&line) {
+                let config = &self.settings.config;
                 // C++: CChat::ConShowChat, the one chat command with a release
                 if command == "+show_chat" {
                     self.chat.show = stroke;
@@ -804,7 +853,29 @@ impl App {
                     // C++: CClient::Con_Rcon, Con_RconAuth
                     "rcon" => s.client.rcon(&args, net::now(self.start)),
                     "rcon_auth" => s.client.rcon_auth(&args, net::now(self.start)),
-                    _ => {}
+                    // C++: CClient::Con_DummyConnect, Con_DummyDisconnect, Con_DummyResetInput
+                    "dummy_connect" => dummy_connect(s, &mut self.settings.config, now),
+                    "dummy_disconnect" => s.client.dummy_disconnect(None, now),
+                    "dummy_reset" => {
+                        if s.client.dummy_connected() {
+                            s.controls.dummy_reset(&mut s.client.dummy_snap.input);
+                        }
+                    }
+                    // C++: CConfigManager::Con_Toggle, then the variable commands
+                    "toggle" if ddnet_rs::config::parse_args(&args, "s s s", &mut a) => {
+                        let config = &mut self.settings.config;
+                        config.cl_dummy = s.client.dummy() as i32;
+                        config.toggle(&a[0], &a[1], &a[2]);
+                        s.client.set_dummy(config.cl_dummy != 0);
+                    }
+                    name => {
+                        let config = &mut self.settings.config;
+                        config.cl_dummy = s.client.dummy() as i32;
+                        if config.set(name, &args) && name.eq_ignore_ascii_case("cl_dummy") {
+                            // C++ ConchainSpecialDummy
+                            s.client.set_dummy(config.cl_dummy != 0);
+                        }
+                    }
                 }
             }
         }
@@ -847,7 +918,23 @@ impl App {
             s.controls
                 .on_cursor_move(dx as f32, dy as f32, config, world_paused);
         }
-        // C++: CClient::Update (sends SnapInput, OnNewSnapshot reports the camera)
+        // C++: CClient::Update: PumpNetwork, then (online) OnDummySwap, the snapshot
+        // switch and SendInput (SnapInput), OnNewSnapshot reports the camera
+        let now = net::now(start);
+        let [sa, sb] = &s.sockets;
+        let incoming = net::recv_all(&[sa, sb]).map_err(|e| format!("network: {e}"))?;
+        s.client.pump_network(incoming, now);
+        if let Some(e) = s.client.dummy_error.take() {
+            eprintln!("Could not connect dummy: {e}");
+        }
+        if s.client.swapping() {
+            let reset = config.cl_dummy_resetonswitch;
+            s.controls
+                .on_dummy_swap(reset, &mut s.client.dummy_snap.input);
+            if let Some(p) = &mut s.predictor {
+                p.is_dummy_swapping = true;
+            }
+        }
         let bug_input = (s.predictor.as_ref()).is_some_and(|p| p.bug_ddrace_input());
         // C++ SnapInput: chatting first, then a menu
         let state = if self.chat.is_active() {
@@ -859,15 +946,32 @@ impl App {
         };
         let on_death = config.cl_scoreboard_on_death != 0;
         let scoreboard = scoreboard::is_active(&s.scoreboard_state(self.scoreboard_held, on_death));
-        let ctl = DummyControl::default(); // the dummy settings come with 13.6 piece d
-        let dummy = &mut s.client.dummy_snap.input;
-        s.client.input = s
-            .controls
-            .snap_input(state, scoreboard, bug_input, ctl, dummy);
+        let (spectating, spectated) = s.spec_info();
+        let ctl = DummyControl {
+            copy_moves: config.cl_dummy_copy_moves != 0,
+            control: config.cl_dummy_control != 0,
+            jump: config.cl_dummy_jump,
+            fire: config.cl_dummy_fire,
+            hook: config.cl_dummy_hook,
+            spectating_other: spectating && spectated >= 0,
+        };
+        let c = &mut s.client;
+        c.input =
+            (s.controls).snap_input(state, scoreboard, bug_input, ctl, &mut c.dummy_snap.input);
+        (c.dummy_hammer, c.dummy_copy_moves) =
+            (config.cl_dummy_hammer != 0, config.cl_dummy_copy_moves != 0);
+        c.dummy_restore_weapon = config.cl_dummy_restore_weapon != 0;
+        c.dummy_player = dummy_info(config);
+        // C++ m_LocalCharacterPos - m_aClients[m_aLocalIds[!cl_dummy]].m_Predicted.m_Pos
+        let other = c.local_ids()[!c.dummy() as usize];
+        if let (Some(p), Some(id), Some((x, y))) = (&s.predictor, other, s.center) {
+            let pos = p.predicted[id as usize].pos;
+            c.hammer_dir = (x - pos.x, y - pos.y);
+        }
         if let (Some(weapon), Some(shown)) = (self.options.fire, s.map_shown_at) {
             let elapsed = shown.elapsed().as_secs_f64();
             if elapsed > 2.0 && !std::mem::replace(&mut s.weapons_asked, true) {
-                s.client.say(0, "/weapons", net::now(start));
+                s.client.say(0, "/weapons", now);
             }
             // C++ CControls: the fire counter counts presses and releases
             s.client.input.fire = (elapsed * 10.0) as i32 & ddnet::physics::core::INPUT_STATE_MASK;
@@ -883,8 +987,8 @@ impl App {
             follow_factor: camera::follow_factor(config),
             aspect: size.map_or(16.0 / 9.0, |s| s.width as f32 / s.height as f32),
         };
-        net::pump(&s.socket, &mut s.client, net::now(start))
-            .map_err(|e| format!("network: {e}"))?;
+        s.client.update(now);
+        net::send_all(&[sa, sb], &mut s.client).map_err(|e| format!("network: {e}"))?;
         if s.client.state() == State::Offline {
             return Err(format!("disconnected: '{}'", s.client.conn().error()));
         }
@@ -918,6 +1022,9 @@ impl App {
             if let Some(tab) = self.options.esc_tab {
                 self.menu.open = true;
                 self.esc.tab = tab;
+            }
+            if self.options.dummy {
+                dummy_connect(s, &mut self.settings.config, net::now(self.start));
             }
         }
         Ok(())
@@ -1015,6 +1122,17 @@ impl App {
             // this frame's game messages: C++ handles them as they arrive, before the
             // snapshot switch (CClient::Update pumps the network first)
             events = std::mem::take(&mut s.client.messages);
+            // C++ OnMessage of the other tee's connection (gameclient.cpp:1115): its
+            // team chat while the tees are in different teams, and its whispers.
+            // ponytail: appended after this frame's other messages, not interleaved
+            let [l0, l1] = s.local_ids().map(|id| id.max(0) as usize);
+            let other_team = s.clients.clients[l0].team != s.clients.clients[l1].team
+                || s.team(l0 as i32) != s.team(l1 as i32);
+            for m in std::mem::take(&mut s.client.passive_chat) {
+                if (m.team == 1 && other_team) || m.team > 1 {
+                    events.push(g::GameMsg::SvChat(m));
+                }
+            }
             for msg in &events {
                 // C++: Sv_Record / Sv_RecordLegacy carry the map's best time
                 let cfg = &self.settings.config;
@@ -1393,6 +1511,7 @@ impl App {
                             let limit = settings.config.cl_confirm_disconnect_time;
                             limit >= 0 && s.current_race_time() / 60 >= limit
                         },
+                        dummy: s.dummy_state(now),
                     };
                     esc_action = esc.show(ctx, &mut view);
                 }
@@ -1644,10 +1763,11 @@ fn parse_args() -> Result<Options, String> {
         no_grab: false,
         fire: None,
         esc_tab: None,
+        dummy: false,
     };
     let mut args = std::env::args().skip(1).peekable();
     if let Some(a) = args.next_if(|a| !a.starts_with("--")) {
-        let server: SocketAddr = a.parse().map_err(|_| "usage: ddnet-rs [server ip:port] [--data-dir PATH] [--vsync] [--size WxH] [--view X,Y] [--follow CLIENT_ID] [--screenshot-after SECONDS] [--no-grab] [--fire WEAPON] [--esc-tab TAB]")?;
+        let server: SocketAddr = a.parse().map_err(|_| "usage: ddnet-rs [server ip:port] [--data-dir PATH] [--vsync] [--size WxH] [--view X,Y] [--follow CLIENT_ID] [--screenshot-after SECONDS] [--no-grab] [--fire WEAPON] [--esc-tab TAB] [--dummy]")?;
         if !server.ip().is_loopback() {
             return Err(format!(
                 "refusing {server}: only local (loopback) servers are allowed for now"
@@ -1661,6 +1781,7 @@ fn parse_args() -> Result<Options, String> {
             "--data-dir" => o.data_dir = Some(value()?.into()),
             "--vsync" => o.vsync = true,
             "--no-grab" => o.no_grab = true,
+            "--dummy" => o.dummy = true,
             "--view" => {
                 let v = value()?;
                 let (x, y) = v.split_once(',').ok_or("--view X,Y")?;
@@ -1707,6 +1828,38 @@ fn load_settings(storage: &Storage, ours: Option<&[u8]>) -> Settings {
 }
 
 /// C++: what `CGameClient::SendStartInfo` takes from the config.
+/// C++ `CClient::DummyConnect` from the console; on success `cl_dummy_copy_moves` and
+/// `cl_dummy_hammer` go off like in C++.
+fn dummy_connect(s: &mut Session, config: &mut ddnet_rs::config::Config, now: i64) {
+    match s.client.dummy_connect(now) {
+        Ok(()) => (config.cl_dummy_copy_moves, config.cl_dummy_hammer) = (0, 0),
+        Err(e) if !e.is_empty() => eprintln!("client: {e}"),
+        Err(_) => {}
+    }
+}
+
+/// What the dummy's `Cl_StartInfo` sends: C++ `CClient::DummyName` and the `dummy_*`
+/// settings.
+fn dummy_info(c: &ddnet_rs::config::Config) -> PlayerInfo {
+    let name = if !c.dummy_name.is_empty() {
+        c.dummy_name.clone()
+    } else if !c.player_name.is_empty() {
+        // C++ str_format into 16 bytes
+        ddnet_rs::config::str_copy(&format!("[D] {}", c.player_name), 16)
+    } else {
+        "brainless tee".into()
+    };
+    PlayerInfo {
+        name,
+        clan: c.dummy_clan.clone(),
+        country: c.dummy_country,
+        skin: c.dummy_skin.clone(),
+        use_custom_color: c.dummy_use_custom_color,
+        color_body: c.dummy_color_body as i32,
+        color_feet: c.dummy_color_feet as i32,
+    }
+}
+
 fn player_info(settings: &Settings) -> PlayerInfo {
     let c = &settings.config;
     let default = PlayerInfo::default();

@@ -54,6 +54,9 @@ pub enum Indicator {
     Team0Mode,
     DeepFrozen,
     LiveFrozen,
+    // ours: the dummy's actions (C++ `CHud::RenderDummyActions`, a box of its own there)
+    DummyHammer,
+    DummyCopy,
 }
 
 /// What `CHud::RenderPlayerState` shows.
@@ -389,6 +392,26 @@ impl Widget for StatusBar {
         if !on("effects") {
             (s.capabilities, s.prohibited, s.modes) = (Vec::new(), Vec::new(), Vec::new());
         }
+        // C++ RenderDummyActions: while the dummy is connected and not at game over; ours
+        // shows only what is on. ponytail: it rides on this widget, so it needs the
+        // DDRace HUD like the rest of it; a widget of its own if vanilla servers matter
+        let c = data.client;
+        let game_over = (c.snapshot().iter())
+            .find(|it| it.type_id == g::NETOBJTYPE_GAMEINFO)
+            .is_some_and(|it| {
+                g::ObjGameInfo::from_ints(&it.data).game_state_flags & g::GAMESTATEFLAG_GAMEOVER
+                    != 0
+            });
+        if on("dummy") && c.dummy_connected() && !game_over {
+            for (active, ind) in [
+                (c.dummy_hammer, Indicator::DummyHammer),
+                (c.dummy_copy_moves, Indicator::DummyCopy),
+            ] {
+                if active {
+                    s.modes.push(ind);
+                }
+            }
+        }
         let empty = s.weapons.is_empty()
             && s.jumps.1 == 0
             && s.capabilities.is_empty()
@@ -412,6 +435,7 @@ impl Widget for StatusBar {
             ("weapons", "Weapons", true),
             ("jumps", "Jumps", true),
             ("effects", "Active effects", true),
+            ("dummy", "Dummy actions", true),
         ];
         item_toggles(ui, config, "status", &items);
     }

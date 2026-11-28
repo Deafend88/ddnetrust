@@ -82,7 +82,12 @@ fn weapon_mark(ind: Indicator) -> Option<(usize, Mark)> {
 #[derive(Clone, Copy, Debug)]
 enum Chip {
     Glyph(&'static str),
-    Hook { endless: bool, off: bool },
+    Hook {
+        endless: bool,
+        off: bool,
+    },
+    /// A weapon's silhouette.
+    Weapon(usize),
 }
 
 /// The indicators that keep a chip of their own: the glyph (or the drawn hook) and name.
@@ -108,6 +113,8 @@ fn chip_of(ind: Indicator) -> Option<(Chip, &'static str)> {
         LockMode => (Chip::Glyph(icons::LOCK), "Lock mode"),
         PracticeMode => (Chip::Glyph(icons::BARBELL), "Practice"),
         Team0Mode => (Chip::Glyph(icons::USERS), "Team 0 mode"),
+        DummyHammer => (Chip::Weapon(0), "Dummy hammers you"),
+        DummyCopy => (Chip::Glyph(icons::COPY), "Dummy copies your moves"),
         _ => return None,
     })
 }
@@ -349,6 +356,7 @@ pub fn draw(
                     Chip::Glyph(g) => {
                         w::icon(ui, g, ICON, color::TEXT);
                     }
+                    Chip::Weapon(n) => icons.draw(ui, n, ICON, 1.0),
                     Chip::Hook { endless, off } => {
                         let (rect, _) = ui.allocate_exact_size(vec2(ICON, ICON), Sense::hover());
                         hook(ui, rect);

@@ -46,6 +46,25 @@ pub struct Config {
     pub player_use_custom_color: i32,
     pub player_color_body: u32,
     pub player_color_feet: u32,
+    /// C++ dummy settings (config_variables.h:248-266). `cl_dummy` mirrors the client's
+    /// state; it and the `cl_dummy_*` toggles below `cl_dummy_restore_weapon` are not
+    /// saved (no `CFGFLAG_SAVE` in C++).
+    pub dummy_name: String,
+    pub dummy_clan: String,
+    pub dummy_country: i32,
+    pub dummy_use_custom_color: i32,
+    pub dummy_color_body: u32,
+    pub dummy_color_feet: u32,
+    pub dummy_skin: String,
+    pub cl_dummy_resetonswitch: i32,
+    pub cl_dummy_restore_weapon: i32,
+    pub cl_dummy: i32,
+    pub cl_dummy_hammer: i32,
+    pub cl_dummy_copy_moves: i32,
+    pub cl_dummy_control: i32,
+    pub cl_dummy_jump: i32,
+    pub cl_dummy_fire: i32,
+    pub cl_dummy_hook: i32,
     pub inp_mousesens: i32,
     pub cl_dyncam: i32,
     pub cl_dyncam_max_distance: i32,
@@ -184,6 +203,22 @@ impl Default for Config {
             player_use_custom_color: 0,
             player_color_body: 65408,
             player_color_feet: 65408,
+            dummy_name: String::new(),
+            dummy_clan: String::new(),
+            dummy_country: -1,
+            dummy_use_custom_color: 0,
+            dummy_color_body: 65408,
+            dummy_color_feet: 65408,
+            dummy_skin: "default".into(),
+            cl_dummy_resetonswitch: 0,
+            cl_dummy_restore_weapon: 1,
+            cl_dummy: 0,
+            cl_dummy_hammer: 0,
+            cl_dummy_copy_moves: 0,
+            cl_dummy_control: 0,
+            cl_dummy_jump: 0,
+            cl_dummy_fire: 0,
+            cl_dummy_hook: 0,
             inp_mousesens: 200,
             cl_dyncam: 0,
             cl_dyncam_max_distance: 1000,
@@ -336,6 +371,32 @@ impl Config {
         }
     }
 
+    /// C++: `CConfigManager::Con_Toggle` (config.cpp:516) for integer and string
+    /// variables: `b` if the variable equals `a`, else `a`. ponytail: colour variables
+    /// are not toggled; no bind of ours toggles one.
+    pub fn toggle(&mut self, name: &str, a: &str, b: &str) {
+        let to = match self.var(name) {
+            // C++ GetInteger: str_toint, 0 for text
+            Some(Var::Int(v, ..)) => {
+                if *v == a.parse().unwrap_or(0) {
+                    b
+                } else {
+                    a
+                }
+            }
+            Some(Var::Str(v, _)) => {
+                if v == a {
+                    b
+                } else {
+                    a
+                }
+            }
+            _ => return,
+        };
+        let quoted = format!("\"{}\"", escape(to));
+        self.set(name, &quoted);
+    }
+
     /// An integer variable by its C++ name.
     pub fn int(&self, name: &str) -> Option<i32> {
         match self.clone().var(name)? {
@@ -360,6 +421,22 @@ impl Config {
             "player_use_custom_color" => Int(&mut self.player_use_custom_color, 0, 1),
             "player_color_body" => Color(&mut self.player_color_body, 0.5),
             "player_color_feet" => Color(&mut self.player_color_feet, 0.5),
+            "dummy_name" => Str(&mut self.dummy_name, 16),
+            "dummy_clan" => Str(&mut self.dummy_clan, 12),
+            "dummy_country" => Int(&mut self.dummy_country, -1, 999),
+            "dummy_use_custom_color" => Int(&mut self.dummy_use_custom_color, 0, 1),
+            "dummy_color_body" => Color(&mut self.dummy_color_body, 0.5),
+            "dummy_color_feet" => Color(&mut self.dummy_color_feet, 0.5),
+            "dummy_skin" => Str(&mut self.dummy_skin, 24),
+            "cl_dummy_resetonswitch" => Int(&mut self.cl_dummy_resetonswitch, 0, 2),
+            "cl_dummy_restore_weapon" => Int(&mut self.cl_dummy_restore_weapon, 0, 1),
+            "cl_dummy" => Int(&mut self.cl_dummy, 0, 1),
+            "cl_dummy_hammer" => Int(&mut self.cl_dummy_hammer, 0, 1),
+            "cl_dummy_copy_moves" => Int(&mut self.cl_dummy_copy_moves, 0, 1),
+            "cl_dummy_control" => Int(&mut self.cl_dummy_control, 0, 1),
+            "cl_dummy_jump" => Int(&mut self.cl_dummy_jump, 0, 1),
+            "cl_dummy_fire" => Int(&mut self.cl_dummy_fire, 0, 1),
+            "cl_dummy_hook" => Int(&mut self.cl_dummy_hook, 0, 1),
             "inp_mousesens" => Int(&mut self.inp_mousesens, 1, 100000),
             "cl_dyncam" => Int(&mut self.cl_dyncam, 0, 1),
             "cl_dyncam_max_distance" => Int(&mut self.cl_dyncam_max_distance, 0, 2000),
@@ -485,7 +562,7 @@ impl Config {
 
     /// C++: the `CommandCallback` of each variable kind (config.cpp:40, :116, :206).
     /// Returns false if `name` is not one of ours.
-    fn set(&mut self, name: &str, args: &str) -> bool {
+    pub fn set(&mut self, name: &str, args: &str) -> bool {
         let Some(var) = self.var(name) else {
             return false;
         };
@@ -538,13 +615,33 @@ impl Config {
     }
 }
 
-/// Every variable name `Config::var` knows.
-pub const VAR_NAMES: [&str; 120] = [
+/// The variables `Config::var` knows that C++ does not save (no `CFGFLAG_SAVE`).
+pub const NOT_SAVED: [&str; 7] = [
+    "cl_dummy",
+    "cl_dummy_hammer",
+    "cl_dummy_copy_moves",
+    "cl_dummy_control",
+    "cl_dummy_jump",
+    "cl_dummy_fire",
+    "cl_dummy_hook",
+];
+
+/// Every saved variable `Config::var` knows (the others: `NOT_SAVED`).
+pub const VAR_NAMES: [&str; 129] = [
     "player_name",
     "player_skin",
     "player_use_custom_color",
     "player_color_body",
     "player_color_feet",
+    "dummy_name",
+    "dummy_clan",
+    "dummy_country",
+    "dummy_use_custom_color",
+    "dummy_color_body",
+    "dummy_color_feet",
+    "dummy_skin",
+    "cl_dummy_resetonswitch",
+    "cl_dummy_restore_weapon",
     "inp_mousesens",
     "cl_dyncam",
     "cl_dyncam_max_distance",
@@ -664,7 +761,7 @@ pub const VAR_NAMES: [&str; 120] = [
 
 /// C++: `str_copy` into a buffer of `size` bytes (cut at `size - 1` bytes, then
 /// `str_utf8_fix_truncation`).
-fn str_copy(s: &str, size: usize) -> String {
+pub fn str_copy(s: &str, size: usize) -> String {
     let mut b = s.as_bytes()[..s.len().min(size - 1)].to_vec();
     ddnet::protocol::packer::utf8_fix_truncation(&mut b);
     String::from_utf8_lossy(&b).into_owned()

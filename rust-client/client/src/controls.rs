@@ -341,6 +341,19 @@ impl Controls {
         self.active.input
     }
 
+    /// C++: `CGameClient::DummyResetInput` (gameclient.cpp:4314), the dummy connected:
+    /// the other tee lets go of everything, keeping `dummy`'s fire count released.
+    pub fn dummy_reset(&mut self, dummy: &mut g::ObjPlayerInput) {
+        if dummy.fire & 1 != 0 {
+            dummy.fire += 1;
+        }
+        let t = &mut self.other;
+        t.reset_input();
+        t.input.hook = 0;
+        t.input.fire = dummy.fire;
+        *dummy = t.input;
+    }
+
     /// C++: `CGameClient::OnDummySwap` (gameclient.cpp:513), after `cl_dummy` changed:
     /// the tees' states change places, `cl_dummy_resetonswitch` (1 the dummy, 2 the
     /// player) releases one tee's keys, the tee left behind keeps its input as `dummy`

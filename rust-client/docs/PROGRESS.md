@@ -1457,11 +1457,34 @@ Sound works, asset pack switching works in the running client.
   (the driver keys entity ids by heap address); every run is valid C++ output for the
   Rust test, which replays the file.
 
+- Piece d, the client: the C++ dummy settings (`dummy_name/clan/country/skin/colors`,
+  `cl_dummy_resetonswitch`, `cl_dummy_restore_weapon`, `cl_predict_dummy` saved; `cl_dummy`
+  and the `cl_dummy_*` toggles not saved, `config::NOT_SAVED`); the commands
+  `dummy_connect` (turns copy moves and hammer off on success, like C++),
+  `dummy_disconnect`, `dummy_reset` (`DummyResetInput`), `toggle` (`Con_Toggle`, ints
+  and strings) and variable lines from binds (`cl_dummy` through `set_dummy`, C++
+  `ConchainSpecialDummy`). `main.rs` opens the dummy's socket up front and runs C++'s
+  `Update` order: pump both, `OnDummySwap` on a swap, `SnapInput` with the dummy
+  settings, update, send. Chat/name plates read both local ids and both tees' inputs;
+  the other tee's team chat and whispers are shown (C++'s passive `OnMessage`). Esc
+  menu: the Dummy pill with C++'s states (not allowed / please wait / connecting /
+  connect / disconnect with the race-time confirmation, closing the menu). Status bar:
+  hammer and copy-moves chips while the dummy is connected (`RenderDummyActions`).
+  Dev flag `--dummy`.
+- Found on the way: C++ `GetInput` (and the server) take the lowest ring index among
+  inputs of the same tick (a swap sends the new active tee's input again for the current
+  tick); ours took the newest. Fixed. Our prediction stats now restart when the active
+  tee changes (they compare per tee).
+- Verified: live `prediction_matches_server_with_dummy` (dm1, both tees walking, 5 s with
+  the dummy active, then swapped): 0 mismatched of ~125 snapshots in each half, 0
+  prediction errors, 3 of 3 runs. Review: `docs/review/13.6/esc_dummy.png` (`[D] Alice`
+  joined, Disconnect dummy pill; `scripts/esc_menu_check.ps1` gained the dummy shot).
+
+13.6 done.
+
 #### Exact next actions (next session starts here)
-State (2026-11-28): 13.6 pieces a-c (connection, inputs, prediction) pushed; next piece d:
-settings and binds (`cl_dummy*`, `dummy_*`, `dummy_connect`/`dummy_disconnect`/
-`toggle cl_dummy`), the dummy socket and swap in `main.rs`, the Esc menu Dummy pill, HUD/
-camera; then 13.7.
+State (2026-11-28): 13.6 done and pushed; 13.7 (votes, spectate, kill, pause, emotes) next,
+then stop for the user's review.
 Queued for the HUD polish (user, 2026-11-28; not now): an option to draw the race
 status's weapons in the pack's own colours instead of white silhouettes (thin custom-pack
 sprites become unreadable bars).

@@ -46,8 +46,10 @@ try {
     Start-Process "$root\rust-client\target\debug\ddnet-headless.exe" -ArgumentList "127.0.0.1:8309", "--name", $name, "--seconds", "90" -WindowStyle Hidden | Out-Null
   }
   Start-Sleep 2
-  foreach ($tab in 0, 1, 2) {
-    $cl = Start-Process "$root\rust-client\target\debug\ddnet-rs.exe" -ArgumentList "127.0.0.1:8309", "--size", "1672x941", "--no-grab", "--esc-tab", $tab -WorkingDirectory $dir -PassThru -RedirectStandardOutput "$dir\client_$tab.log"
+  # the three tabs, then the Game tab with the dummy connected (13.6: --dummy)
+  foreach ($tab in "0", "1", "2", "dummy") {
+    $extra = if ($tab -eq "dummy") { "--esc-tab", "0", "--dummy" } else { "--esc-tab", $tab }
+    $cl = Start-Process "$root\rust-client\target\debug\ddnet-rs.exe" -ArgumentList (@("127.0.0.1:8309", "--size", "1672x941", "--no-grab") + $extra) -WorkingDirectory $dir -PassThru -RedirectStandardOutput "$dir\client_$tab.log"
     Start-Sleep 7; $cl.Refresh()
     Capture $cl.MainWindowHandle "$Out\esc_$tab.png"
     # a clean leave (WM_CLOSE disconnects), so the next run is the only Alice

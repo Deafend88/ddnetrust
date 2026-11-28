@@ -2,7 +2,7 @@
 //! bar across the top over the running game. Tabs as a segmented control, the Game tab's
 //! actions as pills, Disconnect apart in muted red, icon buttons on the right; the other
 //! tabs open a panel under the bar. Parts whose feature comes later stay hidden (Ghost
-//! 13.8, Vote 13.7, Record demo 13.8, Dummy 13.6, Browser M11; no editor).
+//! 13.8, Vote 13.7, Record demo 13.8, Browser M11; no editor).
 
 use egui::{Align, Align2, CornerRadius, Layout, Rect, RichText, Sense, Ui, UiBuilder};
 
@@ -133,6 +133,29 @@ pub enum Action {
     ToggleChatIgnore(i32),
     /// C++: `AddFriend` / `RemoveFriend` of this client's name and clan.
     ToggleFriend(i32),
+    /// C++ `DummyConnect`, `DummyDisconnect` (the latter closes the menu).
+    DummyConnect,
+    DummyDisconnect,
+}
+
+/// The dummy button's state, in C++ `RenderGame`'s order of checks.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum DummyState {
+    /// `!DummyAllowed()`.
+    NotAllowed,
+    /// `DummyConnectingDelayed()`: 5 s after the last connect.
+    Delayed,
+    Connecting,
+    Connected,
+    #[default]
+    Offline,
+}
+
+/// What a Yes/No question in the bar is about (C++ `PopupConfirm`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Confirm {
+    Disconnect,
+    DummyDisconnect,
 }
 
 const TABS: [&str; 3] = ["Game", "Players", "Info"];
@@ -143,8 +166,8 @@ const TAB_INFO: usize = 2;
 #[derive(Default)]
 pub struct EscMenu {
     pub tab: usize,
-    /// Disconnect asks first (C++ `PopupConfirm`).
-    confirming: bool,
+    /// Disconnect or Disconnect dummy asks first (C++ `PopupConfirm`).
+    confirming: Option<Confirm>,
 }
 
 /// What the bar shows.
@@ -163,6 +186,7 @@ pub struct View<'a> {
     pub motd: &'a str,
     /// Disconnect needs a confirmation (C++: race time over `cl_confirm_disconnect_time`).
     pub confirm_disconnect: bool,
+    pub dummy: DummyState,
 }
 
 /// The tab panels' width at most.
@@ -281,7 +305,7 @@ impl EscMenu {
 
     /// Called when the menu opens: no question left open from before.
     pub fn reset(&mut self) {
-        self.confirming = false;
+        self.confirming = None;
     }
 
     /// The bar, as in the concept: row 1 tabs on the left and icon buttons on the right;
@@ -344,19 +368,50 @@ impl EscMenu {
                 action = Some(a);
             }
         }
+        // C++ RenderGame's dummy button: disabled with a reason, or (dis)connect
+        let (label, enabled, why) = match v.dummy {
+            DummyState::NotAllowed => (
+                "Connect dummy",
+                false,
+                "Dummy is not allowed on this server",
+            ),
+            DummyState::Delayed => ("Connect dummy", false, "Please wait…"),
+            DummyState::Connecting => ("Connecting dummy", false, ""),
+            DummyState::Connected => ("Disconnect dummy", true, ""),
+            DummyState::Offline => ("Connect dummy", true, ""),
+        };
+        let r = ui.add_enabled_ui(enabled, |ui| pill_button(ui, icons::USER, label, false));
+        let clicked = r.inner.clicked();
+        if !why.is_empty() {
+            r.response.on_disabled_hover_text(why);
+        }
+        if clicked {
+            if v.dummy == DummyState::Offline {
+                action = Some(Action::DummyConnect);
+            } else if v.confirm_disconnect {
+                self.confirming = Some(Confirm::DummyDisconnect);
+            } else {
+                action = Some(Action::DummyDisconnect);
+            }
+        }
         ui.add(egui::Separator::default().vertical().spacing(space::M));
-        if self.confirming {
+        if let Some(what) = self.confirming {
+            let (question, yes) = match what {
+                Confirm::Disconnect => ("Disconnect?", Action::Disconnect),
+                Confirm::DummyDisconnect => ("Disconnect dummy?", Action::DummyDisconnect),
+            };
             let weak = v.glass.text_secondary();
-            w::text(ui, "Disconnect?", size::TITLE, Weight::Medium, weak);
+            w::text(ui, question, size::TITLE, Weight::Medium, weak);
             if pill_button(ui, icons::DISCONNECT, "Yes", true).clicked() {
-                action = Some(Action::Disconnect);
+                action = Some(yes);
+                self.confirming = None;
             }
             if pill_button(ui, icons::GAME, "No", false).clicked() {
-                self.confirming = false;
+                self.confirming = None;
             }
         } else if pill_button(ui, icons::DISCONNECT, "Disconnect", true).clicked() {
             if v.confirm_disconnect {
-                self.confirming = true;
+                self.confirming = Some(Confirm::Disconnect);
             } else {
                 action = Some(Action::Disconnect);
             }

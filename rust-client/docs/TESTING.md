@@ -168,7 +168,8 @@ dir and the current folder. More options: `--size WxH`, `--zoom Z`, `--view X,Y`
 camera), `--follow ID` (center on another player), `--screenshot-after SECONDS`,
 `--fire WEAPON` (scripted captures on a local test server with `sv_test_cmds 1`: says
 `/weapons` after 2 s, then keeps shooting that weapon up and to the left). `--esc-tab N`
-opens the Esc menu on tab N (0 Game, 1 Players, 2 Info) once the map shows.
+opens the Esc menu on tab N (0 Game, 1 Players, 2 Info) once the map shows; `--dummy`
+connects the dummy then.
 **F12** saves a screenshot to `%APPDATA%\DDNet-rs\screenshots\`.
 
 ## 6. Compare with the C++ client
